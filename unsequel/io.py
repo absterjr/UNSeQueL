@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -50,3 +51,36 @@ def load_table(name: str, path: str | Path) -> Table:
             raise ExecutionError(f"CSV file has no header: {path}")
         rows = [{key: _coerce(value) for key, value in row.items()} for row in reader]
     return Table(name, columns, rows)
+
+
+def _quote_sqlite_identifier(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+def load_sqlite_tables(path: str | Path) -> dict[str, Table]:
+    """Load SQLite tables and views through the standard-library adapter."""
+    path = Path(path)
+    if not path.exists():
+        raise ExecutionError(f"SQLite database does not exist: {path}")
+    connection = None
+    try:
+        connection = sqlite3.connect(str(path))
+        with connection:
+            names = connection.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' "
+                "ORDER BY name"
+            ).fetchall()
+            tables: dict[str, Table] = {}
+            for (name,) in names:
+                cursor = connection.execute(f"SELECT * FROM {_quote_sqlite_identifier(name)}")
+                columns = [description[0] for description in cursor.description or []]
+                rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+                cursor.close()
+                tables[name] = Table(name, columns, rows)
+            return tables
+    except sqlite3.Error as exc:
+        raise ExecutionError(f"Could not read SQLite database {path}: {exc}") from exc
+    finally:
+        if connection is not None:
+            connection.close()

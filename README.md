@@ -32,9 +32,11 @@ pipeline visible and learnable.
 
 ## Status
 
-UNSeQueL is an early, dependency-free MVP. It currently runs queries against
-CSV and JSON files in memory. The parser and execution stages are separated so
-database-backed adapters can be added later.
+UNSeQueL 0.2 is a complete query-language core. It includes a real lexer,
+ordered grammar, semantic stage checks, an in-memory relational executor, CTEs,
+nested sources, set operations, four join types plus cross joins, and a SQLite
+input adapter. The implementation is deliberately dependency-free so the
+language can be learned and extended without a framework.
 
 ## Install
 
@@ -81,22 +83,45 @@ python -m unsequel run examples/customer_revenue.usql \
   --data customers=examples/customers.csv
 ```
 
+The advanced example combines a CTE, grouping, `COUNT(DISTINCT ...)`, and
+ordered output:
+
+```bash
+python -m unsequel run examples/advanced.usql --data orders=examples/orders.csv
+```
+
 The `--data` option uses `name=path`. JSON files containing an array of
 objects are also supported.
 
+To query an existing SQLite database, expose all its tables and views with the
+standard-library adapter:
+
+```bash
+python -m unsequel run query.usql --sqlite warehouse.db
+```
+
 ## Language shape
 
-The first MVP supports these stages:
+The core supports these stages:
 
 ```text
-FROM table
-JOIN other_table ON left_key = right_key
+WITH recent AS (query)
+FROM table | (query) AS alias
+INNER JOIN other_table ON condition
+LEFT JOIN other_table ON condition
+RIGHT JOIN other_table ON condition
+FULL JOIN other_table ON condition
+CROSS JOIN other_table
 WHERE row_condition
 GROUP BY grouping_expression
 HAVING group_condition
-SELECT output_expression AS alias
+SELECT [DISTINCT] output_expression AS alias
 ORDER BY expression ASC|DESC
 LIMIT number
+OFFSET number
+UNION [ALL] query
+INTERSECT [ALL] query
+EXCEPT [ALL] query
 ```
 
 `FROM` is required. The other stages are optional, but they must appear in
@@ -108,35 +133,38 @@ Expressions support:
 - Comparisons: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`
 - Logic: `AND`, `OR`, `NOT`
 - Null checks: `IS NULL`, `IS NOT NULL`
+- Membership and ranges: `IN`, `NOT IN`, `BETWEEN`, `NOT BETWEEN`, `LIKE`,
+  `NOT LIKE`
+- Conditional and conversion expressions: `CASE`, `CAST`, and `||`
 - Strings, numbers, `TRUE`, `FALSE`, and `NULL`
-- Functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `COALESCE`, `LOWER`,
-  `UPPER`, `ABS`, `ROUND`, and `LENGTH`
+- Functions: `COUNT`, `COUNT(DISTINCT ...)`, `SUM`, `AVG`, `MIN`, `MAX`,
+  `COALESCE`, `NULLIF`, `LOWER`, `UPPER`, `ABS`, `ROUND`, `LENGTH`, `TRIM`,
+  and `CONCAT`
 
 See the [language reference](docs/language-reference.md) for the complete
-MVP syntax and execution model.
+core syntax and execution model.
 
 ## Design principles
 
 - **Logical order first.** The syntax teaches the difference between row
   filtering and group filtering.
-- **Small standard-library core.** The MVP has no runtime dependencies.
+- **Small standard-library core.** The language has no runtime dependencies.
 - **Readable internals.** The lexer, parser, evaluator, and I/O layers are
   separate so contributors can learn one part at a time.
 - **SQL-compatible concepts, not SQL-compatible syntax.** UNSeQueL makes the
   execution pipeline explicit while preserving familiar relational ideas.
 
-## Roadmap
+## Boundaries and roadmap
 
-- Better diagnostics with source line and column highlights.
-- More joins and explicit table aliases.
-- A richer standard function library.
-- SQLite and DuckDB execution adapters.
-- Streaming execution for larger files.
-- A formatter and language-server support.
-- Interactive learning mode that shows each intermediate table.
+The 0.2 core is a complete read/query language, not a SQL clone. It does not
+yet include table-changing statements (`CREATE`, `INSERT`, `UPDATE`, `DELETE`),
+recursive CTEs, scalar subqueries inside expressions, user-defined functions,
+or a streaming/native query planner. Those are separate language and storage
+designs, not hidden partial features.
 
-The MVP deliberately does not yet support subqueries, CTEs, `DISTINCT`, or
-streaming large files. Those are planned after the execution model is stable.
+Planned next steps are transactional storage adapters, recursive queries,
+streaming execution, better source highlights, a formatter, and an interactive
+learning mode that shows each intermediate relation.
 
 ## Contributing
 

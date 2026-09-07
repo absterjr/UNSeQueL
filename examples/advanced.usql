@@ -1,0 +1,13 @@
+WITH order_totals AS (
+    FROM orders
+    SELECT customer, country, quantity * unit_price AS total
+)
+FROM order_totals AS o
+WHERE total > 10
+GROUP BY country
+HAVING SUM(total) > 100
+SELECT country,
+       COUNT(DISTINCT customer) AS customers,
+       ROUND(SUM(total), 2) AS revenue
+ORDER BY revenue DESC
+LIMIT 10

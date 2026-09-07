@@ -6,9 +6,10 @@ import json
 import sys
 from pathlib import Path
 
+from . import __version__
 from .errors import UnsequelError
 from .engine import execute
-from .io import load_table
+from .io import load_sqlite_tables, load_table
 from .parser import parse_query
 
 
@@ -55,13 +56,15 @@ def build_parser() -> argparse.ArgumentParser:
         prog="unsequel",
         description="Run queries written in logical execution order.",
     )
-    parser.add_argument("--version", action="version", version="unsequel 0.1.0")
+    parser.add_argument("--version", action="version", version=f"unsequel {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 
     run = commands.add_parser("run", help="parse and execute a query")
     run.add_argument("query", help="query file, or '-' to read from stdin")
-    run.add_argument("--data", action="append", required=True, type=_data_spec,
+    run.add_argument("--data", action="append", default=[], type=_data_spec,
                      metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
+    run.add_argument("--sqlite", metavar="PATH",
+                     help="SQLite database input; all tables and views become sources")
     run.add_argument("--format", choices=("table", "csv", "json"), default="table")
 
     check = commands.add_parser("check", help="parse a query without executing it")
@@ -78,7 +81,10 @@ def main(argv: list[str] | None = None) -> None:
         if args.command == "check":
             print("valid UNSeQueL query")
             return
-        tables = {name: load_table(name, path) for name, path in args.data}
+        if bool(args.data) == bool(args.sqlite):
+            parser.error("run requires exactly one of --data or --sqlite")
+        tables = (load_sqlite_tables(args.sqlite) if args.sqlite
+                  else {name: load_table(name, path) for name, path in args.data})
         _print_result(execute(query, tables), args.format)
     except (OSError, UnsequelError, ValueError) as exc:
         parser.exit(1, f"error: {exc}\n")
