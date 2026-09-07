@@ -1,0 +1,6 @@
+FROM orders AS o
+JOIN customers AS c ON o.customer = c.customer
+WHERE o.quantity > 0
+GROUP BY c.segment
+SELECT c.segment AS segment, SUM(o.quantity * o.unit_price) AS revenue, COUNT(*) AS orders
+ORDER BY revenue DESC

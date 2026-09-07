@@ -1,0 +1,7 @@
+FROM orders
+WHERE quantity > 0
+GROUP BY country
+HAVING SUM(quantity * unit_price) > 20
+SELECT country, SUM(quantity * unit_price) AS revenue, COUNT(*) AS orders
+ORDER BY revenue DESC
+LIMIT 10

@@ -1,0 +1,7 @@
+order_id,customer,country,quantity,unit_price,order_date
+1001,Ada,United Kingdom,2,12.50,2024-01-03
+1002,Grace,United States,1,80.00,2024-01-04
+1003,Ada,United Kingdom,3,9.00,2024-01-05
+1004,Alan,United Kingdom,5,4.00,2024-01-06
+1005,Grace,United States,2,25.00,2024-01-07
+1006,Ada,United Kingdom,1,120.00,2024-01-08
