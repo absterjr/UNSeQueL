@@ -44,7 +44,7 @@ def tokenize(text: str) -> list[Token]:
     """Convert query text into small tokens for the expression/parser layers."""
     tokens: list[Token] = []
     i = 0
-    two_char_ops = {"<=", ">=", "!=", "<>", "||"}
+    two_char_ops = {"<=", ">=", "!=", "<>", "||", "=="}
     single_char_ops = set("+-*/%()=<>.,;!")
 
     while i < len(text):

@@ -127,6 +127,29 @@ EXCEPT [ALL] query
 `FROM` is required. The other stages are optional, but they must appear in
 the order above. Multiple `JOIN` clauses are allowed directly after `FROM`.
 
+## Pipeline syntax POC
+
+A second, experimental surface is being evaluated: one transform per line,
+PRQL-style, lowered onto the same engine.
+
+```text
+from orders
+derive total = quantity * unit_price
+group country (revenue = SUM(total), orders = COUNT(*))
+sort -revenue
+```
+
+The grammar is frozen as POC v0.1. Run a pipeline query with the `--pipeline`
+flag:
+
+```bash
+python -m unsequel run examples/pipeline/revenue.pusql --pipeline \
+  --data orders=examples/orders.csv
+```
+
+See [docs/poc-syntax.md](docs/poc-syntax.md) for the frozen grammar, the
+PRQL/LINQ/Malloy prior-art notes, and six hand-translated example queries.
+
 Expressions support:
 
 - Arithmetic: `+`, `-`, `*`, `/`, `%`

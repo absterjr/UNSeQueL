@@ -1,0 +1,14 @@
+# Idea type: group filter + derived metric (SQL HAVING + computed ratio)
+# The where after group is the group filter (SQL HAVING); derive after group
+# adds a computed output column (SQL: revenue / orders AS avg_order).
+# Hand translation:
+#   SQL: SELECT customer, COUNT(*) AS orders, SUM(quantity*unit_price) AS revenue,
+#               revenue/orders AS avg_order
+#        FROM orders GROUP BY customer
+#        HAVING SUM(quantity*unit_price) >= 50
+#        ORDER BY avg_order DESC
+from orders
+group customer (orders = COUNT(*), revenue = SUM(quantity * unit_price))
+where revenue >= 50
+derive avg_order = revenue / orders
+sort -avg_order

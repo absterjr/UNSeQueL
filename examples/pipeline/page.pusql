@@ -1,0 +1,8 @@
+# Idea type: pagination (SQL OFFSET/LIMIT, LINQ Skip/Take)
+# Hand translation:
+#   SQL: SELECT order_id, customer FROM orders ORDER BY order_id OFFSET 2 LIMIT 2
+from orders
+select order_id, customer
+sort order_id
+skip 2
+take 2

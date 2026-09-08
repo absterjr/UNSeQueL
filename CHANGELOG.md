@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 - 2026-09-07
+
+- Added the pipeline-syntax POC (frozen grammar v0.1 in `docs/poc-syntax.md`).
+- Pipeline queries lower onto the existing ordered-clause engine; no new
+  execution semantics.
+- Added `--pipeline` to `unsequel run` and `unsequel check`.
+- Added six hand-translated pipeline examples and 7 pipeline tests.
+- Added `==` to the lexer for LINQ-style equality.
+
 ## 0.2.0 - 2026-09-07
 
 - Expanded the MVP into a complete read/query language core.

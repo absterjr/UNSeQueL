@@ -1,0 +1,10 @@
+# Idea type: data quality / unmatched rows (SQL LEFT JOIN + IS NULL check)
+# members.csv intentionally omits some customers; the pipeline surfaces their orders.
+# Hand translation:
+#   SQL: SELECT o.order_id, o.customer
+#        FROM orders o LEFT JOIN members m ON o.customer = m.customer
+#        WHERE m.customer IS NULL
+from orders
+left join members on customer = members.customer
+where members.customer IS NULL
+select order_id, customer

@@ -1,0 +1,7 @@
+# Idea type: deduplication (SQL SELECT DISTINCT, LINQ Distinct())
+# Hand translation:
+#   SQL: SELECT DISTINCT country FROM orders ORDER BY country
+from orders
+select country
+distinct
+sort country

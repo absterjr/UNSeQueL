@@ -11,6 +11,7 @@ from .errors import UnsequelError
 from .engine import execute
 from .io import load_sqlite_tables, load_table
 from .parser import parse_query
+from .pipeline import parse_pipeline
 
 
 def _data_spec(value: str) -> tuple[str, str]:
@@ -61,6 +62,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = commands.add_parser("run", help="parse and execute a query")
     run.add_argument("query", help="query file, or '-' to read from stdin")
+    run.add_argument("--pipeline", action="store_true",
+                     help="treat the query as POC pipeline syntax instead of ordered syntax")
     run.add_argument("--data", action="append", default=[], type=_data_spec,
                      metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
     run.add_argument("--sqlite", metavar="PATH",
@@ -69,6 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     check = commands.add_parser("check", help="parse a query without executing it")
     check.add_argument("query", help="query file, or '-' to read from stdin")
+    check.add_argument("--pipeline", action="store_true",
+                       help="treat the query as POC pipeline syntax instead of ordered syntax")
     return parser
 
 
@@ -77,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         query_text = _read_query(args.query)
-        query = parse_query(query_text)
+        query = parse_pipeline(query_text) if args.pipeline else parse_query(query_text)
         if args.command == "check":
             print("valid UNSeQueL query")
             return
