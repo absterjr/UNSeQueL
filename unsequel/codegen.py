@@ -16,11 +16,12 @@ from dataclasses import dataclass, field
 
 from .expressions import (Between, Binary, Call, Case, Cast, Expr, Identifier, InList,
                           Literal, Unary, Wildcard)
-from .pipeline_ir import (Derive, Distinct, From, Group, Join, PipelineError, Select,
-                          Skip, Sort, Stage, Take, Where)
+from .pipeline_ir import (Derive, Distinct, From, Group, Join, PipelineError, RawSql,
+                          Select, Skip, Sort, Stage, Take, Where)
 from .schema import Schema
 
 _SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_INPUT_NAME = re.compile(r"\b__input__\b")
 _TARGET = "duckdb"
 
 
@@ -248,9 +249,20 @@ def emit_sql(stages: list[Stage], schema: Schema, *, stop_at: int | None = None,
         prev_cte = f"stage_{position - 1}"
         if isinstance(stage, Join):
             sql, cols, live = _join_stage(stage, schema, prev_cte, cols, live, position)
+        elif isinstance(stage, RawSql):
+            sql, cols, live = _raw_sql_stage(stage, prev_cte, position)
         else:
             sql, cols, live = _stage_sql(stage, prev_cte, cols, live, position)
         ctes.append(f"stage_{position} AS (\n  {sql}\n)")
 
     body = ",\n".join(ctes)
     return f"WITH {body}\nSELECT * FROM stage_{limit};"
+
+
+def _raw_sql_stage(stage: RawSql, prev_cte: str, position: int) -> tuple[str, _Cols, list[str]]:
+    """A sql stage becomes an opaque CTE; __input__ names the previous stage."""
+    text = _INPUT_NAME.sub(prev_cte, stage.text)
+    indented = "\n".join(f"  {line}" for line in text.splitlines())
+    # Columns after a raw stage are the user's responsibility: identifiers
+    # render literally instead of being resolved from tracked lineage.
+    return indented, _Cols({}), []

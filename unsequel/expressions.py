@@ -544,3 +544,65 @@ def expression_name(expr: Expr) -> str:
     if isinstance(expr, Wildcard):
         return "*"
     return "expression"
+
+
+def format_string(value: str) -> str:
+    """Render an expression string literal in canonical single-quoted SQL form."""
+    escaped = value.replace("\\", "\\\\").replace("'", "''")
+    return f"'{escaped}'"
+
+
+def format_expr(expr: Expr, parent_precedence: int = 0) -> str:
+    """Render an expression in the canonical pipeline form."""
+    if isinstance(expr, Literal):
+        if expr.value is None:
+            return "NULL"
+        if expr.value is True:
+            return "TRUE"
+        if expr.value is False:
+            return "FALSE"
+        if isinstance(expr.value, str):
+            return format_string(expr.value)
+        return str(expr.value)
+    if isinstance(expr, Identifier):
+        return expr.name
+    if isinstance(expr, Wildcard):
+        return "*"
+    if isinstance(expr, Unary):
+        operand = format_expr(expr.operand, 6)
+        if expr.op == "NOT":
+            return f"NOT {operand}"
+        return f"{expr.op}{operand}"
+    if isinstance(expr, Binary):
+        precedence = _PRECEDENCE.get(expr.op, 0)
+        left = format_expr(expr.left, precedence)
+        right = format_expr(expr.right, precedence + 1)
+        text = f"{left} {expr.op} {right}"
+        if precedence < parent_precedence:
+            return f"({text})"
+        return text
+    if isinstance(expr, Call):
+        distinct = "DISTINCT " if expr.distinct else ""
+        args = ", ".join(format_expr(arg) for arg in expr.args)
+        return f"{expr.name}({distinct}{args})"
+    if isinstance(expr, InList):
+        options = ", ".join(format_expr(option) for option in expr.options)
+        keyword = "NOT IN" if expr.negated else "IN"
+        text = f"{format_expr(expr.value, 3)} {keyword} ({options})"
+        if parent_precedence > 3:
+            return f"({text})"
+        return text
+    if isinstance(expr, Between):
+        keyword = "NOT BETWEEN" if expr.negated else "BETWEEN"
+        text = (f"{format_expr(expr.value, 3)} {keyword} "
+                f"{format_expr(expr.lower, 4)} AND {format_expr(expr.upper, 4)}")
+        if parent_precedence > 3:
+            return f"({text})"
+        return text
+    if isinstance(expr, Case):
+        branches = " ".join(f"WHEN {format_expr(condition)} THEN {format_expr(result)}"
+                            for condition, result in expr.branches)
+        return f"CASE {branches} ELSE {format_expr(expr.else_expr)} END"
+    if isinstance(expr, Cast):
+        return f"CAST({format_expr(expr.operand)} AS {expr.type_name})"
+    raise ExecutionError(f"Unsupported expression node {type(expr).__name__}")

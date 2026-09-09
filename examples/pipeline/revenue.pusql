@@ -1,7 +1,3 @@
-# Idea type: aggregation with post-sort ranking (like SQL GROUP BY + ORDER BY)
-# Hand translation:
-#   SQL: SELECT country, SUM(quantity*unit_price) AS revenue, COUNT(*) AS orders
-#        FROM orders GROUP BY country ORDER BY revenue DESC
 from orders
 derive total = quantity * unit_price
 group country (revenue = SUM(total), orders = COUNT(*))

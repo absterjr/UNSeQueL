@@ -1,18 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-09-09
 
-- Added the pipeline language specification v0.2 (`docs/pipeline-spec.md`):
-  every stage formally defined with its EBNF, IR node, and one-CTE-per-stage
-  DuckDB lowering. Supersedes the frozen v0.1 POC note.
-- Added 20 reference pipeline queries and a four-table sample dataset under
-  `examples/spec/`, covering every v0.2 stage and combination.
-- Added `tests/test_spec_examples.py` pinning parse + execution behaviour for
-  all 20 reference queries.
+Pipeline language, steps 1-9 of the implementation plan.
+
+- Added the pipeline language specification (`docs/pipeline-spec.md`, now
+  v0.3): every stage formally defined with its EBNF, IR node, and
+  one-CTE-per-stage DuckDB lowering. Supersedes the frozen v0.1 POC note.
+- Added 21 reference pipeline queries and a four-table sample dataset under
+  `examples/spec/`, covering every stage and combination.
 - Added a stage-preserving IR (`unsequel/pipeline_ir.py`): one typed node per
-  stage with its source line. Pipeline parse errors are now stage-located and
-  reserved stages report an explicit "not in v0.2" message. `unsequel/pipeline.py`
-  is a thin lowering pass. Fixed a row-derive shadowing a group aggregate.
+  stage with its source line. Pipeline parse errors are stage-located. Fixed a
+  row-derive shadowing a group aggregate.
 - Added schema-aware validation: `unsequel/schema.py` (JSON schema files) and
   `unsequel/semantics.py` (`analyze`), via `check --schema` / `run --schema`.
   Catches unknown tables/columns, dead-after-group references, and non-numeric
@@ -23,6 +22,15 @@
 - Added `unsequel compile`, `unsequel preview` (run a pipeline truncated at a
   stage and show a sample), and `unsequel run --engine duckdb`. New optional
   `duckdb` extra; the core stays dependency-free.
+- Added the `sql "..."` escape hatch (spec §3.10): previous relation is
+  `__input__`; runs on stdlib SQLite with the memory engine and as its own CTE
+  with the DuckDB engine. Reference query `q21_sql_hatch` covers window
+  functions through the hatch.
+- Added `unsequel fmt` (`--write`, `--check`): canonical, idempotent pipeline
+  formatting (spec §9).
+- Dogfooded all examples through the formatter; added the prioritised gap list
+  [docs/backlog.md](docs/backlog.md) and the external-feedback exercise
+  [docs/first-task.md](docs/first-task.md).
 
 ## 0.3.0 - 2026-09-07
 

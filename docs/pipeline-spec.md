@@ -1,4 +1,8 @@
-# UNSeQueL Pipeline Language — Specification v0.2
+# UNSeQueL Pipeline Language — Specification v0.3
+
+> v0.3 (Step 8) implements the reserved `sql "..."` escape hatch (§3.10),
+> defines its interaction with ordering rules and schema validation (§4, §8),
+> adds reference query 21, and specifies the canonical formatter (§9).
 
 This is the authoritative grammar and lowering spec for the pipeline surface of
 UNSeQueL (`.pusql` files). It supersedes the proof-of-concept note in
@@ -203,19 +207,35 @@ distinct_stage = "distinct" ;
 - **IR:** `Distinct()`.
 - **SQL:** `stage_k AS (SELECT DISTINCT * FROM stage_{k-1})`.
 
-### 3.10 `sql` — raw escape hatch (reserved, Step 8)
+### 3.10 `sql` — raw escape hatch
 
 ```ebnf
 sql_stage = "sql" , string ;
 ```
 
-- The string is spliced into the CTE chain untouched, with `stage_{k-1}`
-  available as a table name. Parsed in v0.2, lowered in Step 8.
+- The string must be a single `SELECT`; `;` is rejected at parse time.
+- The previous relation is visible as the table `__input__`. The original
+  named tables remain visible under their own names.
+- **SQL target:** the text is spliced into the CTE chain as its own stage,
+  with every `__input__` occurrence rewritten to `stage_{k-1}`. Columns after
+  the hatch are the author's responsibility (lineage is opaque).
+- **In-memory engine:** the pipeline is cut into segments at each `sql`
+  stage. Segments lower and execute as usual; a `sql` segment runs against an
+  in-memory SQLite database (standard library, no new dependency) in which
+  `__input__` and the named tables exist.
+- A `sql` stage starts a **fresh relation**: `where` / `derive` return to row
+  phase, and the once-per-pipeline singletons (`group`, `take`, `skip`,
+  `distinct`) may each appear once more after it. `from` stays global.
+- `sql` may not be the first stage and may not appear after `select`.
+- Schema validation does not look inside the string and cannot track columns
+  after it; later stages are unchecked (§8).
+- Reference query: `q21_sql_hatch` (window function, §6).
 
 ### 3.11 `window` — (reserved, not implemented)
 
 Placeholder syntax `window name = FUNC(args) over (partition by ... order by ...)`.
 Parsing it in v0.2 produces `window is reserved and not implemented in v0.2`.
+Until it ships, `sql "..."` covers window functions (see q21).
 
 ## 4. Ordering rules (frozen)
 
@@ -228,6 +248,9 @@ Parsing it in v0.2 produces `window is reserved and not implemented in v0.2`.
    new aggregates.
 6. Named entries use `name = expression`. A bare identifier is its own name; a
    bare `COUNT(*)` inside `group` is named `count`.
+7. A `sql` stage may not be first and may not follow `select`. It starts a
+   fresh relation (§3.10): phase resets to row and segment singletons restart.
+8. `sql` takes exactly one string literal containing a single `SELECT`.
 
 ## 5. CTE lowering — worked example
 
@@ -262,9 +285,9 @@ SELECT * FROM stage_8;
 `unsequel preview q20_full_pipeline.pusql --stage 4` runs
 `SELECT * FROM stage_4 LIMIT <sample>` and nothing below it.
 
-## 6. Validation — the 20 reference queries
+## 6. Validation — the 21 reference queries
 
-The 20 queries in [`examples/spec/`](../examples/spec/) exercise every v0.2
+The 21 queries in [`examples/spec/`](../examples/spec/) exercise every v0.3
 stage and combination. Each parses unambiguously against §3 and executes on the
 sample dataset (§7); `tests/test_spec_examples.py` asserts this.
 
@@ -290,6 +313,7 @@ sample dataset (§7); `tests/test_spec_examples.py` asserts this.
 | 18 | `q18_case_bucket` | from, derive(CASE), select, sort | 15 |
 | 19 | `q19_multi_key_group` | from, derive, group(2 keys, 2 aggs), sort(multi) | 11 |
 | 20 | `q20_full_pipeline` | all eight core stages | 3 |
+| 21 | `q21_sql_hatch` | from, sql (window function), where, select, sort | 5 |
 
 ### Name resolution across the `group` boundary
 
@@ -341,3 +365,29 @@ tracked for lineage but not yet an error in v0.2.
 
 The walk also returns **column lineage** — the live column list after every
 stage — which is the basis for a future `--lineage` export.
+
+A `sql` stage is an integrity boundary: its string is not analysed, and the
+lineage after it is reported as `<raw sql>` (then `<opaque>` for later
+stages), so downstream column checks are skipped rather than guessed.
+
+## 9. Canonical formatting
+
+`unsequel fmt` prints a pipeline query in canonical form; `--write` rewrites
+the file, `--check` exits 1 when the file is not already canonical. The
+formatter is **idempotent**: formatting canonical text is a no-op.
+
+Canonical rules (frozen):
+
+- lowercase stage keywords, one stage per line, trailing newline;
+- spaces around binary operators; `-column` for descending sort (`desc`
+  suffix is normalised away);
+- `name = expression` is emitted only when the name differs from the rendered
+  expression;
+- `sql` strings are re-quoted but their content is never reformatted;
+- comments are not preserved.
+
+```bash
+python -m unsequel fmt examples/spec/q01_all_orders.pusql
+python -m unsequel fmt --write my_query.pusql
+python -m unsequel fmt --check examples/spec/q*.pusql
+```

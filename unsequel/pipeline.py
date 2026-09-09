@@ -8,13 +8,17 @@ in-memory engine already knows how to run.
 
 from __future__ import annotations
 
+from .engine import execute
 from .expressions import (Between, Binary, Call, Case, Cast, Expr, Identifier, InList,
                           Literal, Unary, Wildcard)
-from .parser import OrderItem, Query, SelectItem
-from .pipeline_ir import (Derive, Distinct, From, Group, Join, PipelineError, Select,
-                          Skip, Sort, Stage, Take, Where, parse_pipeline_stages)
+from .model import Table
+from .parser import FromSpec, OrderItem, Query, SelectItem
+from .pipeline_ir import (Derive, Distinct, From, Group, Join, PipelineError, RawSql,
+                          Select, Skip, Sort, Stage, Take, Where, parse_pipeline_stages)
+from .sql_runtime import run_sql_stage
 
-__all__ = ["parse_pipeline", "lower_to_query", "parse_pipeline_stages", "PipelineError"]
+__all__ = ["parse_pipeline", "lower_to_query", "parse_pipeline_stages", "PipelineError",
+           "execute_pipeline_stages"]
 
 
 def _inline(expr: Expr, names: dict[str, Expr]) -> Expr:
@@ -161,6 +165,10 @@ def _join_spec(stage: Join, on: Expr):
 
 def lower_to_query(stages: list[Stage]) -> Query:
     """Collapse a stage list onto the ordered-clause Query AST."""
+    if any(isinstance(stage, RawSql) for stage in stages):
+        raise PipelineError(
+            'a sql "..." stage cannot be lowered to the ordered engine; '
+            "run the pipeline with execute_pipeline_stages or the duckdb engine")
     builder = _Builder()
     for stage in stages:
         builder.add(stage)
@@ -170,3 +178,40 @@ def lower_to_query(stages: list[Stage]) -> Query:
 def parse_pipeline(text: str) -> Query:
     """Parse pipeline text and lower it to the ordered-clause Query AST."""
     return lower_to_query(parse_pipeline_stages(text))
+
+
+def execute_pipeline_stages(stages: list[Stage], tables: dict[str, Table]) -> Table:
+    """Execute a stage list on the in-memory engine, running sql stages via sqlite.
+
+    The pipeline is cut into segments at every sql stage. Ordinary segments are
+    lowered and executed as before; a sql segment runs the raw text against an
+    in-memory sqlite database in which the previous relation is table
+    __input__ (next to the original named tables).
+    """
+    if not any(isinstance(stage, RawSql) for stage in stages):
+        return execute(lower_to_query(stages), tables)
+
+    current: Table | None = None
+    segment: list[Stage] = []
+    for stage in stages:
+        if isinstance(stage, RawSql):
+            current = _run_segment(segment, tables, current)
+            segment = []
+            current = run_sql_stage(stage.text, tables, current)
+        else:
+            segment.append(stage)
+    return _run_segment(segment, tables, current)
+
+
+def _run_segment(segment: list[Stage], tables: dict[str, Table],
+                 current: Table | None) -> Table:
+    if not segment:
+        if current is None:
+            raise PipelineError("a pipeline must start with a from stage")
+        return current
+    if isinstance(segment[0], From):
+        return execute(lower_to_query(segment), tables)
+    if current is None:
+        raise PipelineError("a pipeline must start with a from stage")
+    sourced = [From("from", segment[0].line, FromSpec("__input__")), *segment]
+    return execute(lower_to_query(sourced), {**tables, "__input__": current})

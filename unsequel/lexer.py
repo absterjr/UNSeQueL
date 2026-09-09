@@ -45,7 +45,7 @@ def tokenize(text: str) -> list[Token]:
     tokens: list[Token] = []
     i = 0
     two_char_ops = {"<=", ">=", "!=", "<>", "||", "=="}
-    single_char_ops = set("+-*/%()=<>.,;!")
+    single_char_ops = set("+-*/%()=<>.,;!|")
 
     while i < len(text):
         char = text[i]
@@ -57,8 +57,9 @@ def tokenize(text: str) -> list[Token]:
             i = len(text) if newline < 0 else newline + 1
             continue
         if char in ("'", '"'):
+            start = i
             value, i = _read_string(text, i)
-            tokens.append(Token("STRING", value, i))
+            tokens.append(Token("STRING", value, start))
             continue
         if char.isdigit():
             start = i

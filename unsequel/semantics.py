@@ -20,8 +20,8 @@ from dataclasses import dataclass
 
 from .expressions import (Between, Binary, Call, Case, Cast, Expr, Identifier, InList,
                           Literal, Unary, Wildcard)
-from .pipeline_ir import (Derive, Distinct, From, Group, Join, PipelineError, Select,
-                          Skip, Sort, Stage, Take, Where)
+from .pipeline_ir import (Derive, Distinct, From, Group, Join, PipelineError, RawSql,
+                          Select, Skip, Sort, Stage, Take, Where)
 from .schema import Schema, type_family
 
 _NUMERIC_AGGS = {"SUM", "AVG"}
@@ -160,9 +160,16 @@ def analyze(stages: list[Stage], schema: Schema) -> list[StageLineage]:
     """Validate a stage list against a schema and return per-stage lineage."""
     scope = _Scope({}, {})
     grouped = False
+    opaque = False
     lineage: list[StageLineage] = []
 
     for index, stage in enumerate(stages, start=1):
+        if opaque:
+            # After a sql stage the relation is the user's SQL output; column
+            # names and types are not tracked, so later stages are unchecked.
+            lineage.append(StageLineage(index, stage.keyword, ("<opaque>",)))
+            continue
+
         if isinstance(stage, From):
             src = stage.source
             if src.subquery is not None:
@@ -225,6 +232,12 @@ def analyze(stages: list[Stage], schema: Schema) -> list[StageLineage]:
 
         elif isinstance(stage, (Take, Skip, Distinct)):
             pass
+
+        elif isinstance(stage, RawSql):
+            opaque = True
+            scope = _Scope({}, {})
+            lineage.append(StageLineage(index, stage.keyword, ("<raw sql>",)))
+            continue
 
         lineage.append(StageLineage(index, stage.keyword, tuple(scope.bare_names())))
 

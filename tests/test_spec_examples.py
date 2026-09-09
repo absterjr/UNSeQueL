@@ -10,7 +10,7 @@ from pathlib import Path
 
 from unsequel.engine import execute
 from unsequel.io import load_table
-from unsequel.pipeline import parse_pipeline
+from unsequel.pipeline import execute_pipeline_stages, parse_pipeline_stages
 
 SPEC = Path("examples/spec")
 
@@ -35,6 +35,7 @@ EXPECTED_ROW_COUNT = {
     "q18_case_bucket": 15,
     "q19_multi_key_group": 11,
     "q20_full_pipeline": 3,
+    "q21_sql_hatch": 5,
 }
 
 
@@ -56,13 +57,13 @@ class SpecExampleTests(unittest.TestCase):
     def test_each_query_parses_and_executes(self):
         for name, expected in EXPECTED_ROW_COUNT.items():
             with self.subTest(query=name):
-                query = parse_pipeline((SPEC / f"{name}.pusql").read_text(encoding="utf-8"))
-                result = execute(query, self.tables)
+                stages = parse_pipeline_stages((SPEC / f"{name}.pusql").read_text(encoding="utf-8"))
+                result = execute_pipeline_stages(stages, self.tables)
                 self.assertEqual(len(result.rows), expected)
 
     def test_full_pipeline_output(self):
-        query = parse_pipeline((SPEC / "q20_full_pipeline.pusql").read_text(encoding="utf-8"))
-        result = execute(query, self.tables)
+        stages = parse_pipeline_stages((SPEC / "q20_full_pipeline.pusql").read_text(encoding="utf-8"))
+        result = execute_pipeline_stages(stages, self.tables)
         self.assertEqual(result.rows, [
             {"category": "home", "orders": 6, "revenue": 285, "avg_order": 47.5},
             {"category": "stationery", "orders": 6, "revenue": 177.0, "avg_order": 29.5},
@@ -70,8 +71,8 @@ class SpecExampleTests(unittest.TestCase):
         ])
 
     def test_group_having_filters_groups(self):
-        query = parse_pipeline((SPEC / "q11_group_having.pusql").read_text(encoding="utf-8"))
-        result = execute(query, self.tables)
+        stages = parse_pipeline_stages((SPEC / "q11_group_having.pusql").read_text(encoding="utf-8"))
+        result = execute_pipeline_stages(stages, self.tables)
         self.assertEqual(result.rows, [
             {"customer": "Katherine", "revenue": 177.0},
             {"customer": "Ada", "revenue": 162.0},
@@ -79,8 +80,8 @@ class SpecExampleTests(unittest.TestCase):
         ])
 
     def test_antijoin_keeps_only_unmatched(self):
-        query = parse_pipeline((SPEC / "q08_left_join_antijoin.pusql").read_text(encoding="utf-8"))
-        result = execute(query, self.tables)
+        stages = parse_pipeline_stages((SPEC / "q08_left_join_antijoin.pusql").read_text(encoding="utf-8"))
+        result = execute_pipeline_stages(stages, self.tables)
         self.assertEqual({row["customer"] for row in result.rows}, {"Alan"})
 
 
