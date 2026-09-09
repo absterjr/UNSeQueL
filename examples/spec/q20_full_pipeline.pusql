@@ -1,0 +1,8 @@
+from orders
+join products on product_id = products.product_id
+derive line_total = quantity * unit_price
+group category (orders = COUNT(*), revenue = SUM(line_total))
+where revenue > 100
+derive avg_order = revenue / orders
+sort -revenue
+take 3

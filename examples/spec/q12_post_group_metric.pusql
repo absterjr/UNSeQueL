@@ -1,0 +1,5 @@
+from orders
+derive line_total = quantity * unit_price
+group customer (orders = COUNT(*), revenue = SUM(line_total))
+derive avg_order = revenue / orders
+sort -avg_order

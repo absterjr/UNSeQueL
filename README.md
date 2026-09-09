@@ -147,8 +147,10 @@ python -m unsequel run examples/pipeline/revenue.pusql --pipeline \
   --data orders=examples/orders.csv
 ```
 
-See [docs/poc-syntax.md](docs/poc-syntax.md) for the frozen grammar, the
-PRQL/LINQ/Malloy prior-art notes, and six hand-translated example queries.
+See [docs/pipeline-spec.md](docs/pipeline-spec.md) for the authoritative v0.2
+grammar, the IR node and DuckDB CTE lowering for every stage, and 20 reference
+queries in [examples/spec/](examples/spec/). [docs/poc-syntax.md](docs/poc-syntax.md)
+keeps the frozen v0.1 history and the PRQL/LINQ/Malloy prior-art notes.
 
 Expressions support:
 

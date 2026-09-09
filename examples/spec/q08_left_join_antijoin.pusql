@@ -1,0 +1,4 @@
+from orders
+left join members on customer = members.customer
+where members.customer IS NULL
+select order_id, customer

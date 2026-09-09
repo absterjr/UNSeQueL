@@ -1,0 +1,4 @@
+from orders
+where country IN ('United Kingdom', 'Netherlands')
+select order_id, customer, country
+sort order_id

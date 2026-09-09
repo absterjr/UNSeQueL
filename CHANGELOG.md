@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Added the pipeline language specification v0.2 (`docs/pipeline-spec.md`):
+  every stage formally defined with its EBNF, IR node, and one-CTE-per-stage
+  DuckDB lowering. Supersedes the frozen v0.1 POC note.
+- Added 20 reference pipeline queries and a four-table sample dataset under
+  `examples/spec/`, covering every v0.2 stage and combination.
+- Added `tests/test_spec_examples.py` pinning parse + execution behaviour for
+  all 20 reference queries.
+
 ## 0.3.0 - 2026-09-07
 
 - Added the pipeline-syntax POC (frozen grammar v0.1 in `docs/poc-syntax.md`).
