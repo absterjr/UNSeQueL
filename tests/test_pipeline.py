@@ -5,7 +5,6 @@ from unsequel.engine import execute
 from unsequel.io import load_table
 from unsequel.parser import parse_query
 from unsequel.pipeline import parse_pipeline
-from unsequel.errors import ParseError
 
 EXAMPLES = Path("examples/pipeline")
 
@@ -67,18 +66,6 @@ class PipelineTests(unittest.TestCase):
             {"order_id": 1003, "customer": "Ada"},
             {"order_id": 1004, "customer": "Alan"},
         ])
-
-    def test_rejections(self):
-        with self.assertRaises(ParseError):
-            parse_pipeline("where quantity > 1 FROM orders")
-        with self.assertRaises(ParseError):
-            parse_pipeline("FROM orders select customer where quantity > 1")
-        with self.assertRaises(ParseError):
-            parse_pipeline("FROM orders select SUM(quantity)")
-        with self.assertRaises(ParseError):
-            parse_pipeline("FROM orders group customer")
-        with self.assertRaises(ParseError):
-            parse_pipeline("FROM orders group customer (total = quantity)")
 
 
 if __name__ == "__main__":

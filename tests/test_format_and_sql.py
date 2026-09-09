@@ -7,7 +7,6 @@ from pathlib import Path
 
 from unsequel.cli import main
 from unsequel.codegen import emit_sql
-from unsequel.engine import execute
 from unsequel.errors import ExecutionError
 from unsequel.format import format_pipeline, is_formatted
 from unsequel.io import load_table
