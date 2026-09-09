@@ -1,0 +1,3 @@
+from orders
+where quantity >= 5
+select order_id, customer, quantity

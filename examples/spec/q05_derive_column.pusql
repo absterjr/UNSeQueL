@@ -1,0 +1,3 @@
+from orders
+derive revenue = quantity * unit_price
+select order_id, customer, revenue

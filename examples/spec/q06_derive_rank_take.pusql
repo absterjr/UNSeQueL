@@ -1,0 +1,5 @@
+from orders
+derive line_total = quantity * unit_price
+select order_id, customer, line_total
+sort -line_total
+take 5

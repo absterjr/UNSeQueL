@@ -1,0 +1,3 @@
+from orders
+join products on product_id = products.product_id
+select order_id, product_name, category, quantity

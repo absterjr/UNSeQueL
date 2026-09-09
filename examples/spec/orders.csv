@@ -1,0 +1,16 @@
+order_id,customer,country,product_id,quantity,unit_price,order_date
+5001,Ada,United Kingdom,P1,10,4.50,2024-01-10
+5002,Ada,United Kingdom,P2,2,24.00,2024-01-14
+5003,Grace,United States,P3,5,12.00,2024-02-02
+5004,Grace,United States,P1,3,4.50,2024-02-09
+5005,Alan,United Kingdom,P4,1,9.00,2024-02-20
+5006,Katherine,United States,P2,4,24.00,2024-03-01
+5007,Katherine,United States,P5,6,7.50,2024-03-05
+5008,Ada,United Kingdom,P3,2,12.00,2024-03-11
+5009,Grace,United States,P4,7,9.00,2024-04-01
+5010,Alan,United Kingdom,P5,3,7.50,2024-04-12
+5011,Katherine,United States,P1,8,4.50,2024-04-15
+5012,Edsger,Netherlands,P2,1,24.00,2024-05-02
+5013,Ada,United Kingdom,P4,5,9.00,2024-05-10
+5014,Grace,United States,P5,2,7.50,2024-05-14
+5015,Alan,United Kingdom,P3,4,12.00,2024-06-01

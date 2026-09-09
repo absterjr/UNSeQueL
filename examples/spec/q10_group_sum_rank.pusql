@@ -1,0 +1,4 @@
+from orders
+derive line_total = quantity * unit_price
+group country (revenue = SUM(line_total), orders = COUNT(*))
+sort -revenue
