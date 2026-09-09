@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Scaffolded the production compiler (`plq/`): TypeScript/Node package with a
+  strict `tsc` setup, vitest runner, an empty `plq` CLI (`--version`, `--help`,
+  usage exit), and a Node 22/24 CI job. Plan Step 1 of the TypeScript stack
+  decision (DuckDB target, recursive descent, one CTE per stage).
+
 ## 0.4.0 - 2026-09-09
 
 Pipeline language, steps 1-9 of the implementation plan.

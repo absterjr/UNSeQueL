@@ -211,6 +211,13 @@ Expressions support:
 See the [language reference](docs/language-reference.md) for the complete
 core syntax and execution model.
 
+## Production compiler (TypeScript)
+
+The executable prototype lives in this Python package. The production
+compiler — TypeScript/Node, DuckDB target, hand-written recursive descent,
+one CTE per stage — is being built to the same plan in
+[plq/](plq/README.md).
+
 ## Design principles
 
 - **Logical order first.** The syntax teaches the difference between row

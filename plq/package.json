@@ -1,0 +1,23 @@
+{
+  "name": "plq",
+  "version": "0.0.1",
+  "description": "PLQ compiler: pipeline query language, compiles to DuckDB SQL one CTE per stage.",
+  "type": "module",
+  "bin": {
+    "plq": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

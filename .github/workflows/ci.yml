@@ -24,3 +24,27 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Build wheel
         run: python -m pip wheel . --no-deps --wheel-dir dist
+
+  compiler:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['22', '24']
+    defaults:
+      run:
+        working-directory: plq
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install dependencies
+        run: npm ci
+      - name: Type-check
+        run: npm run check
+      - name: Run tests
+        run: npm test
+      - name: Build and run the CLI
+        run: npm run build && node dist/main.js --version
