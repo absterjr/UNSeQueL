@@ -9,9 +9,9 @@ implementation plan.
 | 1 — Project setup | (pre-existing: package, tests, CI) | done |
 | 2 — Grammar as a document | [step-02-grammar-spec.md](step-02-grammar-spec.md) | done |
 | 3 — Lexer | (pre-existing: `unsequel/lexer.py`) | done |
-| 4 — Parser and stage-preserving AST | — | next |
-| 5 — Schema-aware semantic analysis | — | |
-| 6 — DuckDB SQL codegen (one CTE per stage) | — | |
+| 4 — Parser and stage-preserving AST | [step-04-stage-ir.md](step-04-stage-ir.md) | done |
+| 5 — Schema-aware semantic analysis | [step-05-semantic-analysis.md](step-05-semantic-analysis.md) | done |
+| 6 — DuckDB SQL codegen (one CTE per stage) | — | next |
 | 7 — Stage-preview CLI | — | |
 | 8 — Raw-SQL escape hatch and formatter | — | |
 | 9 — Dogfood and outside feedback | — | |
