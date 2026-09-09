@@ -11,7 +11,9 @@ from .errors import UnsequelError
 from .engine import execute
 from .io import load_sqlite_tables, load_table
 from .parser import parse_query
-from .pipeline import parse_pipeline
+from .pipeline import lower_to_query, parse_pipeline, parse_pipeline_stages
+from .schema import Schema
+from .semantics import analyze
 
 
 def _data_spec(value: str) -> tuple[str, str]:
@@ -63,17 +65,21 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="parse and execute a query")
     run.add_argument("query", help="query file, or '-' to read from stdin")
     run.add_argument("--pipeline", action="store_true",
-                     help="treat the query as POC pipeline syntax instead of ordered syntax")
+                     help="treat the query as pipeline syntax instead of ordered syntax")
+    run.add_argument("--schema", metavar="PATH",
+                     help="JSON schema file; validate the pipeline against it before running")
     run.add_argument("--data", action="append", default=[], type=_data_spec,
                      metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
     run.add_argument("--sqlite", metavar="PATH",
                      help="SQLite database input; all tables and views become sources")
     run.add_argument("--format", choices=("table", "csv", "json"), default="table")
 
-    check = commands.add_parser("check", help="parse a query without executing it")
+    check = commands.add_parser("check", help="parse (and optionally schema-check) a query")
     check.add_argument("query", help="query file, or '-' to read from stdin")
     check.add_argument("--pipeline", action="store_true",
-                       help="treat the query as POC pipeline syntax instead of ordered syntax")
+                       help="treat the query as pipeline syntax instead of ordered syntax")
+    check.add_argument("--schema", metavar="PATH",
+                       help="JSON schema file; validate the pipeline against it")
     return parser
 
 
@@ -82,9 +88,19 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         query_text = _read_query(args.query)
-        query = parse_pipeline(query_text) if args.pipeline else parse_query(query_text)
+        schema_path = getattr(args, "schema", None)
+        if args.pipeline:
+            stages = parse_pipeline_stages(query_text)
+            if schema_path:
+                analyze(stages, Schema.load(schema_path))
+            query = lower_to_query(stages)
+        else:
+            if schema_path:
+                parser.error("--schema is only supported with --pipeline")
+            query = parse_query(query_text)
         if args.command == "check":
-            print("valid UNSeQueL query")
+            checked = " (schema OK)" if args.pipeline and schema_path else ""
+            print(f"valid UNSeQueL query{checked}")
             return
         if bool(args.data) == bool(args.sqlite):
             parser.error("run requires exactly one of --data or --sqlite")

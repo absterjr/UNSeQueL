@@ -291,13 +291,13 @@ sample dataset (§7); `tests/test_spec_examples.py` asserts this.
 | 19 | `q19_multi_key_group` | from, derive, group(2 keys, 2 aggs), sort(multi) | 11 |
 | 20 | `q20_full_pipeline` | all eight core stages | 3 |
 
-### Known lowering gap (to fix in Step 4)
+### Name resolution across the `group` boundary
 
-If a **row-phase `derive` name is identical to an aggregate name** declared in
-`group`, a later group-phase `where`/`derive` currently inlines the row
-expression instead of the aggregate. The reference queries avoid this by naming
-the row derive `line_total` and the aggregate `revenue`. Step 4 makes
-group-phase name resolution take precedence and adds a test.
+Before `group`, names resolve against row columns and row-phase `derive`
+outputs. After `group`, names resolve against group keys, aggregate names, and
+group-phase `derive` outputs **only** — a row-phase `derive` with the same name
+as an aggregate does not leak through. (Fixed in Step 4;
+`tests/test_pipeline_ir.py::NameCollisionTests` guards it.)
 
 ## 7. Sample dataset
 
@@ -315,3 +315,29 @@ python -m unsequel run examples/spec/q20_full_pipeline.pusql --pipeline \
   --data orders=examples/spec/orders.csv \
   --data products=examples/spec/products.csv
 ```
+
+## 8. Schema validation
+
+A **schema file** (`examples/spec/schema.json`) declares the tables and column
+types a query may read:
+
+```json
+{ "tables": { "orders": { "columns": { "unit_price": "number", ... } } } }
+```
+
+`unsequel check --pipeline --schema <file>` (and `run --schema`) walks the stage
+IR against it *before* touching any data, tracking which columns are alive at
+each stage. It reports, with the offending stage and line:
+
+- an unknown source or joined table,
+- a reference to a column that is not alive at that stage — including a
+  row-level column used after `group`,
+- `SUM` / `AVG` over a non-numeric column.
+
+Type families: `integer/number/float/decimal` → numeric, `string/text/varchar`
+→ text, `bool` → boolean, `date/time/timestamp` → temporal; anything else is
+`unknown` and never raises a type error. Ambiguous bare columns after a join are
+tracked for lineage but not yet an error in v0.2.
+
+The walk also returns **column lineage** — the live column list after every
+stage — which is the basis for a future `--lineage` export.

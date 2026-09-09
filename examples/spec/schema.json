@@ -1,0 +1,38 @@
+{
+  "tables": {
+    "orders": {
+      "columns": {
+        "order_id": "integer",
+        "customer": "string",
+        "country": "string",
+        "product_id": "string",
+        "quantity": "integer",
+        "unit_price": "number",
+        "order_date": "date"
+      }
+    },
+    "customers": {
+      "columns": {
+        "customer": "string",
+        "country": "string",
+        "segment": "string",
+        "signup_date": "date"
+      }
+    },
+    "products": {
+      "columns": {
+        "product_id": "string",
+        "product_name": "string",
+        "category": "string",
+        "list_price": "number"
+      }
+    },
+    "members": {
+      "columns": {
+        "customer": "string",
+        "plan": "string",
+        "joined_date": "date"
+      }
+    }
+  }
+}
