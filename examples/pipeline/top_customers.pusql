@@ -1,8 +1,3 @@
-# Idea type: join + top-N leaderboard (like LINQ join/GroupBy/OrderBy/Take)
-# Hand translation:
-#   SQL: SELECT o.customer, SUM(o.quantity*o.unit_price) AS revenue
-#        FROM orders o JOIN customers c ON o.customer = c.customer
-#        GROUP BY o.customer ORDER BY revenue DESC LIMIT 2
 from orders
 join customers on customer = customers.customer
 group customer (revenue = SUM(quantity * unit_price))

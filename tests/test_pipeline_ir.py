@@ -34,6 +34,8 @@ class IRShapeTests(unittest.TestCase):
             with self.subTest(query=path.stem):
                 stages = parse_pipeline_stages(path.read_text())
                 self.assertIsInstance(stages[0], From)
+                if any(type(s).__name__ == "RawSql" for s in stages):
+                    continue  # sql-hatch pipelines run via execute_pipeline_stages
                 lower_to_query(stages)  # lowering must not raise
 
 
@@ -97,10 +99,15 @@ class StageLocatedErrorTests(unittest.TestCase):
         self.assertEqual((err.index, err.keyword), (2, "from"))
         self.assertIn("only once", str(err))
 
-    def test_reserved_sql_stage(self):
-        err = self._error('from orders\nsql "SELECT 1"')
-        self.assertEqual((err.index, err.keyword), (2, "sql"))
+    def test_window_still_reserved(self):
+        err = self._error("from orders\nwindow w as (partition by country)")
+        self.assertEqual((err.index, err.keyword), (2, "window"))
         self.assertIn("reserved", str(err))
+
+    def test_sql_stage_parses_to_raw_node(self):
+        stages = parse_pipeline_stages('from orders\nsql "SELECT * FROM __input__"')
+        self.assertEqual([type(s).__name__ for s in stages], ["From", "RawSql"])
+        self.assertEqual(stages[1].text, "SELECT * FROM __input__")
 
     def test_unknown_stage(self):
         err = self._error("from orders\nfrobnicate x")

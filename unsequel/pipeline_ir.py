@@ -24,7 +24,7 @@ from .parser import FromSpec, OrderItem, SelectItem, _parse_table_ref, _split_to
 
 _AGGREGATES = {"COUNT", "SUM", "AVG", "MIN", "MAX"}
 _POST_SELECT = {"sort", "take", "skip", "distinct"}
-_RESERVED = {"sql", "window", "right", "full", "cross"}
+_RESERVED = {"window", "right", "full", "cross"}
 
 
 class PipelineError(ParseError):
@@ -354,6 +354,17 @@ def _parse_distinct(raw: _Raw) -> Distinct:
     return Distinct(raw.keyword, raw.line)
 
 
+def _parse_sql(raw: _Raw) -> RawSql:
+    if len(raw.tokens) != 1 or raw.tokens[0].kind != "STRING":
+        raise PipelineError('sql requires one string literal, as in sql "SELECT * FROM __input__"')
+    text = str(raw.tokens[0].value)
+    if not text.strip():
+        raise PipelineError("sql stage text is empty")
+    if ";" in text:
+        raise PipelineError("sql stage must be a single SELECT statement; ';' is not allowed")
+    return RawSql(raw.keyword, raw.line, text)
+
+
 # --------------------------------------------------------------------------- #
 # Driver
 # --------------------------------------------------------------------------- #
@@ -374,13 +385,14 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
 
     for position, raw in enumerate(raws, start=1):
         kw = raw.keyword
+        segment_boundary = False
 
         def fail(message: str) -> PipelineError:
             return PipelineError(message, index=position, keyword=kw, line=raw.line)
 
         if kw in _RESERVED or kw.endswith(" join") and kw != "left join":
-            if kw in {"sql", "window"}:
-                raise fail(f"{kw} is reserved and not implemented in v0.2")
+            if kw == "window":
+                raise fail("window is reserved and not implemented in v0.2")
             raise fail(f"{kw} is not available in the pipeline grammar yet; use ordered syntax")
         if kw != "from" and not stages:
             raise fail("a pipeline must start with 'from'")
@@ -420,6 +432,9 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
                 stages.append(Skip(kw, raw.line, _parse_count(raw)))
             elif kw == "distinct":
                 stages.append(_parse_distinct(raw))
+            elif kw == "sql":
+                stages.append(_parse_sql(raw))
+                segment_boundary = True
             else:
                 raise fail(f"unknown stage '{kw}'")
         except PipelineError as exc:
@@ -430,5 +445,12 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
             raise fail(str(exc)) from None
 
         seen.setdefault(kw, position)
+        if segment_boundary:
+            # A sql stage starts a fresh relation: row/group phase and the
+            # once-per-segment singletons restart after it. `from` stays
+            # pipeline-global; later segments reuse the previous relation.
+            grouped = False
+            projected = False
+            seen = {"from": seen["from"]}
 
     return stages

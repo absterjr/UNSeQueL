@@ -13,5 +13,5 @@ implementation plan.
 | 5 — Schema-aware semantic analysis | [step-05-semantic-analysis.md](step-05-semantic-analysis.md) | done |
 | 6 — DuckDB SQL codegen (one CTE per stage) | [step-06-duckdb-codegen.md](step-06-duckdb-codegen.md) | done |
 | 7 — Stage-preview CLI | [step-07-preview-cli.md](step-07-preview-cli.md) | done |
-| 8 — Raw-SQL escape hatch and formatter | — | next |
-| 9 — Dogfood and outside feedback | — | |
+| 8 — Raw-SQL escape hatch and formatter | [step-08-sql-hatch-and-formatter.md](step-08-sql-hatch-and-formatter.md) | done |
+| 9 — Dogfood and outside feedback | [step-09-dogfood.md](step-09-dogfood.md) | done |

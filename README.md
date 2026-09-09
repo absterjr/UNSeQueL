@@ -168,10 +168,31 @@ python -m unsequel preview examples/spec/q20_full_pipeline.pusql \
 (`pip install "unsequel[duckdb]"`); `check` and `compile` are pure
 dependency-free text operations.
 
-See [docs/pipeline-spec.md](docs/pipeline-spec.md) for the authoritative v0.2
-grammar, the IR node and DuckDB CTE lowering for every stage, and 20 reference
-queries in [examples/spec/](examples/spec/). [docs/poc-syntax.md](docs/poc-syntax.md)
+When the pipeline cannot express something yet (window functions today), splice
+raw SQL through the escape hatch. The previous relation is the table
+`__input__`; on the memory engine it runs via stdlib SQLite, on DuckDB it
+becomes its own CTE:
+
+```bash
+python -m unsequel run examples/spec/q21_sql_hatch.pusql --pipeline \
+  --data orders=examples/spec/orders.csv
+```
+
+Format `.pusql` files into the canonical, idempotent form:
+
+```bash
+python -m unsequel fmt examples/spec/q01_all_orders.pusql
+python -m unsequel fmt --write my_query.pusql     # rewrite in place
+python -m unsequel fmt --check my_query.pusql     # exit 1 if not canonical
+```
+
+See [docs/pipeline-spec.md](docs/pipeline-spec.md) for the authoritative v0.3
+grammar (including the `sql` hatch and formatting rules), the IR node and
+DuckDB CTE lowering for every stage, and 21 reference queries in
+[examples/spec/](examples/spec/). [docs/poc-syntax.md](docs/poc-syntax.md)
 keeps the frozen v0.1 history and the PRQL/LINQ/Malloy prior-art notes.
+Dogfooding results live in [docs/backlog.md](docs/backlog.md); the external
+feedback exercise is [docs/first-task.md](docs/first-task.md).
 
 Expressions support:
 

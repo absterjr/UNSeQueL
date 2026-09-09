@@ -1,0 +1,5 @@
+from orders
+sql "SELECT order_id, customer, quantity, ROW_NUMBER() OVER (PARTITION BY customer ORDER BY quantity DESC, order_id) AS rn FROM __input__"
+where rn = 1
+select order_id, customer, quantity
+sort order_id

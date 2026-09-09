@@ -11,9 +11,10 @@ from .codegen import emit_sql
 from .duckdb_backend import run_sql
 from .engine import execute
 from .errors import UnsequelError
+from .format import format_pipeline, is_formatted
 from .io import load_sqlite_tables, load_table
 from .parser import parse_query
-from .pipeline import lower_to_query, parse_pipeline, parse_pipeline_stages
+from .pipeline import execute_pipeline_stages, parse_pipeline_stages
 from .schema import Schema
 from .semantics import analyze
 
@@ -109,6 +110,12 @@ def build_parser() -> argparse.ArgumentParser:
     preview.add_argument("--data", action="append", default=[], type=_data_spec,
                          metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
     preview.add_argument("--format", choices=("table", "csv", "json"), default="table")
+
+    fmt = commands.add_parser("fmt", help="print a pipeline query in canonical form")
+    fmt.add_argument("query", help="pipeline query file, or '-' to read from stdin")
+    fmt.add_argument("--write", action="store_true", help="rewrite the file in place")
+    fmt.add_argument("--check", action="store_true",
+                     help="exit 1 if the file is not already in canonical form")
     return parser
 
 
@@ -150,6 +157,21 @@ def _cmd_preview(args) -> None:
     _print_result(result, args.format)
 
 
+def _cmd_fmt(args) -> None:
+    text = _read_query(args.query)
+    formatted = format_pipeline(text)
+    if args.check:
+        if is_formatted(text):
+            return
+        raise SystemExit(1)
+    if args.write:
+        if args.query == "-":
+            raise UnsequelError("fmt --write cannot rewrite stdin")
+        Path(args.query).write_text(formatted, encoding="utf-8")
+        return
+    print(formatted, end="")
+
+
 def _cmd_run(args) -> None:
     text = _read_query(args.query)
     if args.engine == "duckdb":
@@ -165,12 +187,11 @@ def _cmd_run(args) -> None:
     else:
         if args.pipeline:
             stages = _pipeline_stages(text, args.schema)
-            query = lower_to_query(stages)
+            result = execute_pipeline_stages(stages, _load_tables(args))
         else:
             if args.schema:
                 raise UnsequelError("--schema is only supported with --pipeline")
-            query = parse_query(text)
-        result = execute(query, _load_tables(args))
+            result = execute(parse_query(text), _load_tables(args))
     _print_result(result, args.format)
 
 
@@ -182,6 +203,7 @@ def main(argv: list[str] | None = None) -> None:
         "check": _cmd_check,
         "compile": _cmd_compile,
         "preview": _cmd_preview,
+        "fmt": _cmd_fmt,
     }
     try:
         handlers[args.command](args)
