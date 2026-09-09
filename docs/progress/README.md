@@ -11,7 +11,7 @@ implementation plan.
 | 3 — Lexer | (pre-existing: `unsequel/lexer.py`) | done |
 | 4 — Parser and stage-preserving AST | [step-04-stage-ir.md](step-04-stage-ir.md) | done |
 | 5 — Schema-aware semantic analysis | [step-05-semantic-analysis.md](step-05-semantic-analysis.md) | done |
-| 6 — DuckDB SQL codegen (one CTE per stage) | — | next |
-| 7 — Stage-preview CLI | — | |
-| 8 — Raw-SQL escape hatch and formatter | — | |
+| 6 — DuckDB SQL codegen (one CTE per stage) | [step-06-duckdb-codegen.md](step-06-duckdb-codegen.md) | done |
+| 7 — Stage-preview CLI | [step-07-preview-cli.md](step-07-preview-cli.md) | done |
+| 8 — Raw-SQL escape hatch and formatter | — | next |
 | 9 — Dogfood and outside feedback | — | |

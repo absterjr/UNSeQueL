@@ -139,13 +139,34 @@ group country (revenue = SUM(total), orders = COUNT(*))
 sort -revenue
 ```
 
-The grammar is frozen as POC v0.1. Run a pipeline query with the `--pipeline`
-flag:
+Run a pipeline query with the `--pipeline` flag:
 
 ```bash
 python -m unsequel run examples/pipeline/revenue.pusql --pipeline \
   --data orders=examples/orders.csv
 ```
+
+With a schema file, the pipeline can be validated, compiled to DuckDB SQL
+(one CTE per stage), and stepped through stage by stage:
+
+```bash
+# validate columns/types before running anything
+python -m unsequel check examples/spec/q20_full_pipeline.pusql --pipeline \
+  --schema examples/spec/schema.json
+
+# see the generated SQL
+python -m unsequel compile examples/spec/q20_full_pipeline.pusql \
+  --schema examples/spec/schema.json
+
+# preview the intermediate result after stage 3
+python -m unsequel preview examples/spec/q20_full_pipeline.pusql \
+  --schema examples/spec/schema.json --stage 3 \
+  --data orders=examples/spec/orders.csv --data products=examples/spec/products.csv
+```
+
+`preview` and `run --engine duckdb` execute SQL and need the `duckdb` extra
+(`pip install "unsequel[duckdb]"`); `check` and `compile` are pure
+dependency-free text operations.
 
 See [docs/pipeline-spec.md](docs/pipeline-spec.md) for the authoritative v0.2
 grammar, the IR node and DuckDB CTE lowering for every stage, and 20 reference
