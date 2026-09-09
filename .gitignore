@@ -12,3 +12,5 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+node_modules/
+*.tsbuildinfo
