@@ -1,0 +1,4 @@
+from orders
+group by country
+aggregate orders = COUNT(*)
+sort -orders

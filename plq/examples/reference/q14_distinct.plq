@@ -1,0 +1,4 @@
+from orders
+select country
+distinct
+sort country

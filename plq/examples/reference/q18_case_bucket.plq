@@ -1,0 +1,4 @@
+from orders
+derive size = CASE WHEN quantity >= 6 THEN 'bulk' WHEN quantity >= 3 THEN 'medium' ELSE 'small' END
+select order_id, quantity, size
+sort -quantity

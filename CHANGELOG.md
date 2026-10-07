@@ -6,6 +6,9 @@
   strict `tsc` setup, vitest runner, an empty `plq` CLI (`--version`, `--help`,
   usage exit), and a Node 22/24 CI job. Plan Step 1 of the TypeScript stack
   decision (DuckDB target, recursive descent, one CTE per stage).
+- `plq` Step 2: frozen language specification v1.0 (`plq/docs/grammar.md`) and
+  the 21 reference queries converted to `.plq` syntax in
+  `plq/examples/reference/`, hand-validated against the grammar.
 
 ## 0.4.0 - 2026-09-09
 

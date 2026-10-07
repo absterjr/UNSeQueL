@@ -1,0 +1,5 @@
+from orders
+select order_id, customer
+sort order_id
+skip 5
+take 5
