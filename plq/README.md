@@ -20,8 +20,15 @@ this package is the compiler being built to the same 9-step plan.
 | Step | Status |
 | --- | --- |
 | 1 — project scaffold, empty CLI + tests | done |
-| 2 — grammar document | next |
-| 3-9 | pending |
+| 2 — grammar document (`docs/grammar.md`, v1.0 frozen) | done |
+| 3–9 | pending |
+
+Step 2 ships the frozen grammar and the validated reference corpus:
+
+- [`docs/grammar.md`](docs/grammar.md) — every stage's EBNF, IR shape, and
+  DuckDB lowering, plus the hand-parse validation of all 21 queries
+- [`examples/reference/`](examples/reference/) — the 21 reference programs in
+  `.plq` syntax, the behavioral baseline for the lexer and parser
 
 ## Development
 

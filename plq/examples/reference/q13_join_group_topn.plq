@@ -1,0 +1,7 @@
+from orders
+join products on product_id = products.product_id
+derive line_total = quantity * unit_price
+group by category
+aggregate revenue = SUM(line_total)
+sort -revenue
+take 2

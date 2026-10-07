@@ -1,0 +1,6 @@
+from orders
+derive line_total = quantity * unit_price
+group by customer
+aggregate revenue = SUM(line_total)
+having revenue > 100
+sort -revenue
