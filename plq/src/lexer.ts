@@ -1,19 +1,24 @@
 /**
- * PLQ lexer (plan step 3).
+ * PLQ lexer (plan step 3; aligned to grammar v1.1 in audit batch B2).
  *
  * Turns raw `.plq` text into a flat token stream for the recursive-descent
  * parser (step 4). Follows docs/grammar.md §2:
  *
- * - stage and expression keywords are case-insensitive, canonical lowercase
+ * - stage and expression keywords are case-insensitive; tokens carry the
+ *   canonical lowercase value
  * - identifiers: [A-Za-z_][A-Za-z0-9_]* (qualified names remain two
  *   identifiers separated by a `.` token; the parser assembles them)
- * - numbers: 123 or 12.5; no leading sign, no leading dot
+ * - numbers: 007 or 12.5; no leading sign, no leading/trailing dot
  * - strings: single- or double-quoted, single line, escapes \\ \' \" \n,
  *   doubled quotes also escape
  * - comments: `#` or `--` to end of line, dropped
  * - newlines and `|` are emitted as tokens; the parser treats them as stage
- *   separators at parenthesis depth zero
+ *   separators at parenthesis depth zero and rejects other newlines
  */
+
+import { LexError } from "./errors.js";
+
+export { LexError };
 
 export type TokenType =
   | "keyword"
@@ -29,20 +34,14 @@ export interface Token {
   type: TokenType;
   /** Canonical lowercase for keywords; unescaped content for strings. */
   value: string;
+  /** 1-based start line. */
   line: number;
+  /** 1-based start column. */
   column: number;
-}
-
-export class LexError extends Error {
-  readonly line: number;
-  readonly column: number;
-
-  constructor(message: string, line: number, column: number) {
-    super(`${message} at line ${line}, column ${column}`);
-    this.name = "LexError";
-    this.line = line;
-    this.column = column;
-  }
+  /** End position, exclusive: one past the last character. For `newline`
+   *  tokens this is the start of the next line. Equals the start for `eof`. */
+  endLine: number;
+  endColumn: number;
 }
 
 export const KEYWORDS: ReadonlySet<string> = new Set([
@@ -80,14 +79,11 @@ export function tokenize(source: string): Token[] {
       index += 1;
     }
   };
-  const newline = (): void => {
-    tokens.push({ type: "newline", value: "\n", line, column });
-    index += 1;
-    line += 1;
-    column = 1;
-  };
-  const push = (type: TokenType, value: string, startLine: number, startColumn: number): void => {
-    tokens.push({ type, value, line: startLine, column: startColumn });
+  const emit = (type: TokenType, value: string, startLine: number, startColumn: number): void => {
+    tokens.push({
+      type, value, line: startLine, column: startColumn,
+      endLine: line, endColumn: column,
+    });
   };
 
   while (index < source.length) {
@@ -98,8 +94,16 @@ export function tokenize(source: string): Token[] {
       continue;
     }
     if (current === "\r" || current === "\n") {
+      const startLine = line;
+      const startColumn = column;
       if (current === "\r" && ch(1) === "\n") index += 1;
-      newline();
+      index += 1;
+      line += 1;
+      column = 1;
+      tokens.push({
+        type: "newline", value: "\n", line: startLine, column: startColumn,
+        endLine: line, endColumn: column,
+      });
       continue;
     }
     if (current === "#" || (current === "-" && ch(1) === "-")) {
@@ -110,9 +114,9 @@ export function tokenize(source: string): Token[] {
       const startLine = line;
       const startColumn = column;
       const result = readString(source, index, line, column);
-      push("string", result.value, startLine, startColumn);
       column += result.end - index;
       index = result.end;
+      emit("string", result.value, startLine, startColumn);
       continue;
     }
     if (isDigit(current)) {
@@ -132,7 +136,7 @@ export function tokenize(source: string): Token[] {
           advance();
         }
       }
-      push("number", raw, startLine, startColumn);
+      emit("number", raw, startLine, startColumn);
       continue;
     }
     if (isIdentifierStart(current)) {
@@ -146,33 +150,41 @@ export function tokenize(source: string): Token[] {
       }
       const lowered = raw.toLowerCase();
       if (KEYWORDS.has(lowered)) {
-        push("keyword", lowered, startLine, startColumn);
+        emit("keyword", lowered, startLine, startColumn);
       } else {
-        push("identifier", raw, startLine, startColumn);
+        emit("identifier", raw, startLine, startColumn);
       }
       continue;
     }
 
     const two = source.slice(index, index + 2);
     if ((TWO_CHAR_OPERATORS as readonly string[]).includes(two)) {
-      push("operator", two, line, column);
+      const startLine = line;
+      const startColumn = column;
       advance(2);
+      emit("operator", two, startLine, startColumn);
       continue;
     }
     if (SINGLE_CHAR_OPERATORS.has(current)) {
-      push("operator", current, line, column);
+      const startLine = line;
+      const startColumn = column;
       advance();
+      emit("operator", current, startLine, startColumn);
       continue;
     }
     if (PUNCTUATION.has(current)) {
-      push("punctuation", current, line, column);
+      const startLine = line;
+      const startColumn = column;
       advance();
+      emit("punctuation", current, startLine, startColumn);
       continue;
     }
     throw new LexError(`unexpected character ${JSON.stringify(current)}`, line, column);
   }
 
-  tokens.push({ type: "eof", value: "", line, column });
+  tokens.push({
+    type: "eof", value: "", line, column, endLine: line, endColumn: column,
+  });
   return tokens;
 }
 
@@ -203,7 +215,10 @@ function readString(
       throw new LexError("unterminated string (strings are single-line)", line, column);
     }
     if (current === "\\") {
-      const escaped = source[i + 1] ?? "";
+      const escaped = source[i + 1];
+      if (escaped === undefined) {
+        throw new LexError("dangling backslash at end of input", line, column + (i - start));
+      }
       const replacement = ESCAPES[escaped];
       if (replacement === undefined) {
         throw new LexError(`unknown escape sequence \\${escaped}`, line, column + (i - start));

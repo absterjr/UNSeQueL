@@ -18,6 +18,11 @@
   mandatory `aggregate`, completed window EBNF, `select`/`not` binding rules,
   single comparison tail, aggregate naming/DISTINCT rules, the complete
   reserved-word table, number and separator semantics, and alias defaults.
+- `plq` lexer alignment (audit batch B2): tokens carry exclusive end positions
+  (spans); `LexError` extends the shared `PlqError` base
+  (`plq/src/errors.ts`); dangling-backslash input gets an explicit error; 11
+  edge tests cover lone CR, tabs, number forms, `a--b` comments,
+  reserved-word collisions, and function-name identifiers.
 - Prototype refinement (audit batch A1–A4): derive-only pipelines now keep
   source columns and append derived ones; the engine supports `SELECT *, expr`;
   ordering rules are enforced (join after group, nothing row-changing after the

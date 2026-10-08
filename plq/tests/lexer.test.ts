@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LexError, tokenize, type Token } from "../src/lexer.js";
+import { PlqError } from "../src/errors.js";
+import { KEYWORDS, LexError, tokenize, type Token } from "../src/lexer.js";
 
 /**
  * Step 3: the lexer.
@@ -187,5 +188,101 @@ describe("lexer: errors", () => {
       expect(lexError.column).toBe(14);
       expect(lexError.message).toContain("unknown escape sequence \\q");
     }
+  });
+});
+
+describe("lexer: spans", () => {
+  it("records exclusive end positions", () => {
+    const tokens = tokenize("from orders\nselect 12.5");
+    expect(tokens[0]).toMatchObject({ line: 1, column: 1, endLine: 1, endColumn: 5 });
+    expect(tokens[1]).toMatchObject({ line: 1, column: 6, endLine: 1, endColumn: 12 });
+    expect(tokens[2]).toMatchObject({
+      type: "newline", line: 1, column: 12, endLine: 2, endColumn: 1,
+    });
+    const number = tokens.find((token) => token.type === "number");
+    expect(number).toMatchObject({ value: "12.5", line: 2, column: 8, endColumn: 12 });
+    const eof = tokens.at(-1);
+    expect(eof).toMatchObject({ type: "eof", line: 2, column: 12, endLine: 2, endColumn: 12 });
+  });
+
+  it("spans strings including their quotes", () => {
+    const tokens = tokenize("filter a = 'xy'");
+    const string = tokens.find((token) => token.type === "string");
+    expect(string).toMatchObject({ value: "xy", column: 12, endColumn: 16 });
+  });
+});
+
+describe("lexer: lexical edge cases", () => {
+  it("handles a lone CR as a line break", () => {
+    const tokens = tokenize("from orders\rtake 1");
+    const take = tokens.find((token) => token.value === "take");
+    expect(take).toMatchObject({ line: 2, column: 1 });
+  });
+
+  it("counts tabs as one column and rejects them inside strings", () => {
+    const tokens = tokenize("from\torders");
+    expect(tokens[1]).toMatchObject({ type: "identifier", value: "orders", column: 6 });
+    try {
+      tokenize("filter a = 'x\\ty'");
+      expect.unreachable("expected LexError");
+    } catch (error) {
+      expect((error as LexError).message).toContain("unknown escape sequence \\t");
+    }
+  });
+
+  it("tokenizes number edge forms for the parser to judge", () => {
+    expect(tokenize("take 007").find((token) => token.type === "number")?.value).toBe("007");
+    const trailing = tokenize("filter a = 12. - 1");
+    expect(trailing.map((token) => token.value)).toEqual([
+      "filter", "a", "=", "12", ".", "-", "1", "",
+    ]);
+    const chained = tokenize("filter a = 1.2.3");
+    expect(chained
+      .filter((token) => token.type === "number" || token.type === "punctuation")
+      .map((token) => token.value)).toEqual(["1.2", ".", "3"]);
+  });
+
+  it("treats double dash as a comment even next to subtraction", () => {
+    expect(tokenize("filter a--b").map((token) => token.value))
+      .toEqual(["filter", "a", ""]);
+    expect(tokenize("filter a - -b").map((token) => token.value))
+      .toEqual(["filter", "a", "-", "-", "b", ""]);
+  });
+
+  it("keeps reserved words unusable as identifiers", () => {
+    expect(tokenize("filter order = 1")[1]).toMatchObject({ type: "keyword", value: "order" });
+  });
+
+  it("leaves function names and limit/offset as identifiers", () => {
+    for (const word of ["count", "RANK", "limit", "offset", "row_number"]) {
+      expect(tokenize(`select ${word}`)[1], word)
+        .toMatchObject({ type: "identifier", value: word });
+    }
+  });
+
+  it("reports a dangling backslash at end of input", () => {
+    try {
+      tokenize("filter a = 'x\\");
+      expect.unreachable("expected LexError");
+    } catch (error) {
+      expect((error as LexError).message).toContain("dangling backslash");
+    }
+  });
+
+  it("LexError is a PlqError", () => {
+    expect(new LexError("boom", 1, 1)).toBeInstanceOf(PlqError);
+  });
+});
+
+describe("lexer: keyword contract", () => {
+  it("matches the reserved word table from grammar §2.1", () => {
+    const specWords = [
+      "from", "join", "left", "filter", "derive", "group", "by", "aggregate",
+      "having", "window", "select", "sort", "skip", "take", "distinct", "sql",
+      "on", "as", "over", "partition", "order", "asc", "desc",
+      "and", "or", "not", "in", "like", "between", "is", "null",
+      "case", "when", "then", "else", "end", "cast", "true", "false",
+    ];
+    expect([...KEYWORDS].sort()).toEqual([...specWords].sort());
   });
 });
