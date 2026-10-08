@@ -9,6 +9,10 @@
 - `plq` Step 2: frozen language specification v1.0 (`plq/docs/grammar.md`) and
   the 21 reference queries converted to `.plq` syntax in
   `plq/examples/reference/`, hand-validated against the grammar.
+- `plq` Step 3: the lexer (`plq/src/lexer.ts`) — case-insensitive keywords,
+  single-line strings with escapes, `#`/`--` comments, CRLF-safe line/column
+  tracking, and token-level errors. All 21 reference queries tokenize; 17
+  lexer tests including five malformed-input cases.
 
 ## 0.4.0 - 2026-09-09
 
