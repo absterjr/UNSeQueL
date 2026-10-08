@@ -20,7 +20,7 @@ this package is the compiler being built to the same 9-step plan.
 | Step | Status |
 | --- | --- |
 | 1 — project scaffold, empty CLI + tests | done |
-| 2 — grammar document (`docs/grammar.md`, v1.0 frozen) | done |
+| 2 — grammar document (`docs/grammar.md`, v1.1 frozen) | done |
 | 3 — lexer (`src/lexer.ts`) | done |
 | 4–9 | pending |
 

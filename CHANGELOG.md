@@ -13,6 +13,11 @@
   single-line strings with escapes, `#`/`--` comments, CRLF-safe line/column
   tracking, and token-level errors. All 21 reference queries tokenize; 17
   lexer tests including five malformed-input cases.
+- `plq` grammar v1.1 (audit batch B1): lowering-unit contract for
+  `group by` + `aggregate` (one CTE per unit; preview numbering defined),
+  mandatory `aggregate`, completed window EBNF, `select`/`not` binding rules,
+  single comparison tail, aggregate naming/DISTINCT rules, the complete
+  reserved-word table, number and separator semantics, and alias defaults.
 - Prototype refinement (audit batch A1–A4): derive-only pipelines now keep
   source columns and append derived ones; the engine supports `SELECT *, expr`;
   ordering rules are enforced (join after group, nothing row-changing after the
