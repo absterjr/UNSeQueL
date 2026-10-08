@@ -1,0 +1,3 @@
+# coverage: named select expressions, arithmetic and concatenation in select
+from orders
+select order_id, total = quantity * unit_price, doubled = quantity + quantity, mod3 = quantity % 3, label = customer || '!'

@@ -18,6 +18,12 @@
   mandatory `aggregate`, completed window EBNF, `select`/`not` binding rules,
   single comparison tail, aggregate naming/DISTINCT rules, the complete
   reserved-word table, number and separator semantics, and alias defaults.
+- `plq` corpus and hygiene (audit batch B4–B5): `examples/coverage/` adds 13
+  parser fixtures for the grammar features the reference set misses (window,
+  aliases, named group keys, DISTINCT aggregates, `select *`, NOT variants,
+  CAST, scalar functions, pipes, comments); `package.json` `bin` now points at
+  `dist/main.js`; `npm run check` type-checks tests via `tsconfig.test.json`;
+  a test guards `VERSION`/`package.json` drift; engines pinned to Node ≥ 22.
 - `plq` contracts (audit batch B3): `src/ast.ts` defines the stage and
   expression node types with source spans, plus the grammar-stage → CTE
   lowering-unit map from grammar §1.1; `src/errors.ts` gains `ParseError` and

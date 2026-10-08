@@ -1,0 +1,7 @@
+# coverage: window stage, partition by / order by, COUNT(*) OVER, repeatable windows
+from orders
+window rn = ROW_NUMBER() over (partition by customer order by quantity desc)
+window customer_total = SUM(quantity) over (partition by customer)
+window customer_count = COUNT(*) over (partition by customer)
+select order_id, rn, customer_total, customer_count
+sort order_id

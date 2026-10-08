@@ -1,0 +1,4 @@
+# coverage: NOT IN / NOT BETWEEN / NOT LIKE / IS NOT NULL / prefix NOT
+from orders
+filter customer NOT IN ('Ada', 'Grace') AND quantity NOT BETWEEN 1 AND 2
+filter customer NOT LIKE 'A%' AND customer IS NOT NULL AND NOT quantity = 1

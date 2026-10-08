@@ -1,0 +1,4 @@
+# coverage: true/false/null literals, CAST, real number literals
+from orders
+filter shipped = TRUE OR shipped = FALSE OR shipped IS NULL
+select order_id, size = CAST(quantity AS TEXT), rate = 12.5

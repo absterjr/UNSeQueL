@@ -4,16 +4,20 @@
   "description": "PLQ compiler: pipeline query language, compiles to DuckDB SQL one CTE per stage.",
   "type": "module",
   "bin": {
-    "plq": "./dist/cli.js"
+    "plq": "./dist/main.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
