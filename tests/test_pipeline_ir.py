@@ -109,6 +109,16 @@ class StageLocatedErrorTests(unittest.TestCase):
         self.assertEqual([type(s).__name__ for s in stages], ["From", "RawSql"])
         self.assertEqual(stages[1].text, "SELECT * FROM __input__")
 
+    def test_subquery_sources_are_rejected(self):
+        err = self._error("from (from orders select country) as x")
+        self.assertEqual((err.index, err.keyword), (1, "from"))
+        self.assertIn("subquery", str(err))
+        err = self._error(
+            "from orders\njoin (from members select customer) as m on customer = m.customer"
+        )
+        self.assertEqual((err.index, err.keyword), (2, "join"))
+        self.assertIn("subquery", str(err))
+
     def test_unknown_stage(self):
         err = self._error("from orders\nfrobnicate x")
         self.assertEqual(err.index, 2)

@@ -23,6 +23,13 @@
   (`plq/src/errors.ts`); dangling-backslash input gets an explicit error; 11
   edge tests cover lone CR, tabs, number forms, `a--b` comments,
   reserved-word collisions, and function-name identifiers.
+- Prototype refinement (audit batch A5–A9): pipeline grammar rejects subquery
+  sources with a directed message; the `sql` hatch requires a `SELECT`/`WITH`
+  opening and substitutes `__input__` only outside string literals; codegen and
+  the memory engine share one column-naming rule and codegen quotes reserved
+  identifiers (`AS "case"`); schema analysis resolves qualified names against
+  the table that owns them; doc drift swept (README status/roadmap, spec
+  wording, backlog item).
 - Prototype refinement (audit batch A1–A4): derive-only pipelines now keep
   source columns and append derived ones; the engine supports `SELECT *, expr`;
   ordering rules are enforced (join after group, nothing row-changing after the

@@ -143,6 +143,15 @@ class SqlStageMemoryTests(unittest.TestCase):
         with self.assertRaises(ExecutionError):
             execute_pipeline_stages(stages, self.tables)
 
+    def test_sql_must_be_a_query(self):
+        with self.assertRaises(PipelineError) as ctx:
+            parse_pipeline_stages('from orders\nsql "DROP TABLE __input__"')
+        self.assertIn("SELECT or WITH", str(ctx.exception))
+        stages = parse_pipeline_stages(
+            'from orders\nsql "WITH x AS (SELECT 1 AS a) SELECT a FROM x"'
+        )
+        self.assertEqual(stages[1].text, "WITH x AS (SELECT 1 AS a) SELECT a FROM x")
+
     def test_parse_errors_point_at_the_sql_stage(self):
         with self.assertRaises(PipelineError) as ctx:
             parse_pipeline_stages("from orders\nsql SELECT")
@@ -173,6 +182,24 @@ class SqlStageCodegenTests(unittest.TestCase):
         at_raw = emit_sql(stages, SCHEMA, stop_at=2)
         self.assertIn("ROW_NUMBER() OVER", at_raw)
         self.assertTrue(at_raw.rstrip().endswith("SELECT * FROM stage_2;"))
+
+    def test_input_placeholder_inside_strings_is_preserved(self):
+        stages = parse_pipeline_stages(
+            "from orders\n"
+            'sql "SELECT \'__input__\' AS tag, order_id FROM __input__"'
+        )
+        sql = emit_sql(stages, SCHEMA)
+        self.assertIn("'__input__' AS tag", sql)
+        self.assertIn("FROM stage_1", sql)
+
+    def test_unaliased_computed_select_names_match_memory(self):
+        stages = parse_pipeline_stages(
+            "from orders\nselect CASE WHEN quantity > 1 THEN 'a' ELSE 'b' END"
+        )
+        memory = execute_pipeline_stages(stages, load_sample())
+        self.assertEqual(memory.columns, ["case"])
+        sql = emit_sql(stages, SCHEMA)
+        self.assertIn('AS "case"', sql)
 
     def test_multi_line_raw_sql_stays_indented(self):
         stages = parse_pipeline_stages(

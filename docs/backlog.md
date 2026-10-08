@@ -21,8 +21,9 @@ without the escape hatch.
 6. Set operations as stages (`union`, `intersect`, `except`).
 7. Preserve comments in `unsequel fmt` (today they are dropped).
 8. Multi-line `sql """..."""` strings for longer escape hatches.
-9. Hatch guardrails: reject raw SQL that references `stage_N` CTEs directly or
-   contains more than one statement.
+9. Hatch guardrails: reject raw SQL that references `stage_N` CTEs directly
+   (multi-statement text and non-SELECT openings are already rejected at parse
+   time; `__input__` substitution already skips string literals).
 
 ## P2 — execution and tooling
 

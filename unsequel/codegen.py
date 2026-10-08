@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 
 from .expressions import (Between, Binary, Call, Case, Cast, Expr, Identifier, InList,
-                          Literal, Unary, Wildcard)
+                          Literal, Unary, Wildcard, expression_name)
 from .pipeline_ir import (Derive, Distinct, From, Group, Join, PipelineError, RawSql,
                           Select, Skip, Sort, Stage, Take, Where)
 from .schema import Schema
@@ -24,13 +24,30 @@ _SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _INPUT_NAME = re.compile(r"\b__input__\b")
 _TARGET = "duckdb"
 
+# DuckDB reserved words: identifiers that must be quoted when emitted.
+_SQL_KEYWORDS = {
+    "all", "and", "anti", "any", "array", "as", "asc", "between", "both", "by",
+    "case", "cast", "check", "column", "constraint", "create", "cross",
+    "current", "default", "delete", "desc", "distinct", "do", "drop", "else",
+    "end", "except", "exists", "false", "fetch", "filter", "for", "foreign",
+    "from", "full", "function", "grant", "group", "having", "in", "inner",
+    "insert", "intersect", "into", "is", "join", "lateral", "left", "like",
+    "limit", "natural", "not", "null", "offset", "on", "or", "order", "outer",
+    "over", "partition", "primary", "qualify", "range", "right", "row",
+    "rows", "select", "set", "some", "table", "then", "to", "true", "trailing",
+    "union", "unique", "update", "using", "values", "when", "where", "window",
+    "with",
+}
+
 
 class CodegenError(PipelineError):
     """The pipeline cannot be lowered to SQL."""
 
 
 def _ident(name: str) -> str:
-    return name if _SAFE_IDENT.match(name) else '"' + name.replace('"', '""') + '"'
+    if _SAFE_IDENT.match(name) and name.lower() not in _SQL_KEYWORDS:
+        return name
+    return '"' + name.replace('"', '""') + '"'
 
 
 def _literal(value: object) -> str:
@@ -192,7 +209,7 @@ def _stage_sql(stage: Stage, prev_cte: str, cols: _Cols, live: list[str],
         rendered = []
         names = []
         for item in stage.items:
-            name = item.alias or _default_name(item.expression)
+            name = item.alias or expression_name(item.expression)
             rendered.append(_aliased(_render(item.expression, cols), name))
             names.append(name)
         return f"SELECT {', '.join(rendered)} FROM {prev_cte}", cols.flat(names), names
@@ -217,14 +234,6 @@ def _stage_sql(stage: Stage, prev_cte: str, cols: _Cols, live: list[str],
 
 def _aliased(rendered: str, name: str) -> str:
     return rendered if rendered == _ident(name) else f"{rendered} AS {_ident(name)}"
-
-
-def _default_name(expr: Expr) -> str:
-    if isinstance(expr, Identifier):
-        return expr.name.split(".")[-1]
-    if isinstance(expr, Call):
-        return expr.name.lower()
-    return "expr"
 
 
 def emit_sql(stages: list[Stage], schema: Schema, *, stop_at: int | None = None,
@@ -259,9 +268,45 @@ def emit_sql(stages: list[Stage], schema: Schema, *, stop_at: int | None = None,
     return f"WITH {body}\nSELECT * FROM stage_{limit};"
 
 
+def _substitute_input(text: str, replacement: str) -> str:
+    """Replace bare __input__ words with the previous CTE name, skipping strings."""
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        current = text[i]
+        if current in ("'", '"'):
+            quote = current
+            out.append(current)
+            i += 1
+            while i < len(text):
+                char = text[i]
+                out.append(char)
+                if char == "\\" and i + 1 < len(text):
+                    out.append(text[i + 1])
+                    i += 2
+                    continue
+                if char == quote:
+                    if i + 1 < len(text) and text[i + 1] == quote:
+                        out.append(quote)
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            continue
+        match = _INPUT_NAME.match(text, i)
+        if match:
+            out.append(replacement)
+            i = match.end()
+            continue
+        out.append(current)
+        i += 1
+    return "".join(out)
+
+
 def _raw_sql_stage(stage: RawSql, prev_cte: str, position: int) -> tuple[str, _Cols, list[str]]:
     """A sql stage becomes an opaque CTE; __input__ names the previous stage."""
-    text = _INPUT_NAME.sub(prev_cte, stage.text)
+    text = _substitute_input(stage.text, prev_cte)
     indented = "\n".join(f"  {line}" for line in text.splitlines())
     # Columns after a raw stage are the user's responsibility: identifiers
     # render literally instead of being resolved from tracked lineage.

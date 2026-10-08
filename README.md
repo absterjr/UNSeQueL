@@ -32,7 +32,7 @@ pipeline visible and learnable.
 
 ## Status
 
-UNSeQueL 0.2 is a complete query-language core. It includes a real lexer,
+UNSeQueL 0.4 is a complete query-language core. It includes a real lexer,
 ordered grammar, semantic stage checks, an in-memory relational executor, CTEs,
 nested sources, set operations, four join types plus cross joins, and a SQLite
 input adapter. The implementation is deliberately dependency-free so the
@@ -127,10 +127,11 @@ EXCEPT [ALL] query
 `FROM` is required. The other stages are optional, but they must appear in
 the order above. Multiple `JOIN` clauses are allowed directly after `FROM`.
 
-## Pipeline syntax POC
+## Pipeline syntax
 
-A second, experimental surface is being evaluated: one transform per line,
-PRQL-style, lowered onto the same engine.
+The pipeline surface — one transform per line, PRQL-style, lowered onto the
+same engine and specified in [docs/pipeline-spec.md](docs/pipeline-spec.md)
+(v0.3.1).
 
 ```text
 from orders
@@ -230,15 +231,16 @@ one CTE per stage — is being built to the same plan in
 
 ## Boundaries and roadmap
 
-The 0.2 core is a complete read/query language, not a SQL clone. It does not
+The core is a complete read/query language, not a SQL clone. It does not
 yet include table-changing statements (`CREATE`, `INSERT`, `UPDATE`, `DELETE`),
 recursive CTEs, scalar subqueries inside expressions, user-defined functions,
 or a streaming/native query planner. Those are separate language and storage
 designs, not hidden partial features.
 
 Planned next steps are transactional storage adapters, recursive queries,
-streaming execution, better source highlights, a formatter, and an interactive
-learning mode that shows each intermediate relation.
+streaming execution, better source highlights, native window syntax, and an
+interactive learning mode; the prioritised list is
+[docs/backlog.md](docs/backlog.md).
 
 ## Contributing
 

@@ -79,6 +79,14 @@ class InvalidQueryTests(unittest.TestCase):
         self.assertEqual((err.index, err.keyword), (2, "join"))
         self.assertIn("widget_id", str(err))
 
+    def test_qualified_column_must_belong_to_its_table(self):
+        err = self._error(
+            "from orders\n"
+            "join members on customer = members.customer AND orders.plan = members.plan"
+        )
+        self.assertEqual((err.index, err.keyword), (2, "join"))
+        self.assertIn("orders.plan", str(err))
+
     def test_derived_column_is_usable_downstream(self):
         # no error: a row derive feeds a later sort
         analyze(stages(

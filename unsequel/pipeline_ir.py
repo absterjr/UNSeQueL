@@ -254,10 +254,18 @@ def _parse_aggregate(part: list[Token]) -> tuple[str, Call]:
     return name, expr
 
 
+def _reject_subquery(source: FromSpec, what: str) -> FromSpec:
+    if source.subquery is not None:
+        raise PipelineError(
+            f"{what} cannot be a subquery; the pipeline grammar reads tables "
+            "(use the ordered syntax for nested sources)")
+    return source
+
+
 def _parse_from(raw: _Raw) -> From:
     if not raw.tokens:
-        raise PipelineError("from requires a table name or subquery")
-    return From(raw.keyword, raw.line, _parse_table_ref(raw.tokens))
+        raise PipelineError("from requires a table name")
+    return From(raw.keyword, raw.line, _reject_subquery(_parse_table_ref(raw.tokens), "from"))
 
 
 def _parse_join(raw: _Raw) -> Join:
@@ -276,7 +284,7 @@ def _parse_join(raw: _Raw) -> Join:
         raise PipelineError("join requires an ON condition")
     if on_index == 0:
         raise PipelineError("join requires a table before ON")
-    source = _parse_table_ref(raw.tokens[:on_index])
+    source = _reject_subquery(_parse_table_ref(raw.tokens[:on_index]), "join")
     on = parse_expression_tokens(raw.tokens[on_index + 1:])
     if contains_aggregate(on):
         raise PipelineError("join conditions cannot contain aggregate functions")
@@ -386,6 +394,9 @@ def _parse_sql(raw: _Raw) -> RawSql:
         raise PipelineError("sql stage text is empty")
     if ";" in text:
         raise PipelineError("sql stage must be a single SELECT statement; ';' is not allowed")
+    first = text.strip().split(None, 1)[0].upper()
+    if first not in {"SELECT", "WITH"}:
+        raise PipelineError('sql stage must be a query; start it with SELECT or WITH')
     return RawSql(raw.keyword, raw.line, text)
 
 
