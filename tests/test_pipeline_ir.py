@@ -114,5 +114,103 @@ class StageLocatedErrorTests(unittest.TestCase):
         self.assertEqual(err.index, 2)
 
 
+class OrderingRuleTests(unittest.TestCase):
+    def _error(self, text: str) -> PipelineError:
+        with self.assertRaises(PipelineError) as ctx:
+            parse_pipeline_stages(text)
+        return ctx.exception
+
+    def test_join_after_group_is_rejected(self):
+        err = self._error(
+            "from orders\ngroup country (n = COUNT(*))\njoin members on a = members.customer"
+        )
+        self.assertEqual((err.index, err.keyword, err.line), (3, "join", 3))
+        self.assertIn("after group", str(err))
+
+    def test_stage_after_tail_is_rejected(self):
+        for text, keyword in [
+            ("from orders\ntake 2\nwhere order_id > 1", "where"),
+            ("from orders\nsort order_id\nderive x = quantity", "derive"),
+            ("from orders\nskip 2\nselect order_id", "select"),
+            ("from orders\nselect country\nsort country\ndistinct", "distinct"),
+        ]:
+            with self.subTest(keyword=keyword):
+                err = self._error(text)
+                self.assertEqual(err.keyword, keyword)
+                self.assertIn("after sort/skip/take", str(err))
+
+    def test_second_sort_is_rejected(self):
+        err = self._error("from orders\nsort order_id\ntake 2\nsort -order_id")
+        self.assertEqual(err.keyword, "sort")
+        self.assertIn("only once", str(err))
+
+    def test_sort_after_skip_is_rejected(self):
+        err = self._error("from orders\nskip 2\nsort order_id")
+        self.assertIn("before skip/take", str(err))
+
+    def test_skip_after_take_is_rejected(self):
+        err = self._error("from orders\ntake 2\nskip 1")
+        self.assertIn("before take", str(err))
+
+
+class AggregatePlacementTests(unittest.TestCase):
+    def _error(self, text: str) -> PipelineError:
+        with self.assertRaises(PipelineError) as ctx:
+            parse_pipeline_stages(text)
+        return ctx.exception
+
+    def test_derive_cannot_contain_aggregates(self):
+        err = self._error("from orders\nderive t = SUM(quantity)")
+        self.assertEqual(err.keyword, "derive")
+        self.assertIn("aggregate", str(err))
+
+    def test_where_cannot_contain_aggregates(self):
+        err = self._error("from orders\nwhere SUM(quantity) > 1")
+        self.assertEqual(err.keyword, "where")
+
+    def test_join_condition_cannot_contain_aggregates(self):
+        err = self._error(
+            "from orders\n"
+            "join members on customer = members.customer AND SUM(quantity) > 1"
+        )
+        self.assertEqual(err.keyword, "join")
+
+    def test_sort_cannot_contain_aggregates(self):
+        err = self._error("from orders\ngroup country (n = COUNT(*))\nsort SUM(quantity)")
+        self.assertEqual(err.keyword, "sort")
+
+    def test_nested_aggregates_are_rejected(self):
+        err = self._error("from orders\ngroup country (n = SUM(SUM(quantity)))")
+        self.assertIn("cannot contain aggregate", str(err))
+
+    def test_wildcard_aggregates_limited_to_count(self):
+        err = self._error("from orders\ngroup country (t = SUM(*))")
+        self.assertIn("only COUNT accepts", str(err))
+
+    def test_count_distinct_star_is_rejected(self):
+        err = self._error("from orders\ngroup country (n = COUNT(DISTINCT *))")
+        self.assertIn("COUNT(DISTINCT *)", str(err))
+
+
+class DeriveDefaultProjectionTests(unittest.TestCase):
+    def setUp(self):
+        self.orders = load_table("orders", SPEC / "orders.csv")
+
+    def test_derive_without_select_keeps_source_columns(self):
+        stages = parse_pipeline_stages(
+            "from orders\nderive line_total = quantity * unit_price\ntake 2"
+        )
+        result = execute(lower_to_query(stages), {"orders": self.orders})
+        self.assertEqual(result.columns, [*self.orders.columns, "line_total"])
+        self.assertEqual(len(result.rows), 2)
+        self.assertEqual(result.rows[0]["line_total"], 10 * 4.5)
+        self.assertEqual(result.rows[0]["order_id"], 5001)
+
+    def test_default_projection_without_derives_is_wildcard(self):
+        stages = parse_pipeline_stages("from orders\ntake 1")
+        result = execute(lower_to_query(stages), {"orders": self.orders})
+        self.assertEqual(result.columns, self.orders.columns)
+
+
 if __name__ == "__main__":
     unittest.main()

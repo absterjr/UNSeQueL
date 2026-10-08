@@ -13,6 +13,14 @@
   single-line strings with escapes, `#`/`--` comments, CRLF-safe line/column
   tracking, and token-level errors. All 21 reference queries tokenize; 17
   lexer tests including five malformed-input cases.
+- Prototype refinement (audit batch A1–A4): derive-only pipelines now keep
+  source columns and append derived ones; the engine supports `SELECT *, expr`;
+  ordering rules are enforced (join after group, nothing row-changing after the
+  sort/skip/take tail, `sort` once, `skip` before `take`); aggregate placement
+  checks (calls only in `group`, no nested aggregates, `COUNT(*)` only, no
+  `COUNT(DISTINCT *)`); formatter round-trips (`name = expr` in `derive`,
+  escaped newlines in `sql` payloads, `IS NOT` precedence). Spec §4 updated to
+  v0.3.1; suite now 102 tests.
 
 ## 0.4.0 - 2026-09-09
 

@@ -2,9 +2,10 @@
 
 `format_pipeline` parses the stage IR and re-renders it: lowercase keywords,
 one stage per line, spaces around binary operators, `-column` for descending
-sort, `name = expression` only when the name differs from the rendered
-expression, and a trailing newline. Comments are not preserved. Formatting an
-already-canonical query is a no-op.
+sort, a trailing newline. Derived names are always emitted as
+`name = expression` because bare names are not valid derive entries. `sql`
+payloads are re-quoted with newlines escaped so every stage stays on one line.
+Comments are not preserved. Formatting an already-canonical query is a no-op.
 """
 
 from __future__ import annotations
@@ -17,7 +18,8 @@ from .pipeline_ir import (Derive, Distinct, From, Group, Join, RawSql, Select, S
 
 def _quote_sql(text: str) -> str:
     """Quote a sql-stage payload. Double quotes: single quotes inside are data."""
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = (text.replace("\\", "\\\\").replace('"', '\\"')
+               .replace("\n", "\\n").replace("\r", "\\r"))
     return f'"{escaped}"'
 
 
@@ -42,7 +44,7 @@ def format_stage(stage: Stage) -> str:
     if isinstance(stage, Where):
         return f"where {format_expr(stage.condition)}"
     if isinstance(stage, Derive):
-        items = ", ".join(_named(name, expr) for name, expr in stage.items)
+        items = ", ".join(f"{name} = {format_expr(expr)}" for name, expr in stage.items)
         return f"derive {items}"
     if isinstance(stage, Group):
         keys = ", ".join(_named(name, expr) for name, expr in stage.keys)

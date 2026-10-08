@@ -133,7 +133,12 @@ class _Builder:
             items.extend(SelectItem(expr, name) for name, expr in self.group_derives)
             return items
         if self.row_derives:
-            return [SelectItem(Identifier(name), name) for name in self.row_derives]
+            # Keep every source column and append the derived ones: derive
+            # never removes columns (spec §3.3). The engine supports a
+            # wildcard combined with named items.
+            items = [SelectItem(Wildcard())]
+            items.extend(SelectItem(expr, name) for name, expr in self.row_derives.items())
+            return items
         return [SelectItem(Wildcard())]
 
     def build(self) -> Query:
