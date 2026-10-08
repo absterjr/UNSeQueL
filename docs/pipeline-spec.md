@@ -25,8 +25,7 @@ for every stage:
 
 ## 1. Design decisions
 
-These are locked for v0.2. Changing any of them is a v0.3 spec change, not a
-silent edit.
+These are locked. Changing any of them is a spec change, not a silent edit.
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
@@ -51,11 +50,11 @@ having, window, select, sort, take, distinct`. The mapping:
 | select | `select` | v0.2 |
 | sort | `sort` | v0.2 |
 | take / distinct | `take`, `skip`, `distinct` | v0.2 |
-| (escape hatch) | `sql "..."` | **reserved, Step 8** |
+| (escape hatch) | `sql "..."` | v0.3 |
 | window | `window name = FUNC(...) over (...)` | **reserved, not yet implemented** |
 | right/full/cross join | ordered syntax only for now | reserved |
 
-Reserved stages are parsed to a clear "not implemented in v0.2" error, not a
+Reserved stages are parsed to a clear "not implemented yet" error, not a
 generic failure.
 
 ## 2. Lexical structure
@@ -239,7 +238,7 @@ sql_stage = "sql" , string ;
 ### 3.11 `window` — (reserved, not implemented)
 
 Placeholder syntax `window name = FUNC(args) over (partition by ... order by ...)`.
-Parsing it in v0.2 produces `window is reserved and not implemented in v0.2`.
+Parsing it produces `window is reserved and not implemented yet`.
 Until it ships, `sql "..."` covers window functions (see q21).
 
 ## 4. Ordering rules (frozen)
@@ -378,7 +377,7 @@ each stage. It reports, with the offending stage and line:
 Type families: `integer/number/float/decimal` → numeric, `string/text/varchar`
 → text, `bool` → boolean, `date/time/timestamp` → temporal; anything else is
 `unknown` and never raises a type error. Ambiguous bare columns after a join are
-tracked for lineage but not yet an error in v0.2.
+tracked for lineage but not yet an error.
 
 The walk also returns **column lineage** — the live column list after every
 stage — which is the basis for a future `--lineage` export.

@@ -4,8 +4,8 @@
 "alive" at each stage. It raises a stage-located `SemanticError` for:
 
 * an unknown source or joined table,
-* a reference to a column that is not alive at that stage,
-* an ambiguous bare column after a join,
+* a reference to a column that is not alive at that stage (a bare name must be
+  live, and a qualified name must belong to the label it names),
 * `SUM` / `AVG` over a non-numeric column,
 * a post-`group` reference to something that is neither a group key nor an
   aggregate.
@@ -41,10 +41,10 @@ class _Scope:
     sources: dict[str, set[str]]
 
     def known(self, name: str) -> bool:
-        return name in self.columns or name.split(".")[-1] in self.columns
+        return name in self.columns
 
     def family(self, name: str) -> str:
-        return self.columns.get(name) or self.columns.get(name.split(".")[-1]) or "unknown"
+        return self.columns.get(name, "unknown")
 
     def bare_names(self) -> list[str]:
         return [name for name in self.columns if "." not in name]
