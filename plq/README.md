@@ -21,7 +21,8 @@ this package is the compiler being built to the same 9-step plan.
 | --- | --- |
 | 1 — project scaffold, empty CLI + tests | done |
 | 2 — grammar document (`docs/grammar.md`, v1.0 frozen) | done |
-| 3–9 | pending |
+| 3 — lexer (`src/lexer.ts`) | done |
+| 4–9 | pending |
 
 Step 2 ships the frozen grammar and the validated reference corpus:
 
