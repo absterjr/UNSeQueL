@@ -86,6 +86,7 @@ _PRECEDENCE = {
     ">=": 3,
     "LIKE": 3,
     "IS": 3,
+    "IS NOT": 3,
     "IN": 3,
     "BETWEEN": 3,
     "NOT IN": 3,

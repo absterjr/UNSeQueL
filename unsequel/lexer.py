@@ -26,7 +26,8 @@ def _read_string(text: str, start: int) -> tuple[str, int]:
     while i < len(text):
         char = text[i]
         if char == "\\" and i + 1 < len(text):
-            chars.append(text[i + 1])
+            escaped = text[i + 1]
+            chars.append({"n": "\n", "r": "\r"}.get(escaped, escaped))
             i += 2
             continue
         if char == quote:

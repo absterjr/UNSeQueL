@@ -68,6 +68,25 @@ class FormatterTests(unittest.TestCase):
         self.assertEqual(formatted, "from orders\nwhere country = 'UK'\n")
         self.assertEqual(format_pipeline(formatted), formatted)
 
+    def test_derive_same_name_round_trips(self):
+        text = "from orders\nderive a = a\n"
+        self.assertEqual(format_pipeline(text), text)
+        self.assertTrue(is_formatted(text))
+        parse_pipeline_stages(text)
+
+    def test_multi_line_sql_payload_is_escaped_to_one_line(self):
+        text = 'from orders\nsql "SELECT order_id,\n       quantity\nFROM __input__"\n'
+        formatted = format_pipeline(text)
+        self.assertEqual(len(formatted.splitlines()), 2)
+        stages = parse_pipeline_stages(formatted)
+        self.assertIn("SELECT order_id,\n       quantity", stages[1].text)
+        self.assertTrue(is_formatted(formatted))
+
+    def test_is_not_precedence_round_trip(self):
+        text = "from orders\nwhere a IS NOT NULL AND b = 1\n"
+        self.assertEqual(format_pipeline(text), text)
+        self.assertTrue(is_formatted(text))
+
     def test_select_and_group_short_names(self):
         formatted = format_pipeline(
             "from orders\ngroup country (n = COUNT(*))\nselect country, n"

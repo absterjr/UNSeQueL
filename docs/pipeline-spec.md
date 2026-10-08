@@ -3,6 +3,11 @@
 > v0.3 (Step 8) implements the reserved `sql "..."` escape hatch (§3.10),
 > defines its interaction with ordering rules and schema validation (§4, §8),
 > adds reference query 21, and specifies the canonical formatter (§9).
+>
+> v0.3.1 tightens §4: explicit tail ordering (`sort` once, `skip` before
+> `take`, nothing row-changing after the tail) and aggregate placement
+> enforcement outside `group`. The parser now rejects pipelines the in-memory
+> engine cannot execute in stage order instead of returning wrong rows.
 
 This is the authoritative grammar and lowering spec for the pipeline surface of
 UNSeQueL (`.pusql` files). It supersedes the proof-of-concept note in
@@ -251,6 +256,18 @@ Until it ships, `sql "..."` covers window functions (see q21).
 7. A `sql` stage may not be first and may not follow `select`. It starts a
    fresh relation (§3.10): phase resets to row and segment singletons restart.
 8. `sql` takes exactly one string literal containing a single `SELECT`.
+9. `join` may not appear after `group`.
+10. `sort`, `skip`, and `take` form the ordered tail: `sort` at most once, then
+    at most one `skip`, then at most one `take`. `sort` may not follow
+    `skip`/`take`; `skip` may not follow `take`.
+11. After `sort`/`skip`/`take`, no `join`, `where`, `derive`, `group`,
+    `select`, or `distinct` stage may appear. The in-memory engine collapses a
+    pipeline onto one query and cannot preserve those interleavings, so they
+    are rejected rather than silently reordered.
+12. Aggregate *calls* are valid only inside `group`. Every other stage
+    (`where`, `derive`, `join ... on`, `sort`, `select`) may reference an
+    aggregate only through its name. Aggregate arguments may not contain
+    aggregate calls, and only `COUNT` accepts `*`.
 
 ## 5. CTE lowering — worked example
 

@@ -237,6 +237,12 @@ class LanguageTests(unittest.TestCase):
         result = execute(query, tables)
         self.assertEqual(result.rows, [{"country": "UK", "quantity": 5}, {"country": "US", "quantity": 1}])
 
+    def test_wildcard_combined_with_expression(self):
+        query = parse_query("FROM orders SELECT *, quantity * unit_price AS total LIMIT 1")
+        result = execute(query, {"orders": self.orders})
+        self.assertEqual(result.columns, [*self.orders.columns, "total"])
+        self.assertEqual(result.rows[0]["total"], 25.0)
+
     def test_aggregate_where_is_rejected_early(self):
         with self.assertRaises(ParseError):
             parse_query("FROM orders WHERE SUM(quantity) > 1 SELECT country")

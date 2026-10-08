@@ -260,8 +260,6 @@ def _execute_query(query: Query, tables: dict[str, Table], inherited_ctes: dict[
         aliases: dict = {}
         for item in query.select:
             if isinstance(item.expression, Wildcard):
-                if len(query.select) != 1:
-                    raise ExecutionError("SELECT * cannot be combined with other expressions")
                 output.update(_visible(context))
                 aliases.update(output)
                 continue
@@ -270,8 +268,13 @@ def _execute_query(query: Query, tables: dict[str, Table], inherited_ctes: dict[
             aliases[key] = value
         entries.append((output, context, group))
 
-    columns = (visible_columns if query.select and isinstance(query.select[0].expression, Wildcard)
-               else [item.output_name for item in query.select])
+    select_columns: list[str] = []
+    for item in query.select:
+        names = visible_columns if isinstance(item.expression, Wildcard) else [item.output_name]
+        for name in names:
+            if name not in select_columns:
+                select_columns.append(name)
+    columns = select_columns
     if query.distinct:
         entries = _deduplicate(entries, columns)
 

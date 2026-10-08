@@ -18,7 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .errors import ParseError
-from .expressions import Call, Expr, Identifier, Wildcard, parse_expression_tokens
+from .expressions import (Call, Expr, Identifier, Wildcard, contains_aggregate,
+                          parse_expression_tokens)
 from .lexer import Token, tokenize
 from .parser import FromSpec, OrderItem, SelectItem, _parse_table_ref, _split_top_level
 
@@ -236,9 +237,17 @@ def _parse_aggregate(part: list[Token]) -> tuple[str, Call]:
     name, expr = _parse_bare_or_named(part, "aggregate")
     if not isinstance(expr, Call) or str(expr.name).upper() not in _AGGREGATES:
         raise PipelineError("only COUNT, SUM, AVG, MIN, and MAX calls are allowed in group")
+    if len(expr.args) != 1:
+        raise PipelineError("aggregates take exactly one argument")
+    argument = expr.args[0]
+    if isinstance(argument, Wildcard) and str(expr.name).upper() != "COUNT":
+        raise PipelineError("only COUNT accepts '*'; other aggregates need an expression")
+    if expr.distinct and isinstance(argument, Wildcard):
+        raise PipelineError("COUNT(DISTINCT *) is not valid; name a column instead")
+    if contains_aggregate(argument):
+        raise PipelineError("aggregate arguments cannot contain aggregate functions")
     if name is None:
-        if (str(expr.name).upper() == "COUNT" and len(expr.args) == 1
-                and isinstance(expr.args[0], Wildcard)):
+        if (str(expr.name).upper() == "COUNT" and isinstance(argument, Wildcard)):
             name = "count"
         else:
             raise PipelineError("aggregates must be named: name = AGG(expression)")
@@ -269,6 +278,8 @@ def _parse_join(raw: _Raw) -> Join:
         raise PipelineError("join requires a table before ON")
     source = _parse_table_ref(raw.tokens[:on_index])
     on = parse_expression_tokens(raw.tokens[on_index + 1:])
+    if contains_aggregate(on):
+        raise PipelineError("join conditions cannot contain aggregate functions")
     return Join(raw.keyword, raw.line, kind, source, on)
 
 
@@ -276,13 +287,20 @@ def _parse_derive(raw: _Raw) -> Derive:
     if not raw.tokens:
         raise PipelineError("derive requires at least one name = expression")
     items = tuple(_parse_named(part, "derive") for part in _split_top_level(raw.tokens))
+    if any(contains_aggregate(expr) for _, expr in items):
+        raise PipelineError(
+            "derive cannot contain aggregate functions; declare them in group and reference the name")
     return Derive(raw.keyword, raw.line, items)
 
 
 def _parse_where(raw: _Raw) -> Where:
     if not raw.tokens:
         raise PipelineError("where requires a condition")
-    return Where(raw.keyword, raw.line, parse_expression_tokens(raw.tokens))
+    condition = parse_expression_tokens(raw.tokens)
+    if contains_aggregate(condition):
+        raise PipelineError(
+            "where cannot contain aggregate functions; declare them in group and reference the name")
+    return Where(raw.keyword, raw.line, condition)
 
 
 def _parse_group(raw: _Raw) -> Group:
@@ -300,6 +318,8 @@ def _parse_group(raw: _Raw) -> Group:
     keys = []
     for part in _split_top_level(key_tokens):
         name, expr = _parse_bare_or_named(part, "group key")
+        if contains_aggregate(expr):
+            raise PipelineError("group keys cannot contain aggregate functions")
         keys.append((_output_name(name, expr, "group key"), expr))
     aggregates = tuple(_parse_aggregate(part) for part in _split_top_level(agg_tokens))
     return Group(raw.keyword, raw.line, tuple(keys), aggregates)
@@ -335,7 +355,11 @@ def _parse_sort(raw: _Raw) -> Sort:
             part = part[:-1]
         if not part:
             raise PipelineError("sort key is missing an expression")
-        keys.append(OrderItem(parse_expression_tokens(part), descending))
+        expr = parse_expression_tokens(part)
+        if contains_aggregate(expr):
+            raise PipelineError(
+                "sort cannot contain aggregate functions; reference the aggregate name instead")
+        keys.append(OrderItem(expr, descending))
     return Sort(raw.keyword, raw.line, tuple(keys))
 
 
@@ -382,6 +406,8 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
     seen: dict[str, int] = {}
     grouped = False
     projected = False
+    tail_started = False
+    sort_seen = False
 
     for position, raw in enumerate(raws, start=1):
         kw = raw.keyword
@@ -404,6 +430,17 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
             raise fail(f"'{kw}' may appear only once (already at stage {seen[kw]})")
         if projected and kw not in _POST_SELECT:
             raise fail(f"{kw} cannot appear after select")
+        if kw in {"join", "left join"} and grouped:
+            raise fail("join cannot appear after group")
+        if tail_started and kw in {"join", "left join", "where", "derive",
+                                   "group", "select", "distinct"}:
+            raise fail(f"{kw} cannot appear after sort/skip/take; move it earlier")
+        if kw == "sort" and sort_seen:
+            raise fail("'sort' may appear only once; use multiple keys: sort a, -b")
+        if kw == "sort" and ("skip" in seen or "take" in seen):
+            raise fail("sort must appear before skip/take")
+        if kw == "skip" and "take" in seen:
+            raise fail("skip must appear before take")
 
         try:
             if kw == "from":
@@ -445,12 +482,18 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
             raise fail(str(exc)) from None
 
         seen.setdefault(kw, position)
+        if kw in {"sort", "skip", "take"}:
+            tail_started = True
+        if kw == "sort":
+            sort_seen = True
         if segment_boundary:
             # A sql stage starts a fresh relation: row/group phase and the
             # once-per-segment singletons restart after it. `from` stays
             # pipeline-global; later segments reuse the previous relation.
             grouped = False
             projected = False
+            tail_started = False
+            sort_seen = False
             seen = {"from": seen["from"]}
 
     return stages
