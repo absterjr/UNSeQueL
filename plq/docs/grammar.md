@@ -111,6 +111,9 @@ cross-implementation awareness):
 
 ## 3. Stages
 
+The TypeScript contract for every node below is `plq/src/ast.ts`; each stage
+node carries its 1-based grammar index and its source span.
+
 ### 3.1 `from`
 
 ```ebnf
@@ -123,7 +126,7 @@ source     = qualified_name , [ "as" , identifier ] ;
   (used for qualified references and join collisions) is the alias if given,
   otherwise the last segment of the name (`sales.orders` → `orders`).
 - Subquery sources are not part of v1.x.
-- **IR:** `FromStage { source: { name, alias? }, graphIndex }`
+- **IR:** `FromStage { source: { name, alias? }, index, span }`
 - **SQL (U=1):** `stage_1 AS (SELECT * FROM <name> [AS <alias>])`
 
 ### 3.2 `join` / `left join`

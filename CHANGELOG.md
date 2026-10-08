@@ -18,6 +18,10 @@
   mandatory `aggregate`, completed window EBNF, `select`/`not` binding rules,
   single comparison tail, aggregate naming/DISTINCT rules, the complete
   reserved-word table, number and separator semantics, and alias defaults.
+- `plq` contracts (audit batch B3): `src/ast.ts` defines the stage and
+  expression node types with source spans, plus the grammar-stage → CTE
+  lowering-unit map from grammar §1.1; `src/errors.ts` gains `ParseError` and
+  the stage-located `PipelineError`.
 - `plq` lexer alignment (audit batch B2): tokens carry exclusive end positions
   (spans); `LexError` extends the shared `PlqError` base
   (`plq/src/errors.ts`); dangling-backslash input gets an explicit error; 11

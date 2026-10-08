@@ -30,6 +30,9 @@ Step 2 ships the frozen grammar and the validated reference corpus:
   DuckDB lowering, plus the hand-parse validation of all 21 queries
 - [`examples/reference/`](examples/reference/) — the 21 reference programs in
   `.plq` syntax, the behavioral baseline for the lexer and parser
+- contract layer in place: `src/ast.ts` (stage/expr nodes with spans, the
+  grammar-stage → CTE lowering-unit map) and `src/errors.ts` (`PlqError`,
+  `LexError`, `ParseError`, `PipelineError`)
 
 ## Development
 
