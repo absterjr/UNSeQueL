@@ -1,0 +1,4 @@
+# coverage: named expression group key, COUNT(DISTINCT), AVG/MIN/MAX, bare COUNT(*)
+from orders
+group by double_qty = quantity * 2
+aggregate customers = COUNT(DISTINCT customer), avg_qty = AVG(quantity), min_qty = MIN(quantity), max_qty = MAX(quantity), COUNT(*)

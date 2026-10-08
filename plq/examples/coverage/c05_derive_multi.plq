@@ -1,0 +1,4 @@
+# coverage: multi-item derive, earlier derived names, the scalar function set
+from orders
+derive gross = quantity * unit_price, net = gross - unit_price, tag = UPPER(customer), lowered = LOWER(customer), rounded = ROUND(gross, 2), trimmed = TRIM(customer), fallback = COALESCE(customer, 'n/a'), nul = NULLIF(quantity, 0), size = LENGTH(customer), shout = CONCAT(customer, '!'), spread = ABS(quantity - 5)
+select order_id, gross

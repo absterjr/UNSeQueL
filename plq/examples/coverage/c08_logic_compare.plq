@@ -1,0 +1,4 @@
+# coverage: OR/AND precedence with parentheses, !=, <>, <=, ==, >
+from orders
+filter (quantity > 1 OR quantity < 3) AND quantity != 5
+filter customer <> 'Ada' AND quantity <= 4 AND quantity == 4

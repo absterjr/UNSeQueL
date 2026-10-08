@@ -30,6 +30,9 @@ Step 2 ships the frozen grammar and the validated reference corpus:
   DuckDB lowering, plus the hand-parse validation of all 21 queries
 - [`examples/reference/`](examples/reference/) — the 21 reference programs in
   `.plq` syntax, the behavioral baseline for the lexer and parser
+- [`examples/coverage/`](examples/coverage/README.md) — parser fixtures for
+  grammar features the reference set does not exercise (window, aliases,
+  DISTINCT aggregates, NOT variants, CAST, …)
 - contract layer in place: `src/ast.ts` (stage/expr nodes with spans, the
   grammar-stage → CTE lowering-unit map) and `src/errors.ts` (`PlqError`,
   `LexError`, `ParseError`, `PipelineError`)
@@ -39,8 +42,8 @@ Step 2 ships the frozen grammar and the validated reference corpus:
 ```bash
 cd plq
 npm install
-npm run check   # tsc --noEmit
+npm run check   # tsc for src and tests
 npm test        # vitest
-npm run build   # dist/cli.js
+npm run build   # dist/main.js
 node dist/main.js --version
 ```

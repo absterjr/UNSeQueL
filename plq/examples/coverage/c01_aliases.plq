@@ -1,0 +1,4 @@
+# coverage: `as` aliases on from/join, qualified source names, qualified columns
+from analytics.orders as o
+join products as p on o.product_id = p.product_id
+select o.order_id, p.product_name

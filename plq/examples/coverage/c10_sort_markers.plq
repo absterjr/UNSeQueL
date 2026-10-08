@@ -1,0 +1,4 @@
+# coverage: trailing asc/desc sort markers
+from orders
+select order_id, unit_price
+sort order_id asc, unit_price desc

@@ -1,0 +1,3 @@
+# coverage: unary plus and minus
+from orders
+select order_id, neg = -quantity, pos = +quantity

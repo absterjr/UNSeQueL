@@ -1,7 +1,16 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { VERSION, runCli } from "../src/cli.js";
 
 describe("cli (step 1 skeleton)", () => {
+  it("keeps VERSION in sync with package.json", () => {
+    const pkg = JSON.parse(
+      readFileSync(join(__dirname, "..", "package.json"), "utf8"),
+    ) as { version: string };
+    expect(VERSION).toBe(pkg.version);
+  });
+
   it("starts with no arguments and explains itself", () => {
     const result = runCli([]);
     expect(result.code).toBe(2);

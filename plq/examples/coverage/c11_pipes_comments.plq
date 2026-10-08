@@ -1,0 +1,3 @@
+# coverage: pipe separators, # and -- comments, doubled-quote string escape
+from orders | filter customer = 'O''Brien' # trailing comment
+select order_id
