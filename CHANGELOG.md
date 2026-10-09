@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `plq` Step 5 (schema-aware validation): `src/schema.ts` loads JSON schemas
+  and collapses type strings into families; `src/semantics.ts` (`analyze`)
+  walks a program tracking live columns per stage with join label defaults and
+  collision renaming, the group boundary, window additions, `select *`
+  pass-through, and `sql` opacity (`<raw sql>` / `<opaque>`), raising
+  stage-located `SemanticError`s and returning per-stage lineage. New
+  `SchemaError`/`SemanticError`; all 21 reference and 13 coverage fixtures
+  analyze (the latter against an extended test schema); invalid programs are
+  located. CLI exposure lands with the codegen/preview steps.
+- Prototype parity: schema analysis resolves `derive` items left-to-right, so
+  an item may reference an earlier item in the same stage (matching both
+  engines).
 - Scaffolded the production compiler (`plq/`): TypeScript/Node package with a
   strict `tsc` setup, vitest runner, an empty `plq` CLI (`--version`, `--help`,
   usage exit), and a Node 22/24 CI job. Plan Step 1 of the TypeScript stack

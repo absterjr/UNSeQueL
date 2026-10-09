@@ -105,6 +105,9 @@ class InvalidQueryTests(unittest.TestCase):
             "from orders\nselect country IN ('United Kingdom')\nsort in"
         ), SCHEMA)
 
+    def test_derive_items_may_reference_earlier_items(self):
+        analyze(stages("from orders\nderive a = quantity * 2, b = a + 1"), SCHEMA)
+
 
 if __name__ == "__main__":
     unittest.main()
