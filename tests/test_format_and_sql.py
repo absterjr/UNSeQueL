@@ -175,6 +175,14 @@ class SqlStageMemoryTests(unittest.TestCase):
         )
         self.assertIn("SELECT", stages[1].text)
 
+    def test_join_after_the_hatch_is_rejected(self):
+        with self.assertRaises(PipelineError) as ctx:
+            parse_pipeline_stages(
+                'from orders\nsql "SELECT * FROM __input__"\n'
+                "join members on customer = members.customer"
+            )
+        self.assertIn("after a sql stage", str(ctx.exception))
+
     def test_parse_errors_point_at_the_sql_stage(self):
         with self.assertRaises(PipelineError) as ctx:
             parse_pipeline_stages("from orders\nsql SELECT")
@@ -241,6 +249,32 @@ class SqlStageCodegenTests(unittest.TestCase):
         with self.assertRaises(CodegenError) as ctx:
             emit_sql(stages, SCHEMA)
         self.assertIn("conflicts with a live column", str(ctx.exception))
+
+    def test_codegen_resolves_aliased_labels(self):
+        stages = parse_pipeline_stages(
+            "from orders as o\n"
+            "join products as p on o.product_id = p.product_id\n"
+            "select o.order_id, p.product_name"
+        )
+        sql = emit_sql(stages, SCHEMA)
+        self.assertIn("stage_1.product_id = p.product_id", sql)
+
+    def test_codegen_resolves_original_table_labels(self):
+        stages = parse_pipeline_stages(
+            "from orders\n"
+            "join members on orders.customer = members.customer\n"
+            "select order_id, members.plan"
+        )
+        sql = emit_sql(stages, SCHEMA)
+        self.assertIn("stage_1.customer = members.customer", sql)
+
+    def test_codegen_rejects_mislabeled_qualified_columns(self):
+        stages = parse_pipeline_stages(
+            "from orders as o\njoin products as p on o.product_id = products.product_id"
+        )
+        with self.assertRaises(CodegenError) as ctx:
+            emit_sql(stages, SCHEMA)
+        self.assertIn("products.product_id", str(ctx.exception))
 
     def test_unaliased_computed_select_names_match_memory(self):
         stages = parse_pipeline_stages(

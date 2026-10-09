@@ -30,7 +30,7 @@ class SchemaLoadTests(unittest.TestCase):
 
 
 class ValidQueryTests(unittest.TestCase):
-    def test_all_twenty_reference_queries_pass_cleanly(self):
+    def test_all_reference_queries_pass_cleanly(self):
         for path in sorted(SPEC.glob("q*.pusql")):
             with self.subTest(query=path.stem):
                 analyze(stages(path.read_text()), SCHEMA)

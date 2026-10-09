@@ -187,7 +187,7 @@ python -m unsequel fmt --write my_query.pusql     # rewrite in place
 python -m unsequel fmt --check my_query.pusql     # exit 1 if not canonical
 ```
 
-See [docs/pipeline-spec.md](docs/pipeline-spec.md) for the authoritative v0.3
+See [docs/pipeline-spec.md](docs/pipeline-spec.md) for the authoritative v0.3.1
 grammar (including the `sql` hatch and formatting rules), the IR node and
 DuckDB CTE lowering for every stage, and 21 reference queries in
 [examples/spec/](examples/spec/). [docs/poc-syntax.md](docs/poc-syntax.md)

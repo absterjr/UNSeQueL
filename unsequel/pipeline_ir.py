@@ -457,6 +457,7 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
     projected = False
     tail_started = False
     sort_seen = False
+    after_hatch = False
     derive_names: set[str] = set()
     group_names: set[str] = set()
 
@@ -483,6 +484,9 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
             raise fail(f"{kw} cannot appear after select")
         if kw in {"join", "left join"} and grouped:
             raise fail("join cannot appear after group")
+        if kw in {"join", "left join"} and after_hatch:
+            raise fail(
+                "join cannot appear after a sql stage; the hatch output columns are opaque")
         if tail_started and kw in {"join", "left join", "where", "derive",
                                    "group", "select", "distinct"}:
             raise fail(f"{kw} cannot appear after sort/skip/take; move it earlier")
@@ -560,6 +564,7 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
             projected = False
             tail_started = False
             sort_seen = False
+            after_hatch = True
             derive_names = set()
             group_names = set()
             seen = {"from": seen["from"]}

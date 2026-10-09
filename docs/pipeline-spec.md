@@ -1,4 +1,4 @@
-# UNSeQueL Pipeline Language — Specification v0.3
+# UNSeQueL Pipeline Language — Specification v0.3.1
 
 > v0.3 (Step 8) implements the reserved `sql "..."` escape hatch (§3.10),
 > defines its interaction with ordering rules and schema validation (§4, §8),
@@ -234,6 +234,9 @@ sql_stage = "sql" , string ;
   once-per-segment singletons (`group`, `select`, `sort`, `take`, `skip`,
   `distinct`) reset. `from` stays global.
 - `sql` may not be the first stage and may not appear after `select`.
+- `join` may not follow a `sql` stage: the hatch output's columns are opaque,
+  so the compiler cannot qualify or rename them safely. Join before the hatch
+  or express the join in SQL.
 - Schema validation does not look inside the string and cannot track columns
   after it; later stages are unchecked (§8).
 - Reference query: `q21_sql_hatch` (window function, §6).
