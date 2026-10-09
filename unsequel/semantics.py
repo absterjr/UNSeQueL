@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .expressions import (Between, Binary, Call, Case, Cast, Expr, Identifier, InList,
-                          Literal, Unary, Wildcard)
+                          Literal, Unary, Wildcard, expression_name)
 from .pipeline_ir import (Derive, Distinct, From, Group, Join, PipelineError, RawSql,
                           Select, Skip, Sort, Stage, Take, Where)
 from .schema import Schema, type_family
@@ -226,7 +226,7 @@ def analyze(stages: list[Stage], schema: Schema) -> list[StageLineage]:
                     _check_refs(item.expression, scope, stage, index, "select")
                 fresh = _Scope({}, {})
                 for item in stage.items:
-                    out = item.alias or _identifier_name(item.expression)
+                    out = item.alias or expression_name(item.expression)
                     fresh.add_derived(out, _infer(item.expression, scope))
                 scope = fresh
 
@@ -247,11 +247,3 @@ def analyze(stages: list[Stage], schema: Schema) -> list[StageLineage]:
 
     _ = grouped
     return lineage
-
-
-def _identifier_name(expr: Expr) -> str:
-    if isinstance(expr, Identifier):
-        return expr.name.split(".")[-1]
-    if isinstance(expr, Call):
-        return expr.name.lower()
-    return "expression"

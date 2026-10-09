@@ -18,6 +18,19 @@
   mandatory `aggregate`, completed window EBNF, `select`/`not` binding rules,
   single comparison tail, aggregate naming/DISTINCT rules, the complete
   reserved-word table, number and separator semantics, and alias defaults.
+- Prototype refinement (audit P-Fix4–6/8): the formatter escapes newlines in
+  string literals (`\n`/`\r`, now documented in spec §2); group keys may
+  contain parenthesized and call expressions (the aggregate-list parentheses
+  are matched by balance, not by the first `(`); schema analysis uses the
+  shared `expression_name` rule (e.g. `sort in` after a computed select); the
+  `sql` hatch accepts `WITH` queries and leading comments and rejects `;` only
+  outside string literals and comments; `sort` after a `sql` segment is
+  documented as per-segment in spec §4.
+- PLQ refinement (audit L-Doc/L-Tests): grammar records the prefix-`not` AST
+  shape, window-after-tail behavior, and the `sql` comment/`WITH` rules;
+  `skip`/`take` beyond the safe-integer range are rejected; parser regression
+  tests cover sql resets, same-line spans, comment-only lines, `select *`,
+  zero counts, CRLF, and `WITH RECURSIVE`.
 - Prototype refinement (audit P-Fix1–3): aggregate calls are rejected anywhere
   in `select` (including inside `COALESCE`/`CASE`/unary/`IN`); duplicate output
   names are now errors — duplicate select items, derive redefinition within or

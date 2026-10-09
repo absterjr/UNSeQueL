@@ -22,6 +22,7 @@ from .expressions import (Call, Expr, Identifier, Wildcard, contains_aggregate,
                           expression_name, parse_expression_tokens)
 from .lexer import Token, tokenize
 from .parser import FromSpec, OrderItem, SelectItem, _parse_table_ref, _split_top_level
+from .sql_text import first_word, has_terminator
 
 _AGGREGATES = {"COUNT", "SUM", "AVG", "MIN", "MAX"}
 _POST_SELECT = {"sort", "take", "skip", "distinct"}
@@ -317,11 +318,23 @@ def _parse_where(raw: _Raw) -> Where:
 
 
 def _parse_group(raw: _Raw) -> Group:
-    open_index = next((i for i, t in enumerate(raw.tokens) if t.value == "("), None)
+    if not raw.tokens:
+        raise PipelineError("group requires an aggregate list in parentheses")
+    if raw.tokens[-1].value != ")":
+        raise PipelineError("group requires an aggregate list in parentheses, ending with ')'")
+    depth = 0
+    open_index = None
+    for i in range(len(raw.tokens) - 1, -1, -1):
+        value = raw.tokens[i].value
+        if value == ")":
+            depth += 1
+        elif value == "(":
+            depth -= 1
+            if depth == 0:
+                open_index = i
+                break
     if open_index is None:
         raise PipelineError("group requires an aggregate list in parentheses")
-    if not raw.tokens or raw.tokens[-1].value != ")":
-        raise PipelineError("group must end with a closing ')'")
     key_tokens = raw.tokens[:open_index]
     agg_tokens = raw.tokens[open_index + 1:-1]
     if not key_tokens:
@@ -418,10 +431,9 @@ def _parse_sql(raw: _Raw) -> RawSql:
     text = str(raw.tokens[0].value)
     if not text.strip():
         raise PipelineError("sql stage text is empty")
-    if ";" in text:
-        raise PipelineError("sql stage must be a single SELECT statement; ';' is not allowed")
-    first = text.strip().split(None, 1)[0].upper()
-    if first not in {"SELECT", "WITH"}:
+    if has_terminator(text):
+        raise PipelineError("sql stage must be a single query; ';' is not allowed")
+    if first_word(text) not in {"SELECT", "WITH"}:
         raise PipelineError('sql stage must be a query; start it with SELECT or WITH')
     return RawSql(raw.keyword, raw.line, text)
 

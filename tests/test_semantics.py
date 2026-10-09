@@ -99,6 +99,12 @@ class InvalidQueryTests(unittest.TestCase):
             "select order_id, total\nsort -total"
         ), SCHEMA)
 
+    def test_computed_select_names_are_shared_with_the_engines(self):
+        # the shared naming rule names `country IN (...)` -> 'in'
+        analyze(stages(
+            "from orders\nselect country IN ('United Kingdom')\nsort in"
+        ), SCHEMA)
+
 
 if __name__ == "__main__":
     unittest.main()

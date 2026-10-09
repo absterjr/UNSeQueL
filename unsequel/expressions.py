@@ -549,7 +549,8 @@ def expression_name(expr: Expr) -> str:
 
 def format_string(value: str) -> str:
     """Render an expression string literal in canonical single-quoted SQL form."""
-    escaped = value.replace("\\", "\\\\").replace("'", "''")
+    escaped = (value.replace("\\", "\\\\").replace("'", "''")
+               .replace("\n", "\\n").replace("\r", "\\r"))
     return f"'{escaped}'"
 
 

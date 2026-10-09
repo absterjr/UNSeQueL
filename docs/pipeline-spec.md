@@ -66,7 +66,8 @@ Tokenising is unchanged from the core language ([lexer.py](../unsequel/lexer.py)
   function names are matched case-insensitively.
 - **Numbers** — integer or decimal (`10`, `4.50`).
 - **Strings** — single or double quoted, `''`/`""` or `\` for an escaped
-  quote (`'O''Brien'`).
+  quote (`'O''Brien'`); `\n` and `\r` decode to newline and carriage return,
+  and the formatter re-escapes them so a stage never spans lines.
 - **Operators** — `+ - * / %`, `= == != <> < <= > >=`, `|`, `||`, `( ) , .`.
 - **Comments** — `--` or `#` to end of line.
 - **Stage separator** — a newline, or `|` at parenthesis depth 0. A stage may
@@ -217,7 +218,9 @@ distinct_stage = "distinct" ;
 sql_stage = "sql" , string ;
 ```
 
-- The string must be a single `SELECT`; `;` is rejected at parse time.
+- The string must be a single query starting with `SELECT` or `WITH` (leading
+  whitespace and comments are allowed); `;` outside string literals and
+  comments is rejected at parse time.
 - The previous relation is visible as the table `__input__`. The original
   named tables remain visible under their own names.
 - **SQL target:** the text is spliced into the CTE chain as its own stage,
@@ -227,9 +230,9 @@ sql_stage = "sql" , string ;
   stage. Segments lower and execute as usual; a `sql` segment runs against an
   in-memory SQLite database (standard library, no new dependency) in which
   `__input__` and the named tables exist.
-- A `sql` stage starts a **fresh relation**: `where` / `derive` return to row
-  phase, and the once-per-pipeline singletons (`group`, `take`, `skip`,
-  `distinct`) may each appear once more after it. `from` stays global.
+- A `sql` stage starts a **fresh relation**: phase, tail ordering, and the
+  once-per-segment singletons (`group`, `select`, `sort`, `take`, `skip`,
+  `distinct`) reset. `from` stays global.
 - `sql` may not be the first stage and may not appear after `select`.
 - Schema validation does not look inside the string and cannot track columns
   after it; later stages are unchecked (§8).
@@ -246,7 +249,8 @@ Until it ships, `sql "..."` covers window functions (see q21).
 1. The first stage is `from`.
 2. `join`, `derive` (row phase), `where` (row phase), and `group` may not
    appear after `select`.
-3. `group`, `take`, `skip`, and `distinct` appear at most once.
+3. `group`, `select`, `take`, `skip`, and `distinct` appear at most once per
+   segment (a new segment starts after each `sql` stage, §3.10).
 4. `where` before `group` filters rows; after `group` filters groups.
 5. Aggregates appear only inside `group`. `select` and `derive` cannot create
    new aggregates.
@@ -254,15 +258,16 @@ Until it ships, `sql "..."` covers window functions (see q21).
    bare `COUNT(*)` inside `group` is named `count`.
 7. A `sql` stage may not be first and may not follow `select`. It starts a
    fresh relation (§3.10): phase resets to row and segment singletons restart.
-8. `sql` takes exactly one string literal containing a single `SELECT`.
+8. `sql` takes exactly one string literal containing a single query
+   (`SELECT` or `WITH ... SELECT`).
 9. `join` may not appear after `group`.
-10. `sort`, `skip`, and `take` form the ordered tail: `sort` at most once, then
-    at most one `skip`, then at most one `take`. `sort` may not follow
-    `skip`/`take`; `skip` may not follow `take`.
-11. After `sort`/`skip`/`take`, no `join`, `where`, `derive`, `group`,
-    `select`, or `distinct` stage may appear. The in-memory engine collapses a
-    pipeline onto one query and cannot preserve those interleavings, so they
-    are rejected rather than silently reordered.
+10. `sort`, `skip`, and `take` form the ordered tail, counted per segment:
+    `sort` at most once, then at most one `skip`, then at most one `take`.
+    `sort` may not follow `skip`/`take`; `skip` may not follow `take`.
+11. Within a segment, after `sort`/`skip`/`take`, no `join`, `where`,
+    `derive`, `group`, `select`, or `distinct` stage may appear. The in-memory
+    engine collapses a segment onto one query and cannot preserve those
+    interleavings, so they are rejected rather than silently reordered.
 12. Aggregate *calls* are valid only inside `group`. Every other stage
     (`where`, `derive`, `join ... on`, `sort`, `select`) may reference an
     aggregate only through its name. Aggregate arguments may not contain
