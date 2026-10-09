@@ -277,5 +277,49 @@ class DeriveDefaultProjectionTests(unittest.TestCase):
         self.assertEqual(result.columns, self.orders.columns)
 
 
+class GroupKeyParsingTests(unittest.TestCase):
+    def test_parenthesized_key_expression(self):
+        stages = parse_pipeline_stages(
+            "from orders\ngroup b = (quantity + 1) (n = COUNT(*))\nsort b"
+        )
+        self.assertEqual(type(stages[1]).__name__, "Group")
+        self.assertEqual(stages[1].keys[0][0], "b")
+
+    def test_call_key_expression(self):
+        stages = parse_pipeline_stages(
+            "from orders\ngroup b = CAST(country AS TEXT) (n = COUNT(*))"
+        )
+        self.assertEqual(stages[1].keys[0][0], "b")
+
+    def test_parenthesized_key_executes(self):
+        orders = load_table("orders", SPEC / "orders.csv")
+        stages = parse_pipeline_stages(
+            "from orders\ngroup b = (quantity + 1) (n = COUNT(*))\nsort b"
+        )
+        result = execute(lower_to_query(stages), {"orders": orders})
+        self.assertEqual(len(result.rows), 9)
+
+
+class SqlSegmentResetTests(unittest.TestCase):
+    def test_sort_restarts_after_the_hatch(self):
+        stages = parse_pipeline_stages(
+            'from orders\nsort order_id\nsql "SELECT * FROM __input__"\nsort -order_id'
+        )
+        self.assertEqual([type(s).__name__ for s in stages],
+                         ["From", "Sort", "RawSql", "Sort"])
+
+    def test_group_restarts_after_the_hatch(self):
+        stages = parse_pipeline_stages(
+            'from orders\ngroup country (n = COUNT(*))\n'
+            'sql "SELECT * FROM __input__"\n'
+            "group country (m = SUM(quantity))"
+        )
+        self.assertEqual(len(stages), 4)
+
+    def test_from_stays_global_across_the_hatch(self):
+        with self.assertRaises(PipelineError):
+            parse_pipeline_stages('from orders\nsql "SELECT * FROM __input__"\nfrom orders')
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,7 @@ from .expressions import (Between, Binary, Call, Case, Cast, Expr, Identifier, I
 from .pipeline_ir import (Derive, Distinct, From, Group, Join, PipelineError, RawSql,
                           Select, Skip, Sort, Stage, Take, Where)
 from .schema import Schema
+from .sql_text import scan_quoted
 
 _SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _INPUT_NAME = re.compile(r"\b__input__\b")
@@ -273,23 +274,6 @@ def emit_sql(stages: list[Stage], schema: Schema, *, stop_at: int | None = None,
     return f"WITH {body}\nSELECT * FROM stage_{limit};"
 
 
-def _scan_quoted(text: str, start: int, quote: str) -> int:
-    """Return the index just past the quoted run that starts at `start`."""
-    i = start + 1
-    while i < len(text):
-        char = text[i]
-        if char == "\\" and i + 1 < len(text):
-            i += 2
-            continue
-        if char == quote:
-            if i + 1 < len(text) and text[i + 1] == quote:
-                i += 2
-                continue
-            return i + 1
-        i += 1
-    return len(text)
-
-
 def _substitute_input(text: str, replacement: str) -> str:
     """Replace bare __input__ words with the previous CTE name.
 
@@ -315,12 +299,12 @@ def _substitute_input(text: str, replacement: str) -> str:
             i = end
             continue
         if char == "'":
-            end = _scan_quoted(text, i, "'")
+            end = scan_quoted(text, i, "'")
             out.append(text[i:end])
             i = end
             continue
         if char == '"':
-            end = _scan_quoted(text, i, '"')
+            end = scan_quoted(text, i, '"')
             if text[i + 1:end - 1] == "__input__":
                 out.append(replacement)
             else:

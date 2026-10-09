@@ -74,6 +74,17 @@ class FormatterTests(unittest.TestCase):
         self.assertTrue(is_formatted(text))
         parse_pipeline_stages(text)
 
+    def test_string_newlines_are_escaped_to_one_line(self):
+        text = 'from orders\nwhere customer = "a\nb"'
+        formatted = format_pipeline(text)
+        self.assertEqual(formatted, "from orders\nwhere customer = 'a\\nb'\n")
+        self.assertEqual(len(formatted.splitlines()), 2)
+        self.assertTrue(is_formatted(formatted))
+
+    def test_escaped_newline_decodes_on_reparse(self):
+        stages = parse_pipeline_stages("from orders\nwhere customer = 'a\\nb'")
+        self.assertEqual(stages[1].condition.right.value, "a\nb")
+
     def test_multi_line_sql_payload_is_escaped_to_one_line(self):
         text = 'from orders\nsql "SELECT order_id,\n       quantity\nFROM __input__"\n'
         formatted = format_pipeline(text)
@@ -151,6 +162,18 @@ class SqlStageMemoryTests(unittest.TestCase):
             'from orders\nsql "WITH x AS (SELECT 1 AS a) SELECT a FROM x"'
         )
         self.assertEqual(stages[1].text, "WITH x AS (SELECT 1 AS a) SELECT a FROM x")
+
+    def test_sql_terminator_inside_literals_is_allowed(self):
+        stages = parse_pipeline_stages(
+            'from orders\nsql "SELECT \';\' AS semi, order_id FROM __input__"'
+        )
+        self.assertEqual(len(stages), 2)
+
+    def test_sql_allows_leading_comments(self):
+        stages = parse_pipeline_stages(
+            'from orders\nsql "-- lead\\nSELECT order_id FROM __input__"'
+        )
+        self.assertIn("SELECT", stages[1].text)
 
     def test_parse_errors_point_at_the_sql_stage(self):
         with self.assertRaises(PipelineError) as ctx:
