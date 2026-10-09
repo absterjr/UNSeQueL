@@ -122,8 +122,8 @@ export function parseProgram(source: string): Program {
     if (projected && !["sort", "skip", "take", "distinct"].includes(keyword)) {
       throw fail(`${keyword} cannot appear after select`);
     }
-    if (tailStarted && ["join", "filter", "derive", "group by", "aggregate",
-                        "having", "select", "distinct"].includes(keyword)) {
+    if (tailStarted && ["join", "left join", "filter", "derive", "group by",
+                        "aggregate", "having", "select", "distinct"].includes(keyword)) {
       throw fail(`${keyword} cannot appear after sort/skip/take; move it earlier`);
     }
     if (keyword === "sort" && (seen.has("skip") || seen.has("take"))) {
@@ -132,7 +132,7 @@ export function parseProgram(source: string): Program {
     if (keyword === "skip" && seen.has("take")) {
       throw fail("skip must appear before take");
     }
-    if (keyword === "join" && grouped) {
+    if ((keyword === "join" || keyword === "left join") && grouped) {
       throw fail("join cannot appear after group by");
     }
     if (keyword === "filter" && grouped) {
@@ -148,7 +148,7 @@ export function parseProgram(source: string): Program {
       throw fail("having requires a preceding aggregate (group by + aggregate)");
     }
 
-    const reader = new TokenReader(rest);
+    const reader = new TokenReader(rest, first);
     const context = { inAggregate: false };
     let stage: Stage;
     try {
@@ -260,11 +260,13 @@ function stageHeader(tokens: readonly Token[]): { keyword: string; rest: Token[]
 
 class TokenReader {
   private readonly tokens: readonly Token[];
+  private readonly start: Token;
   private position = 0;
   lastConsumed: Token | null = null;
 
-  constructor(tokens: readonly Token[]) {
+  constructor(tokens: readonly Token[], start: Token) {
     this.tokens = tokens;
+    this.start = start;
   }
 
   get done(): boolean {
@@ -357,7 +359,7 @@ class TokenReader {
     if (token) throw new ParseError(message, token.line, token.column);
     const last = this.lastConsumed;
     if (last) throw new ParseError(message, last.endLine, last.endColumn);
-    throw new ParseError(message, 1, 1);
+    throw new ParseError(message, this.start.line, this.start.column);
   }
 }
 

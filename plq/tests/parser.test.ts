@@ -284,6 +284,28 @@ describe("parser: ordering rules", () => {
     expect(error.message).toContain("after select");
   });
 
+  it("applies the same ordering rules to left join", () => {
+    expect(expectPipelineError(
+      "from orders\ngroup by country\naggregate n = COUNT(*)\n"
+      + "left join members on a = members.customer",
+    ).message).toContain("after group by");
+    expect(expectPipelineError(
+      "from orders\ntake 2\nleft join members on a = members.customer",
+    ).message).toContain("after sort/skip/take");
+  });
+
+  it("locates empty stage bodies at the stage line", () => {
+    for (const text of ["from orders\nfilter", "from orders\nselect", "from orders\ntake"]) {
+      try {
+        parse(text);
+        throw new Error("expected an error");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PipelineError);
+        expect((error as PipelineError).line, text).toBe(2);
+      }
+    }
+  });
+
   it("rejects right join with a directed message", () => {
     try {
       parse("from orders\nright join members on a = members.customer");
