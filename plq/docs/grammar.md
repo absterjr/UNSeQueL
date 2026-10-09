@@ -249,8 +249,11 @@ window_func   = "ROW_NUMBER" | "RANK" | "DENSE_RANK"
   immediately followed by the keyword `over`; otherwise the same shape is a
   scalar/aggregate call.
 - No frame clauses (`rows between ...`) in v1.x.
-- Syntax is frozen in v1.1; implementation lands after the core loop (until
-  then, use the `sql` hatch).
+- A window stage may follow the tail (`sort`/`skip`/`take`); it adds its
+  column over the current relation, and rule 11's forbidden list does not
+  include `window`.
+- Syntax is frozen in v1.1; the parser accepts it today, and SQL lowering
+  lands with the codegen step (until then, use the `sql` hatch).
 - **IR:** `WindowStage { name, func, args, partitionBy, orderBy }`
 - **SQL:** `stage_u AS (SELECT *, <FUNC>(<args>) OVER (<spec>) AS <name> FROM stage_{u-1})`
 
@@ -315,7 +318,9 @@ distinct_stage = "distinct" ;
 sql_stage = "sql" , string ;
 ```
 
-- One string literal containing a single `SELECT`; `;` is rejected.
+- One string literal containing a single query that starts with `SELECT` or
+  `WITH` (leading whitespace and comments are allowed); a `;` outside string
+  literals and comments is rejected.
 - The previous relation is the table `__input__`; named tables stay visible.
 - A `sql` stage starts a fresh relation: phase, tail state, and the
   once-per-segment stages (`group by`, `aggregate`, `having`, `skip`,
@@ -383,11 +388,12 @@ Binding rules:
 
 - **Single comparison tail.** A comparison has at most one tail:
   `a < b < c` is a parse error ("chained comparisons are not supported").
-- **`not` binding.** A prefix `not` negates the whole following comparison
-  (`not a in (1, 2)` = `NOT (a IN (1, 2))`). Infix `not in` / `not like` /
-  `not between` is recognized only immediately after an operand, as part of a
-  comparison tail. The two forms are equivalent; the parser normalizes to the
-  negated tail.
+- **`not` binding.** A prefix `not` negates the whole following comparison and
+  stays a `UnaryExpr("not", …)`: `not a in (1, 2)` = `NOT (a IN (1, 2))`.
+  Infix `not in` / `not like` / `not between` is recognized only immediately
+  after an operand and sets the tail's `negated` flag. The forms are
+  semantically equivalent but keep different AST shapes; consumers must handle
+  both. `not not` is rejected.
 - The `AND` inside `BETWEEN a AND b` binds to `BETWEEN`, not to boolean
   `AND`.
 - `COUNT(*)` is the only wildcard call; `COUNT(DISTINCT expr)` the only

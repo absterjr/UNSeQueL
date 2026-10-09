@@ -674,7 +674,11 @@ function parseCount(reader: TokenReader, keyword: string): number {
   }
   reader.advance();
   reader.expectEnd();
-  return Number(token.value);
+  const value = Number(token.value);
+  if (!Number.isSafeInteger(value)) {
+    reader.fail(`${keyword} exceeds the supported integer range`, token);
+  }
+  return value;
 }
 
 // --------------------------------------------------------------------------- //

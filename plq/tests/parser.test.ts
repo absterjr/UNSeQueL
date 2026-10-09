@@ -395,4 +395,75 @@ describe("parser: select star and integers", () => {
     expect(expectPipelineError("from orders\nskip -1").message)
       .toContain("non-negative integer");
   });
+
+  it("accepts zero counts and rejects unsafe integers", () => {
+    const program = parse("from orders\nskip 0\ntake 0");
+    expect(program[1]).toMatchObject({ kind: "skip", count: 0 });
+    expect(program[2]).toMatchObject({ kind: "take", count: 0 });
+    expect(expectPipelineError("from orders\ntake 9007199254740993").message)
+      .toContain("integer range");
+  });
+
+  it("parses select * as a star stage", () => {
+    const program = parse("from orders\nselect *");
+    const select = program[1] as SelectStage;
+    expect(select.star).toBe(true);
+    expect(select.items).toEqual([]);
+  });
+});
+
+describe("parser: separators, spans, and segments", () => {
+  it("parses CRLF sources", () => {
+    const program = parse("from orders\r\nfilter quantity > 1\r\nsort order_id\r\n");
+    expect(program.map((stage) => stage.kind)).toEqual(["from", "filter", "sort"]);
+  });
+
+  it("ignores comment-only lines and comments between stages", () => {
+    const program = parse("# lead\nfrom orders -- tail\n# between\nsort order_id\n");
+    expect(program.map((stage) => stage.kind)).toEqual(["from", "sort"]);
+  });
+
+  it("spans pipe-separated stages on one line without overlap", () => {
+    const program = parse("from orders | take 2");
+    expect(program.map((stage) => stage.kind)).toEqual(["from", "take"]);
+    const fromStage = program[0];
+    const takeStage = program[1];
+    expect(fromStage?.span.end.column).toBeLessThanOrEqual(takeStage?.span.start.column ?? 0);
+  });
+
+  it("spans comparison and IS NULL expressions", () => {
+    const comparison = filterCondition("a = 1");
+    expect(comparison.span).toMatchObject({ start: { column: 8 }, end: { column: 13 } });
+    const isNull = filterCondition("a IS NOT NULL");
+    expect(isNull.span.end.column).toBe(21);
+  });
+
+  it("restarts phase, tail, and singletons after a sql stage", () => {
+    const program = parse(
+      'from orders\nsort order_id\nsql "SELECT * FROM __input__"\nsort -order_id');
+    expect(program.map((stage) => stage.kind)).toEqual(["from", "sort", "sql", "sort"]);
+
+    const grouped = parse(
+      'from orders\nsql "SELECT * FROM __input__"\n'
+      + "filter quantity > 1\nsort order_id\ntake 2");
+    expect(grouped.map((stage) => stage.kind))
+      .toEqual(["from", "sql", "filter", "sort", "take"]);
+  });
+
+  it("keeps from global across a sql stage", () => {
+    expectPipelineError('from orders\nsql "SELECT * FROM __input__"\nfrom orders');
+  });
+
+  it("accepts WITH and WITH RECURSIVE in the hatch", () => {
+    const withQuery = parse(
+      'from orders\nsql "WITH RECURSIVE r AS (SELECT 1 AS n) SELECT n FROM r"');
+    expect(withQuery[1]?.kind).toBe("sql");
+  });
+
+  it("allows a window after the tail (documented behavior)", () => {
+    const program = parse(
+      "from orders\nsort order_id\n"
+      + "window rn = ROW_NUMBER() over (order by order_id)");
+    expect(program.map((stage) => stage.kind)).toEqual(["from", "sort", "window"]);
+  });
 });
