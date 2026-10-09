@@ -19,7 +19,7 @@ pipeline query language compiler
 
 usage: plq <command> [options]
 
-commands are not implemented yet (plan steps 2-7); see docs/pipeline-spec.md
+commands are not implemented yet (plan steps 5-7); grammar: plq/docs/grammar.md
 `;
 
 export function runCli(argv: readonly string[]): CliResult {
