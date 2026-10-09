@@ -157,7 +157,9 @@ export function parseProgram(source: string): Program {
       if (error instanceof PipelineError) throw error;
       if (error instanceof PlqError) {
         throw new PipelineError(error.detail, {
-          index, keyword, line: error.line, column: error.column,
+          index, keyword,
+          line: error.line ?? 1,
+          column: error.column ?? 1,
         });
       }
       throw error;

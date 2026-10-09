@@ -23,7 +23,8 @@ this package is the compiler being built to the same 9-step plan.
 | 2 — grammar document (`docs/grammar.md`, v1.1 frozen) | done |
 | 3 — lexer (`src/lexer.ts`) | done |
 | 4 — parser and AST (`src/parser.ts`, `src/ast.ts`) | done |
-| 5–9 | pending |
+| 5 — schema-aware validation (`src/schema.ts`, `src/semantics.ts`) | done |
+| 6–9 | pending |
 
 Step 2 ships the frozen grammar and the validated reference corpus:
 
