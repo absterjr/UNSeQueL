@@ -196,6 +196,10 @@ def analyze(stages: list[Stage], schema: Schema) -> list[StageLineage]:
             for name, expr in stage.items:
                 _check_refs(expr, scope, stage, index, f"derive '{name}'")
             for name, expr in stage.items:
+                if name in scope.columns:
+                    raise _fail(stage, index,
+                                f"derive '{name}' conflicts with a live column; "
+                                "choose another name")
                 scope.add_derived(name, _infer(expr, scope))
 
         elif isinstance(stage, Group):

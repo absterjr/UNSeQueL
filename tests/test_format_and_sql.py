@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from unsequel.cli import main
-from unsequel.codegen import emit_sql
+from unsequel.codegen import CodegenError, emit_sql
 from unsequel.errors import ExecutionError
 from unsequel.format import format_pipeline, is_formatted
 from unsequel.io import load_table
@@ -191,6 +191,33 @@ class SqlStageCodegenTests(unittest.TestCase):
         sql = emit_sql(stages, SCHEMA)
         self.assertIn("'__input__' AS tag", sql)
         self.assertIn("FROM stage_1", sql)
+
+    def test_substitution_respects_comments_and_identifiers(self):
+        commented = parse_pipeline_stages(
+            "from orders\n"
+            'sql "SELECT order_id -- don\'t touch\\nFROM __input__"'
+        )
+        sql = emit_sql(commented, SCHEMA)
+        self.assertIn("FROM stage_1", sql)
+        self.assertNotIn("__input__", sql)
+
+        quoted = parse_pipeline_stages('from orders\nsql \'SELECT * FROM "__input__"\'')
+        quoted_sql = emit_sql(quoted, SCHEMA)
+        self.assertIn("FROM stage_1", quoted_sql)
+        self.assertNotIn("__input__", quoted_sql)
+
+        blocked = parse_pipeline_stages(
+            'from orders\nsql "SELECT /* __input__ */ order_id FROM __input__"'
+        )
+        blocked_sql = emit_sql(blocked, SCHEMA)
+        self.assertIn("/* __input__ */", blocked_sql)
+        self.assertIn("FROM stage_1", blocked_sql)
+
+    def test_codegen_rejects_derive_conflicting_with_a_live_column(self):
+        stages = parse_pipeline_stages("from orders\nderive order_id = order_id + 1000")
+        with self.assertRaises(CodegenError) as ctx:
+            emit_sql(stages, SCHEMA)
+        self.assertIn("conflicts with a live column", str(ctx.exception))
 
     def test_unaliased_computed_select_names_match_memory(self):
         stages = parse_pipeline_stages(
