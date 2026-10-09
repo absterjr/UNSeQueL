@@ -188,6 +188,11 @@ def _stage_sql(stage: Stage, prev_cte: str, cols: _Cols, live: list[str],
         return f"SELECT * FROM {prev_cte} WHERE {_render(stage.condition, cols)}", cols, live
 
     if isinstance(stage, Derive):
+        for name, _expr in stage.items:
+            if name in live:
+                raise CodegenError(
+                    f"derive '{name}' conflicts with a live column; choose another name",
+                    index=index, keyword=stage.keyword, line=stage.line)
         additions = ", ".join(_aliased(_render(expr, cols), name) for name, expr in stage.items)
         new_live = live + [name for name, _ in stage.items]
         new_lookup = dict(cols.lookup)
@@ -268,38 +273,66 @@ def emit_sql(stages: list[Stage], schema: Schema, *, stop_at: int | None = None,
     return f"WITH {body}\nSELECT * FROM stage_{limit};"
 
 
+def _scan_quoted(text: str, start: int, quote: str) -> int:
+    """Return the index just past the quoted run that starts at `start`."""
+    i = start + 1
+    while i < len(text):
+        char = text[i]
+        if char == "\\" and i + 1 < len(text):
+            i += 2
+            continue
+        if char == quote:
+            if i + 1 < len(text) and text[i + 1] == quote:
+                i += 2
+                continue
+            return i + 1
+        i += 1
+    return len(text)
+
+
 def _substitute_input(text: str, replacement: str) -> str:
-    """Replace bare __input__ words with the previous CTE name, skipping strings."""
+    """Replace bare __input__ words with the previous CTE name.
+
+    Respects SQL lexical structure: single-quoted strings and comments are
+    copied untouched; a double-quoted identifier equal to "__input__" is
+    replaced (double quotes are identifiers in SQL, not strings).
+    """
     out: list[str] = []
     i = 0
     while i < len(text):
-        current = text[i]
-        if current in ("'", '"'):
-            quote = current
-            out.append(current)
-            i += 1
-            while i < len(text):
-                char = text[i]
-                out.append(char)
-                if char == "\\" and i + 1 < len(text):
-                    out.append(text[i + 1])
-                    i += 2
-                    continue
-                if char == quote:
-                    if i + 1 < len(text) and text[i + 1] == quote:
-                        out.append(quote)
-                        i += 2
-                        continue
-                    i += 1
-                    break
-                i += 1
+        char = text[i]
+        two = text[i:i + 2]
+        if two == "--":
+            newline = text.find("\n", i)
+            end = len(text) if newline < 0 else newline
+            out.append(text[i:end])
+            i = end
+            continue
+        if two == "/*":
+            close = text.find("*/", i + 2)
+            end = len(text) if close < 0 else close + 2
+            out.append(text[i:end])
+            i = end
+            continue
+        if char == "'":
+            end = _scan_quoted(text, i, "'")
+            out.append(text[i:end])
+            i = end
+            continue
+        if char == '"':
+            end = _scan_quoted(text, i, '"')
+            if text[i + 1:end - 1] == "__input__":
+                out.append(replacement)
+            else:
+                out.append(text[i:end])
+            i = end
             continue
         match = _INPUT_NAME.match(text, i)
         if match:
             out.append(replacement)
             i = match.end()
             continue
-        out.append(current)
+        out.append(char)
         i += 1
     return "".join(out)
 

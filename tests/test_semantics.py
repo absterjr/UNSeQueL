@@ -87,6 +87,11 @@ class InvalidQueryTests(unittest.TestCase):
         self.assertEqual((err.index, err.keyword), (2, "join"))
         self.assertIn("orders.plan", str(err))
 
+    def test_derive_conflicting_with_a_live_column_is_rejected(self):
+        err = self._error("from orders\nderive order_id = order_id + 1000")
+        self.assertEqual((err.index, err.keyword), (2, "derive"))
+        self.assertIn("conflicts with a live column", str(err))
+
     def test_derived_column_is_usable_downstream(self):
         # no error: a row derive feeds a later sort
         analyze(stages(

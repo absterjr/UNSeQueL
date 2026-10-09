@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 from .errors import ParseError
 from .expressions import (Call, Expr, Identifier, Wildcard, contains_aggregate,
-                          parse_expression_tokens)
+                          expression_name, parse_expression_tokens)
 from .lexer import Token, tokenize
 from .parser import FromSpec, OrderItem, SelectItem, _parse_table_ref, _split_top_level
 
@@ -298,6 +298,11 @@ def _parse_derive(raw: _Raw) -> Derive:
     if any(contains_aggregate(expr) for _, expr in items):
         raise PipelineError(
             "derive cannot contain aggregate functions; declare them in group and reference the name")
+    names: set[str] = set()
+    for name, _expr in items:
+        if name in names:
+            raise PipelineError(f"derive defines '{name}' more than once")
+        names.add(name)
     return Derive(raw.keyword, raw.line, items)
 
 
@@ -324,12 +329,25 @@ def _parse_group(raw: _Raw) -> Group:
     if not agg_tokens:
         raise PipelineError("group requires at least one aggregate inside '( )'")
     keys = []
+    key_names: set[str] = set()
     for part in _split_top_level(key_tokens):
         name, expr = _parse_bare_or_named(part, "group key")
         if contains_aggregate(expr):
             raise PipelineError("group keys cannot contain aggregate functions")
-        keys.append((_output_name(name, expr, "group key"), expr))
+        output = _output_name(name, expr, "group key")
+        if output in key_names:
+            raise PipelineError(f"group key '{output}' appears more than once")
+        key_names.add(output)
+        keys.append((output, expr))
     aggregates = tuple(_parse_aggregate(part) for part in _split_top_level(agg_tokens))
+    agg_names: set[str] = set()
+    for name, _call in aggregates:
+        if name in agg_names:
+            raise PipelineError(f"aggregate '{name}' is defined more than once")
+        if name in key_names:
+            raise PipelineError(
+                f"aggregate '{name}' conflicts with the group key of the same name")
+        agg_names.add(name)
     return Group(raw.keyword, raw.line, tuple(keys), aggregates)
 
 
@@ -339,12 +357,20 @@ def _parse_select(raw: _Raw) -> Select:
     if len(raw.tokens) == 1 and raw.tokens[0].value == "*":
         return Select(raw.keyword, raw.line, (), star=True)
     items = []
+    output_names: set[str] = set()
     for part in _split_top_level(raw.tokens):
         if len(part) == 1 and part[0].value == "*":
             raise PipelineError("'*' cannot be combined with other select items")
         name, expr = _parse_bare_or_named(part, "select")
-        if isinstance(expr, Call) and str(expr.name).upper() in _AGGREGATES:
-            raise PipelineError("aggregates belong in a group stage, not select")
+        if contains_aggregate(expr):
+            raise PipelineError(
+                "aggregate calls belong in the group stage, not select; "
+                "reference the aggregate name instead")
+        output = name or expression_name(expr)
+        if output in output_names:
+            raise PipelineError(
+                f"select projects '{output}' more than once; add an alias to one of them")
+        output_names.add(output)
         items.append(SelectItem(expr, name))
     return Select(raw.keyword, raw.line, tuple(items))
 
@@ -419,6 +445,8 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
     projected = False
     tail_started = False
     sort_seen = False
+    derive_names: set[str] = set()
+    group_names: set[str] = set()
 
     for position, raw in enumerate(raws, start=1):
         kw = raw.keyword
@@ -429,7 +457,7 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
 
         if kw in _RESERVED or kw.endswith(" join") and kw != "left join":
             if kw == "window":
-                raise fail("window is reserved and not implemented in v0.2")
+                raise fail("window is reserved and not implemented yet")
             raise fail(f"{kw} is not available in the pipeline grammar yet; use ordered syntax")
         if kw != "from" and not stages:
             raise fail("a pipeline must start with 'from'")
@@ -460,15 +488,30 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
                 stages.append(_parse_join(raw))
             elif kw == "derive":
                 node = _parse_derive(raw)
-                stages.append(Derive(node.keyword, node.line, node.items,
-                                     "group" if grouped else "row"))
+                phase = "group" if grouped else "row"
+                if phase == "group":
+                    for name, _expr in node.items:
+                        if name in group_names:
+                            raise fail(
+                                f"derive '{name}' conflicts with a group key or aggregate "
+                                "of the same name")
+                    group_names.update(name for name, _expr in node.items)
+                else:
+                    for name, _expr in node.items:
+                        if name in derive_names:
+                            raise fail(f"derive '{name}' is already defined in this segment")
+                    derive_names.update(name for name, _expr in node.items)
+                stages.append(Derive(node.keyword, node.line, node.items, phase))
             elif kw == "where":
                 node = _parse_where(raw)
                 stages.append(Where(node.keyword, node.line, node.condition,
                                     "group" if grouped else "row"))
             elif kw == "group":
-                stages.append(_parse_group(raw))
+                node = _parse_group(raw)
+                stages.append(node)
                 grouped = True
+                group_names = {name for name, _expr in node.keys} \
+                    | {name for name, _call in node.aggregates}
             elif kw == "select":
                 stages.append(_parse_select(raw))
                 projected = True
@@ -505,6 +548,8 @@ def parse_pipeline_stages(text: str) -> list[Stage]:
             projected = False
             tail_started = False
             sort_seen = False
+            derive_names = set()
+            group_names = set()
             seen = {"from": seen["from"]}
 
     return stages

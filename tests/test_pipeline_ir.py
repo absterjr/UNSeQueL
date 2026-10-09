@@ -201,6 +201,61 @@ class AggregatePlacementTests(unittest.TestCase):
         err = self._error("from orders\ngroup country (n = COUNT(DISTINCT *))")
         self.assertIn("COUNT(DISTINCT *)", str(err))
 
+    def test_hidden_aggregates_in_select_are_rejected(self):
+        for text in [
+            "from orders\nselect s = COALESCE(SUM(quantity), 0)",
+            "from orders\nselect s = -SUM(quantity)",
+            "from orders\nselect s = CASE WHEN SUM(quantity) > 1 THEN 1 ELSE 0 END",
+            "from orders\nselect quantity IN (SUM(quantity))",
+        ]:
+            with self.subTest(text=text):
+                err = self._error(text)
+                self.assertEqual(err.keyword, "select")
+                self.assertIn("group stage", str(err))
+
+
+class DuplicateNameTests(unittest.TestCase):
+    def _error(self, text: str) -> PipelineError:
+        with self.assertRaises(PipelineError) as ctx:
+            parse_pipeline_stages(text)
+        return ctx.exception
+
+    def test_select_cannot_project_the_same_name_twice(self):
+        err = self._error("from orders\nselect quantity, quantity = 1")
+        self.assertEqual(err.keyword, "select")
+        self.assertIn("more than once", str(err))
+
+    def test_derive_cannot_redefine_within_a_stage(self):
+        err = self._error("from orders\nderive a = quantity, a = quantity * 2")
+        self.assertIn("more than once", str(err))
+
+    def test_derive_cannot_redefine_across_stages(self):
+        err = self._error("from orders\nderive a = quantity\nderive a = quantity * 2")
+        self.assertIn("already defined", str(err))
+
+    def test_group_key_and_aggregate_cannot_share_a_name(self):
+        err = self._error("from orders\ngroup country (country = COUNT(*))")
+        self.assertIn("conflicts with the group key", str(err))
+
+    def test_group_names_cannot_repeat(self):
+        err = self._error("from orders\ngroup country, country (n = COUNT(*))")
+        self.assertIn("more than once", str(err))
+        err = self._error("from orders\ngroup country (n = COUNT(*), n = SUM(quantity))")
+        self.assertIn("more than once", str(err))
+
+    def test_group_derive_cannot_shadow_group_names(self):
+        err = self._error("from orders\ngroup country (n = COUNT(*))\nderive n = n + 1")
+        self.assertIn("conflicts with a group key or aggregate", str(err))
+
+    def test_row_derive_shadowing_an_aggregate_name_is_allowed(self):
+        stages = parse_pipeline_stages(
+            "from orders\n"
+            "derive revenue = quantity * unit_price\n"
+            "group customer (revenue = SUM(revenue))\n"
+            "sort -revenue"
+        )
+        self.assertTrue(stages)
+
 
 class DeriveDefaultProjectionTests(unittest.TestCase):
     def setUp(self):

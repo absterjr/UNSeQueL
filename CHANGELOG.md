@@ -18,6 +18,16 @@
   mandatory `aggregate`, completed window EBNF, `select`/`not` binding rules,
   single comparison tail, aggregate naming/DISTINCT rules, the complete
   reserved-word table, number and separator semantics, and alias defaults.
+- Prototype refinement (audit P-Fix1–3): aggregate calls are rejected anywhere
+  in `select` (including inside `COALESCE`/`CASE`/unary/`IN`); duplicate output
+  names are now errors — duplicate select items, derive redefinition within or
+  across stages, group key/aggregate collisions and group-phase derive
+  shadowing — and codegen plus schema analysis reject a derive name that
+  collides with a live column; `__input__` substitution respects SQL comments
+  (line and block) and quoted identifiers.
+- PLQ refinement (audit L-Fix1–2): `left join` now obeys the same ordering
+  checks as `join` (after `group by`, after the tail); empty stage bodies
+  report the stage's own line instead of 1:1.
 - `plq` parser (audit batch B6 / plan step 4): `src/parser.ts` — hand-written
   recursive descent over the stage grammar with additive/comparison/`BETWEEN`
   binding, `select x = y` aliasing, prefix `not` normalization, single-tail
