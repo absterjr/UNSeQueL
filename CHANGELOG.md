@@ -18,6 +18,13 @@
   mandatory `aggregate`, completed window EBNF, `select`/`not` binding rules,
   single comparison tail, aggregate naming/DISTINCT rules, the complete
   reserved-word table, number and separator semantics, and alias defaults.
+- `plq` parser (audit batch B6 / plan step 4): `src/parser.ts` — hand-written
+  recursive descent over the stage grammar with additive/comparison/`BETWEEN`
+  binding, `select x = y` aliasing, prefix `not` normalization, single-tail
+  comparison enforcement, all §4 ordering rules as stage-located
+  `PipelineError`s (stage ordinal, keyword, line, column), and stage splitting
+  on newline/`|` at depth zero. All 21 reference queries and 13 coverage
+  fixtures parse; 38 parser tests.
 - `plq` corpus and hygiene (audit batch B4–B5): `examples/coverage/` adds 13
   parser fixtures for the grammar features the reference set misses (window,
   aliases, named group keys, DISTINCT aggregates, `select *`, NOT variants,

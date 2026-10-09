@@ -9,12 +9,15 @@
 export class PlqError extends Error {
   readonly line: number;
   readonly column: number;
+  /** The message without the position suffix (for re-wrapping). */
+  readonly detail: string;
 
   constructor(message: string, line: number, column: number) {
     super(`${message} at line ${line}, column ${column}`);
     this.name = "PlqError";
     this.line = line;
     this.column = column;
+    this.detail = message;
   }
 }
 

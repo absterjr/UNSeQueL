@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseProgram } from "../src/parser.js";
 
 /**
  * Step 2 guard: the reference corpus is the fixed behavioral baseline for the
@@ -69,5 +70,14 @@ describe("reference corpus (step 2)", () => {
       /\bsql\s+"/i.test(readFileSync(join(REFERENCE, file), "utf8")),
     );
     expect(withSql).toEqual(["q21_sql_hatch.plq"]);
+  });
+
+  it("every reference query parses into a full program (step 4)", () => {
+    for (const file of files) {
+      const program = parseProgram(readFileSync(join(REFERENCE, file), "utf8"));
+      expect(program.length, file).toBeGreaterThan(0);
+      expect(program[0]?.kind, file).toBe("from");
+      program.forEach((stage, index) => expect(stage.index, file).toBe(index + 1));
+    }
   });
 });
