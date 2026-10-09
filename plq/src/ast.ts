@@ -151,6 +151,29 @@ export type Expr =
   | CastExpr
   | FuncCallExpr;
 
+/**
+ * Output name for an anonymous expression, shared by the analyzer and the
+ * code generator (mirrors the Python engines' `expression_name`).
+ */
+export function expressionName(expr: Expr): string {
+  switch (expr.kind) {
+    case "name":
+      return expr.name.split(".").pop() ?? expr.name;
+    case "call":
+      return expr.name.toLowerCase();
+    case "case":
+      return "case";
+    case "cast":
+      return "cast";
+    case "in":
+      return "in";
+    case "between":
+      return "between";
+    default:
+      return "expression";
+  }
+}
+
 // --------------------------------------------------------------------------- //
 // Stages (grammar §3)
 // --------------------------------------------------------------------------- //

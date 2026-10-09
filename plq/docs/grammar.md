@@ -252,8 +252,8 @@ window_func   = "ROW_NUMBER" | "RANK" | "DENSE_RANK"
 - A window stage may follow the tail (`sort`/`skip`/`take`); it adds its
   column over the current relation, and rule 11's forbidden list does not
   include `window`.
-- Syntax is frozen in v1.1; the parser accepts it today, and SQL lowering
-  lands with the codegen step (until then, use the `sql` hatch).
+- Syntax is frozen in v1.1; parsing and DuckDB lowering (step 6) are
+  implemented.
 - **IR:** `WindowStage { name, func, args, partitionBy, orderBy }`
 - **SQL:** `stage_u AS (SELECT *, <FUNC>(<args>) OVER (<spec>) AS <name> FROM stage_{u-1})`
 
