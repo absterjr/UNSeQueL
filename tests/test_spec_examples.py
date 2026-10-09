@@ -1,6 +1,6 @@
-"""Step 2 validation: the 20 reference pipeline queries in examples/spec/.
+"""Step 2 validation: the reference pipeline queries in examples/spec/.
 
-Each query must parse unambiguously against docs/pipeline-spec.md v0.2 and
+Each query must parse unambiguously against docs/pipeline-spec.md v0.3.1 and
 execute on the sample dataset. Row counts are pinned so later steps (semantic
 analysis, DuckDB codegen) have a fixed behavioural baseline to match.
 """
@@ -50,7 +50,7 @@ class SpecExampleTests(unittest.TestCase):
     def setUp(self):
         self.tables = load_sample()
 
-    def test_all_twenty_files_present(self):
+    def test_all_reference_files_present(self):
         found = sorted(p.stem for p in SPEC.glob("q*.pusql"))
         self.assertEqual(found, sorted(EXPECTED_ROW_COUNT))
 

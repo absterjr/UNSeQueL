@@ -66,14 +66,15 @@ class _Cols:
     """Resolves a query-level column name to a SQL column token for one CTE."""
 
     lookup: dict[str, str] = field(default_factory=dict)
+    opaque: bool = False
 
     def resolve(self, name: str) -> str:
         if name in self.lookup:
             return self.lookup[name]
-        bare = name.split(".")[-1]
-        if bare in self.lookup:
-            return self.lookup[bare]
-        return ".".join(_ident(part) for part in name.split("."))
+        if self.opaque:
+            # After a sql stage the columns are the author's responsibility.
+            return ".".join(_ident(part) for part in name.split("."))
+        raise CodegenError(f"cannot resolve column '{name}' in this stage")
 
     def flat(self, names: list[str]) -> "_Cols":
         return _Cols({n: _ident(n) for n in names})
@@ -124,7 +125,7 @@ def _render(expr: Expr, cols: _Cols) -> str:
 
 def _source_sql(spec) -> str:
     if spec.subquery is not None:
-        raise CodegenError("subquery sources are not supported by v0.2 codegen")
+        raise CodegenError("subquery sources are not supported by the codegen")
     if spec.alias:
         return f"{_ident(spec.name)} AS {_ident(spec.alias)}"
     return _ident(spec.name)
@@ -150,13 +151,21 @@ def _join_stage(stage: Join, schema: Schema, prev_cte: str, prev: _Cols,
     if table is None:
         raise CodegenError(f"unknown joined table '{stage.source.name}'", index=index,
                            keyword=stage.keyword, line=stage.line)
+    if prev.opaque:
+        raise CodegenError(
+            "cannot join after a sql stage; its columns are opaque. "
+            "Join before the hatch, or express the join in SQL.",
+            index=index, keyword=stage.keyword, line=stage.line)
     label = stage.source.alias or stage.source.name
 
     # ON runs in the join's own scope: bare names come from the previous CTE,
-    # qualified names from whichever side owns them.
+    # qualified names from whichever side owns them (left labels included).
     on_lookup = {name: f"{prev_cte}.{_ident(name)}" for name in live}
     for name in live:
         on_lookup[f"{prev_cte}.{name}"] = f"{prev_cte}.{_ident(name)}"
+    for qualified, exposed in prev.lookup.items():
+        if "." in qualified:
+            on_lookup[qualified] = f"{prev_cte}.{exposed}"
     for column in table.columns:
         on_lookup[f"{label}.{column}"] = f"{_ident(label)}.{_ident(column)}"
     on_sql = _render(stage.on, _Cols(on_lookup))
@@ -250,7 +259,7 @@ def emit_sql(stages: list[Stage], schema: Schema, *, stop_at: int | None = None,
     basis for stage preview.
     """
     if target != _TARGET:
-        raise CodegenError(f"only the '{_TARGET}' target is supported in v0.2")
+        raise CodegenError(f"only the '{_TARGET}' target is supported")
     if not stages or not isinstance(stages[0], From):
         raise CodegenError("a pipeline must start with a from stage")
     limit = len(stages) if stop_at is None else max(1, min(stop_at, len(stages)))
@@ -327,4 +336,4 @@ def _raw_sql_stage(stage: RawSql, prev_cte: str, position: int) -> tuple[str, _C
     indented = "\n".join(f"  {line}" for line in text.splitlines())
     # Columns after a raw stage are the user's responsibility: identifiers
     # render literally instead of being resolved from tracked lineage.
-    return indented, _Cols({}), []
+    return indented, _Cols({}, opaque=True), []

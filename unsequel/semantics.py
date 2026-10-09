@@ -173,7 +173,7 @@ def analyze(stages: list[Stage], schema: Schema) -> list[StageLineage]:
         if isinstance(stage, From):
             src = stage.source
             if src.subquery is not None:
-                raise _fail(stage, index, "subquery sources are not schema-checked in v0.2")
+                raise _fail(stage, index, "subquery sources are not schema-checked")
             table = schema.get(src.name)
             if table is None:
                 raise _fail(stage, index, f"unknown table '{src.name}'")
@@ -182,7 +182,7 @@ def analyze(stages: list[Stage], schema: Schema) -> list[StageLineage]:
         elif isinstance(stage, Join):
             src = stage.source
             if src.subquery is not None:
-                raise _fail(stage, index, "subquery joins are not schema-checked in v0.2")
+                raise _fail(stage, index, "subquery joins are not schema-checked")
             table = schema.get(src.name)
             if table is None:
                 raise _fail(stage, index, f"unknown joined table '{src.name}'")

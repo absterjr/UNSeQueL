@@ -77,7 +77,14 @@
   checks (calls only in `group`, no nested aggregates, `COUNT(*)` only, no
   `COUNT(DISTINCT *)`); formatter round-trips (`name = expr` in `derive`,
   escaped newlines in `sql` payloads, `IS NOT` precedence). Spec §4 updated to
-  v0.3.1; suite now 102 tests.
+  v0.3.1.
+- Prototype refinement (audit P-Fix7): codegen resolves qualified names
+  strictly — an aliased table's original name is rejected instead of silently
+  collapsing to the left side, left labels render correctly in join
+  conditions, columns after a `sql` stage stay literal, and `join` after a
+  hatch is rejected at parse time (spec §3.13). Doc sweep: spec/README bumped
+  to v0.3.1, version strings in error texts removed, test names no longer say
+  "twenty", backlog hatch notes refreshed.
 
 ## 0.4.0 - 2026-09-09
 

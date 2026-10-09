@@ -29,7 +29,7 @@ class IRShapeTests(unittest.TestCase):
         phased = [s for s in stages if isinstance(s, (Derive, Where))]
         self.assertEqual([s.phase for s in phased], ["row", "group", "group"])
 
-    def test_all_twenty_reference_queries_produce_ir(self):
+    def test_all_reference_queries_produce_ir(self):
         for path in sorted(SPEC.glob("q*.pusql")):
             with self.subTest(query=path.stem):
                 stages = parse_pipeline_stages(path.read_text())
