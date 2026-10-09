@@ -24,7 +24,8 @@ this package is the compiler being built to the same 9-step plan.
 | 3 — lexer (`src/lexer.ts`) | done |
 | 4 — parser and AST (`src/parser.ts`, `src/ast.ts`) | done |
 | 5 — schema-aware validation (`src/schema.ts`, `src/semantics.ts`) | done |
-| 6–9 | pending |
+| 6 — DuckDB codegen (`src/codegen.ts`) | done |
+| 7–9 | pending |
 
 Step 2 ships the frozen grammar and the validated reference corpus:
 
@@ -38,6 +39,9 @@ Step 2 ships the frozen grammar and the validated reference corpus:
 - contract layer in place: `src/ast.ts` (stage/expr nodes with spans, the
   grammar-stage → CTE lowering-unit map) and `src/errors.ts` (`PlqError`,
   `LexError`, `ParseError`, `PipelineError`)
+- SQL codegen with two-way verification: golden files in `tests/golden/` and
+  DuckDB execution parity against the hand-written equivalents in
+  `tests/handwritten/` (needs the `@duckdb/node-api` devDependency)
 
 ## Development
 

@@ -22,7 +22,7 @@
  * As a side effect `analyze` returns the per-stage column lineage.
  */
 
-import type { Expr, Program, SelectItemNode, Stage, WindowCall } from "./ast.js";
+import { expressionName, type Expr, type Program, type SelectItemNode, type Stage, type WindowCall } from "./ast.js";
 import { SemanticError } from "./errors.js";
 import { type Schema, type TypeFamily, typeFamily } from "./schema.js";
 
@@ -116,26 +116,6 @@ function identifiers(expr: Expr, out: Set<string> = new Set()): Set<string> {
       break;
   }
   return out;
-}
-
-/** Output name for a select item without an alias, mirroring the engines. */
-function expressionName(expr: Expr): string {
-  switch (expr.kind) {
-    case "name":
-      return expr.name.split(".").pop() ?? expr.name;
-    case "call":
-      return expr.name.toLowerCase();
-    case "case":
-      return "case";
-    case "cast":
-      return "cast";
-    case "in":
-      return "in";
-    case "between":
-      return "between";
-    default:
-      return "expression";
-  }
 }
 
 function selectName(item: SelectItemNode): string {

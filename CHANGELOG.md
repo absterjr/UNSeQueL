@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `plq` Step 6 (DuckDB codegen): `src/codegen.ts` lowers a program to a `WITH`
+  chain with one CTE per lowering unit (`group by` + `aggregate` share one),
+  with `stopAt` truncation that keeps the unit containing a grammar stage.
+  Shared output-naming moved to `src/ast.ts` (`expressionName`). Verified
+  two ways: 21 golden files (`plq/tests/golden/`) and DuckDB execution parity
+  against the hand-written equivalents (`plq/tests/handwritten/`, run with
+  the `@duckdb/node-api` devDependency).
 - `plq` Step 5 (schema-aware validation): `src/schema.ts` loads JSON schemas
   and collapses type strings into families; `src/semantics.ts` (`analyze`)
   walks a program tracking live columns per stage with join label defaults and
