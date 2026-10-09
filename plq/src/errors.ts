@@ -1,19 +1,22 @@
 /**
  * Shared error hierarchy for the PLQ compiler.
  *
- * Every user-facing error carries a 1-based source position. Lexer errors are
- * raised by `tokenize`; the parser (step 4) raises `ParseError` for token-level
- * failures and the stage-located `PipelineError` for ordering and shape rules.
+ * Source-located errors carry a 1-based position; schema-file errors carry
+ * none. `LexError` comes from `tokenize`, `ParseError` from the parser,
+ * `PipelineError` covers ordering rules, `SemanticError` extends it for
+ * schema-aware validation, and `SchemaError` reports malformed schema files.
  */
 
 export class PlqError extends Error {
-  readonly line: number;
-  readonly column: number;
+  readonly line: number | undefined;
+  readonly column: number | undefined;
   /** The message without the position suffix (for re-wrapping). */
   readonly detail: string;
 
-  constructor(message: string, line: number, column: number) {
-    super(`${message} at line ${line}, column ${column}`);
+  constructor(message: string, line?: number, column?: number) {
+    super(line !== undefined && column !== undefined
+      ? `${message} at line ${line}, column ${column}`
+      : message);
     this.name = "PlqError";
     this.line = line;
     this.column = column;
@@ -54,5 +57,19 @@ export class PipelineError extends PlqError {
     this.name = "PipelineError";
     this.stageIndex = location.index;
     this.stageKeyword = location.keyword;
+  }
+}
+
+export class SemanticError extends PipelineError {
+  constructor(message: string, location: PipelineErrorLocation) {
+    super(message, location);
+    this.name = "SemanticError";
+  }
+}
+
+export class SchemaError extends PlqError {
+  constructor(message: string) {
+    super(message);
+    this.name = "SchemaError";
   }
 }
