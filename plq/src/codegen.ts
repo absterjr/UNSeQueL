@@ -91,7 +91,7 @@ function stageError(stage: Stage, message: string): CodegenError {
 /** Resolves a program-level column name to a SQL token for one CTE. */
 class Cols {
   readonly lookup: Map<string, string>;
-  private readonly opaque: boolean;
+  readonly opaque: boolean;
 
   constructor(lookup: Map<string, string> = new Map(), opaque = false) {
     this.lookup = lookup;
@@ -363,7 +363,7 @@ function deriveStage(stage: DeriveStage, prevCte: string, cols: Cols,
   for (const item of stage.items) lookup.set(item.name, ident(item.name));
   return {
     sql: `SELECT *, ${additions} FROM ${prevCte}`,
-    cols: new Cols(lookup),
+    cols: new Cols(lookup, cols.opaque),
     live: [...live, ...stage.items.map((item) => item.name)],
   };
 }
@@ -397,7 +397,7 @@ function singleStageSql(stage: Stage, prevCte: string, cols: Cols,
       lookup.set(stage.name, ident(stage.name));
       return {
         sql: `SELECT *, ${renderWindow(stage.call, cols)} AS ${ident(stage.name)} FROM ${prevCte}`,
-        cols: new Cols(lookup),
+        cols: new Cols(lookup, cols.opaque),
         live: [...live, stage.name],
       };
     }

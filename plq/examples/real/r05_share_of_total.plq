@@ -1,0 +1,8 @@
+# Real query: share of total revenue per order.
+# Gap: grand-total windows need `over ()` (rejected today); the hatch covers it.
+from orders
+derive line_total = quantity * unit_price
+sql "SELECT *, line_total / (SELECT SUM(line_total) FROM __input__) AS share FROM __input__"
+select order_id, line_total, share
+sort -share
+take 3

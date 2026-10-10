@@ -1,0 +1,7 @@
+# Real query: revenue by customer segment with average order value
+from orders
+join customers on customer = customers.customer
+group by segment
+aggregate orders = COUNT(*), revenue = SUM(quantity * unit_price)
+derive avg_order = revenue / orders
+sort -revenue

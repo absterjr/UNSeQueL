@@ -27,7 +27,7 @@ this package is the compiler being built to the same 9-step plan.
 | 6 — DuckDB codegen (`src/codegen.ts`) | done |
 | 7 — stage-preview CLI (`src/cli.ts`, `src/duckdb.ts`) | done |
 | 8 — sql hatch + canonical formatter (`src/format.ts`) | done |
-| 9 | pending |
+| 9 — dogfood + external feedback (`examples/real/`, `docs/`) | done |
 
 ## Try it
 
@@ -71,6 +71,10 @@ Step 2 ships the frozen grammar and the validated reference corpus:
 - SQL codegen with two-way verification: golden files in `tests/golden/` and
   DuckDB execution parity against the hand-written equivalents in
   `tests/handwritten/` (needs the `@duckdb/node-api` devDependency)
+- dogfooding: five real analyst queries in
+  [`examples/real/`](examples/real/), the prioritised gaps they found in
+  [docs/backlog.md](docs/backlog.md), and an external-feedback exercise in
+  [docs/first-task.md](docs/first-task.md)
 
 ## Development
 

@@ -1,0 +1,6 @@
+# Real query: repeat customers (group filter with a COUNT)
+from orders
+group by customer
+aggregate orders = COUNT(*), revenue = SUM(quantity * unit_price)
+having orders > 1
+sort -orders, customer
