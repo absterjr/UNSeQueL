@@ -1,0 +1,8 @@
+# Real query: top products by revenue (join + group + top-N)
+from orders
+join products on product_id = products.product_id
+derive line_total = quantity * unit_price
+group by product_name
+aggregate revenue = SUM(line_total), units = SUM(quantity)
+sort -revenue
+take 5

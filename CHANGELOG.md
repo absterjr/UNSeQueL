@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `plq` Step 9 (dogfood + external feedback): five real analyst queries in
+  `plq/examples/real/` migrated through the CLI — two needed the `sql` hatch
+  (month bucketing, share-of-total), which drove the prioritised gaps in
+  `plq/docs/backlog.md`; `plq/docs/first-task.md` is the external-feedback
+  exercise; a dogfood test parses, validates, formats, and executes all five
+  against the sample dataset. Dogfooding found and fixed a real bug: the
+  hatch's opaque column tracking is now preserved through following
+  `derive`/`window` stages. The TypeScript compiler now covers all nine plan
+  steps.
 - `plq` Step 8 (sql hatch + formatter): the hatch was already implemented;
   this step adds the canonical formatter `src/format.ts` (`formatProgram`,
   `isFormatted`) and the `fmt [--write|--check]` CLI command. Lowercase stage

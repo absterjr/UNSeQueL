@@ -1,0 +1,8 @@
+# Real query: monthly revenue trend.
+# Gap: the language has no date functions, so month extraction uses the hatch.
+from orders
+sql "SELECT order_id, strftime(order_date, '%Y-%m') AS month, quantity, unit_price FROM __input__"
+derive line_total = quantity * unit_price
+group by month
+aggregate revenue = SUM(line_total), orders = COUNT(*)
+sort month
