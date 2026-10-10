@@ -12,6 +12,22 @@ python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
 
+## TypeScript compiler (`plq/`)
+
+The production compiler has its own development loop:
+
+```bash
+cd plq
+npm install
+npm run check   # tsc for src and tests
+npm test        # vitest, including DuckDB execution parity
+npm run build
+```
+
+Its grammar is [plq/docs/grammar.md](plq/docs/grammar.md) (frozen v1.1); the
+reference corpus in `plq/examples/reference/` is the behavioural baseline, and
+[plq/docs/backlog.md](plq/docs/backlog.md) lists the prioritised gaps.
+
 ## Good first contributions
 
 - Add a focused expression function with tests.

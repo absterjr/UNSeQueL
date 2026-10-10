@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-10-10
+
+TypeScript compiler (`plq/`) 0.1.0: all nine plan steps complete.
+Python prototype 0.5.0: audit refinements A1–A9 / P-Fix1–8, spec v0.3.1.
 
 - `plq` Step 9 (dogfood + external feedback): five real analyst queries in
   `plq/examples/real/` migrated through the CLI — two needed the `sql` hatch

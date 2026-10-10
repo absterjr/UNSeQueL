@@ -1,6 +1,6 @@
 {
   "name": "plq",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "PLQ compiler: pipeline query language, compiles to DuckDB SQL one CTE per stage.",
   "type": "module",
   "bin": {

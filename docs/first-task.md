@@ -1,5 +1,8 @@
 # First task (external feedback)
 
+This exercise targets the Python prototype. For the TypeScript compiler, see
+[plq/docs/first-task.md](../plq/docs/first-task.md).
+
 A 20-minute exercise that uses only the public documentation. Please do not
 read the source code. Record where you get stuck — that is the feedback.
 
