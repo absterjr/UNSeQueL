@@ -455,12 +455,13 @@ already used). Two mechanical translations from the Python prototype apply
 
 Result: **21/21 queries parse unambiguously on paper** under v1.1.
 
-## 7. Formatter (implement in Step 8)
+## 7. Formatter
 
 Canonical form: lowercase stage keywords, one stage per line, single-quoted
 strings, `-column` for descending sort, spaces around binary operators,
 trailing newline. Idempotent. Comments are not preserved. `sql` payloads are
 re-quoted with newlines escaped so a stage never spans lines (§2).
+Implemented in `plq/src/format.ts` with the `fmt --write|--check` CLI command.
 
 ## 8. Dataset
 
