@@ -1,6 +1,9 @@
 # Feature backlog (from dogfooding)
 
-Prioritised after migrating the 21 reference queries through the formatter and
+This is the backlog for the **Python prototype**. The production TypeScript
+compiler has its own at [plq/docs/backlog.md](../plq/docs/backlog.md).
+
+Prioritised after migrating the reference queries through the formatter and
 writing `q21_sql_hatch` — the first query the core stages cannot express
 without the escape hatch.
 

@@ -15,3 +15,8 @@ implementation plan.
 | 7 — Stage-preview CLI | [step-07-preview-cli.md](step-07-preview-cli.md) | done |
 | 8 — Raw-SQL escape hatch and formatter | [step-08-sql-hatch-and-formatter.md](step-08-sql-hatch-and-formatter.md) | done |
 | 9 — Dogfood and outside feedback | [step-09-dogfood.md](step-09-dogfood.md) | done |
+
+The production TypeScript compiler (`plq/`) follows the same nine-step plan;
+its status lives in [plq/README.md](../../plq/README.md), its grammar at
+[plq/docs/grammar.md](../../plq/docs/grammar.md), and its release notes in the
+changelog.

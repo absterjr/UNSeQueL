@@ -22,7 +22,7 @@ export interface CliResult {
   stderr: string;
 }
 
-export const VERSION = "0.0.1";
+export const VERSION = "0.1.0";
 
 const USAGE = `plq ${VERSION}
 pipeline query language compiler

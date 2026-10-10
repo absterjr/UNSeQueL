@@ -32,7 +32,7 @@ pipeline visible and learnable.
 
 ## Status
 
-UNSeQueL 0.4 is a complete query-language core. It includes a real lexer,
+UNSeQueL 0.5 is a complete query-language core. It includes a real lexer,
 ordered grammar, semantic stage checks, an in-memory relational executor, CTEs,
 nested sources, set operations, four join types plus cross joins, and a SQLite
 input adapter. The implementation is deliberately dependency-free so the
@@ -42,7 +42,7 @@ language can be learned and extended without a framework.
 
 Requires Python 3.10 or newer.
 
-The first public release is being built in this repository. Install the
+The project is distributed from this repository (not yet on PyPI). Install the
 current code directly from GitHub:
 
 ```bash
@@ -215,9 +215,25 @@ core syntax and execution model.
 ## Production compiler (TypeScript)
 
 The executable prototype lives in this Python package. The production
-compiler — TypeScript/Node, DuckDB target, hand-written recursive descent,
-one CTE per stage — is being built to the same plan in
-[plq/](plq/README.md).
+compiler in [plq/](plq/README.md) is complete: TypeScript/Node targeting
+DuckDB, hand-written recursive descent, one CTE per pipeline unit
+(`group by` + `aggregate` share one). It ships the frozen grammar
+([plq/docs/grammar.md](plq/docs/grammar.md), v1.1), lexer, parser with
+stage-located errors, schema-aware validation, codegen verified by golden
+files and DuckDB execution parity, and a CLI with the stage-preview workflow:
+
+```bash
+cd plq
+npm install
+npm run build
+node dist/main.js preview examples/reference/q20_full_pipeline.plq \
+  --schema ../examples/spec/schema.json --stage 5 \
+  --data orders=../examples/spec/orders.csv \
+  --data products=../examples/spec/products.csv
+```
+
+See [plq/docs/first-task.md](plq/docs/first-task.md) for a guided exercise
+and [plq/docs/backlog.md](plq/docs/backlog.md) for what comes next.
 
 ## Design principles
 
@@ -239,8 +255,9 @@ designs, not hidden partial features.
 
 Planned next steps are transactional storage adapters, recursive queries,
 streaming execution, better source highlights, native window syntax, and an
-interactive learning mode; the prioritised list is
-[docs/backlog.md](docs/backlog.md).
+interactive learning mode; the prioritised lists are
+[docs/backlog.md](docs/backlog.md) (prototype) and
+[plq/docs/backlog.md](plq/docs/backlog.md) (compiler).
 
 ## Contributing
 

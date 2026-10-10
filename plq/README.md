@@ -13,7 +13,7 @@ This is the production implementation of the plan the team locked in:
 | Codegen | one CTE per pipeline stage |
 
 The executable prototype lives in the Python package at the repository root;
-this package is the compiler being built to the same 9-step plan.
+this package is the production compiler, complete across the same 9-step plan.
 
 ## Plan status
 
@@ -28,6 +28,9 @@ this package is the compiler being built to the same 9-step plan.
 | 7 — stage-preview CLI (`src/cli.ts`, `src/duckdb.ts`) | done |
 | 8 — sql hatch + canonical formatter (`src/format.ts`) | done |
 | 9 — dogfood + external feedback (`examples/real/`, `docs/`) | done |
+
+All nine plan steps are complete; see the repository changelog for release
+notes and [docs/backlog.md](docs/backlog.md) for what comes next.
 
 ## Try it
 
@@ -70,7 +73,7 @@ Step 2 ships the frozen grammar and the validated reference corpus:
   `LexError`, `ParseError`, `PipelineError`)
 - SQL codegen with two-way verification: golden files in `tests/golden/` and
   DuckDB execution parity against the hand-written equivalents in
-  `tests/handwritten/` (needs the `@duckdb/node-api` devDependency)
+  `tests/handwritten/` (using the `@duckdb/node-api` runtime dependency)
 - dogfooding: five real analyst queries in
   [`examples/real/`](examples/real/), the prioritised gaps they found in
   [docs/backlog.md](docs/backlog.md), and an external-feedback exercise in
