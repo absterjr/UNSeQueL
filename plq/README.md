@@ -25,7 +25,32 @@ this package is the compiler being built to the same 9-step plan.
 | 4 — parser and AST (`src/parser.ts`, `src/ast.ts`) | done |
 | 5 — schema-aware validation (`src/schema.ts`, `src/semantics.ts`) | done |
 | 6 — DuckDB codegen (`src/codegen.ts`) | done |
-| 7–9 | pending |
+| 7 — stage-preview CLI (`src/cli.ts`, `src/duckdb.ts`) | done |
+| 8–9 | pending |
+
+## Try it
+
+```bash
+cd plq
+npm install
+npm run build
+
+# generated SQL (truncated at grammar stage 4)
+node dist/main.js compile examples/reference/q20_full_pipeline.plq \
+  --schema ../examples/spec/schema.json --stage 4
+
+# step through the pipeline: show the relation after stage 5
+node dist/main.js preview examples/reference/q20_full_pipeline.plq \
+  --schema ../examples/spec/schema.json --stage 5 --limit 3 \
+  --data orders=../examples/spec/orders.csv \
+  --data products=../examples/spec/products.csv
+
+# execute the whole program
+node dist/main.js run examples/reference/q20_full_pipeline.plq \
+  --schema ../examples/spec/schema.json --format json \
+  --data orders=../examples/spec/orders.csv \
+  --data products=../examples/spec/products.csv
+```
 
 Step 2 ships the frozen grammar and the validated reference corpus:
 

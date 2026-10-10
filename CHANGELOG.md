@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `plq` Step 7 (stage-preview CLI): `check`, `compile [--stage N]`, `preview
+  --stage N [--limit K]` and `run` execute real DuckDB queries against
+  `--data name=path` sources (CSV/JSON/Parquet). `preview` runs the program
+  truncated at any grammar stage and labels the sample (`stage N/total
+  (keyword)`), the plan's standout feature. DuckDB moved from a devDependency
+  to a runtime dependency; the CLI is async (`runCli` returns a promise). New
+  `src/duckdb.ts` backend and table/JSON/CSV output formatting.
 - `plq` Step 6 (DuckDB codegen): `src/codegen.ts` lowers a program to a `WITH`
   chain with one CTE per lowering unit (`group by` + `aggregate` share one),
   with `stopAt` truncation that keeps the unit containing a grammar stage.
