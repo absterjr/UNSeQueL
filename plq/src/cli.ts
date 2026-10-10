@@ -6,11 +6,12 @@
  * pipeline can be stepped through stage by stage without editing it.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import { emitSql } from "./codegen.js";
 import { connect, runSql, type SqlResult } from "./duckdb.js";
 import { PlqError } from "./errors.js";
+import { formatProgram } from "./format.js";
 import { parseProgram } from "./parser.js";
 import { loadSchema, type Schema } from "./schema.js";
 import { analyze } from "./semantics.js";
@@ -37,11 +38,16 @@ commands:
            run the program truncated at grammar stage N and show sample rows
   run      <query.plq> --schema s.json --data name=path [--format table|json|csv]
            execute the whole program
+  fmt      <query.plq> [--write | --check]
+           print the canonical form; --write rewrites the file, --check exits 1
+           when the file is not canonical
 
 options are per command; --help prints this text
 `;
 
 class UsageError extends Error {}
+
+class CheckFailure extends Error {}
 
 interface Args {
   positionals: string[];
@@ -245,6 +251,23 @@ async function cmdRun(args: Args): Promise<string> {
   return `${formatResult(result, format)}\n`;
 }
 
+function cmdFmt(args: Args): string {
+  const { text, path } = readProgram(args);
+  const check = args.flags.has("check");
+  const write = args.flags.has("write");
+  if (check && write) throw new UsageError("--check and --write are mutually exclusive");
+  const formatted = formatProgram(text);
+  if (check) {
+    if (formatted !== text) throw new CheckFailure();
+    return "";
+  }
+  if (write) {
+    writeFileSync(path, formatted, "utf8");
+    return "";
+  }
+  return formatted;
+}
+
 // --------------------------------------------------------------------------- //
 // Entry point
 // --------------------------------------------------------------------------- //
@@ -258,7 +281,7 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
 
   const command = argv[0];
   if (command === undefined) return { code: 2, stdout: "", stderr: USAGE };
-  const known = new Set(["check", "compile", "preview", "run"]);
+  const known = new Set(["check", "compile", "preview", "run", "fmt"]);
   if (!known.has(command)) {
     return { code: 2, stdout: "", stderr: `unknown command '${command}'\n\n${USAGE}` };
   }
@@ -269,9 +292,13 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
     if (command === "check") stdout = cmdCheck(args);
     else if (command === "compile") stdout = cmdCompile(args);
     else if (command === "preview") stdout = await cmdPreview(args);
+    else if (command === "fmt") stdout = cmdFmt(args);
     else stdout = await cmdRun(args);
     return { code: 0, stdout, stderr: "" };
   } catch (error) {
+    if (error instanceof CheckFailure) {
+      return { code: 1, stdout: "", stderr: "" };
+    }
     if (error instanceof UsageError) {
       return { code: 2, stdout: "", stderr: `error: ${error.message}\n\n${USAGE}` };
     }

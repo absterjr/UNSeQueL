@@ -26,7 +26,8 @@ this package is the compiler being built to the same 9-step plan.
 | 5 — schema-aware validation (`src/schema.ts`, `src/semantics.ts`) | done |
 | 6 — DuckDB codegen (`src/codegen.ts`) | done |
 | 7 — stage-preview CLI (`src/cli.ts`, `src/duckdb.ts`) | done |
-| 8–9 | pending |
+| 8 — sql hatch + canonical formatter (`src/format.ts`) | done |
+| 9 | pending |
 
 ## Try it
 
@@ -50,6 +51,9 @@ node dist/main.js run examples/reference/q20_full_pipeline.plq \
   --schema ../examples/spec/schema.json --format json \
   --data orders=../examples/spec/orders.csv \
   --data products=../examples/spec/products.csv
+
+# canonical formatting
+node dist/main.js fmt examples/reference/q20_full_pipeline.plq --check
 ```
 
 Step 2 ships the frozen grammar and the validated reference corpus:

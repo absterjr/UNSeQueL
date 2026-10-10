@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `plq` Step 8 (sql hatch + formatter): the hatch was already implemented;
+  this step adds the canonical formatter `src/format.ts` (`formatProgram`,
+  `isFormatted`) and the `fmt [--write|--check]` CLI command. Lowercase stage
+  keywords, uppercase expression keywords, minimal parentheses,
+  single-quoted strings, `-column` descending, one-line `sql` payloads,
+  trailing newline; comments are dropped. All 21 reference queries are
+  canonical; comments in coverage fixtures make them the idempotency case.
 - `plq` Step 7 (stage-preview CLI): `check`, `compile [--stage N]`, `preview
   --stage N [--limit K]` and `run` execute real DuckDB queries against
   `--data name=path` sources (CSV/JSON/Parquet). `preview` runs the program
