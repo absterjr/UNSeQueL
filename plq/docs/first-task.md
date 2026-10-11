@@ -1,5 +1,8 @@
 # First task (external feedback)
 
+This exercise targets the TypeScript compiler. For the Python prototype, see
+[../../docs/first-task.md](../../docs/first-task.md).
+
 A 20-minute exercise that uses only the public documentation. Please do not
 read the source code. Record where you get stuck — that is the feedback.
 
@@ -28,7 +31,8 @@ npm run build
 
 3. Write `my_query.plq` answering: *which customers spent more than 150 in
    total, highest first?* Use `from`, `group by`, `aggregate`, `having`, and
-   `sort`. Sample data: [../examples/spec/orders.csv](../examples/spec/orders.csv).
+   `sort`. Sample data:
+   [../../examples/spec/orders.csv](../../examples/spec/orders.csv).
 4. Format your file and confirm it is canonical:
 
    ```bash

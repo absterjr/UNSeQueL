@@ -14,6 +14,11 @@ This is the production implementation of the plan the team locked in:
 
 The executable prototype lives in the Python package at the repository root;
 this package is the production compiler, complete across the same 9-step plan.
+It implements an **evolved dialect** of the prototype's pipeline surface —
+`filter`/`having` instead of position-sensitive `where`, split `group by` +
+`aggregate`, and an implemented `window` stage. The exact deltas are in
+[docs/grammar.md](docs/grammar.md) §2; do not copy `.pusql` examples into
+`.plq` files or vice versa.
 
 ## Plan status
 

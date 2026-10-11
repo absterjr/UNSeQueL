@@ -26,10 +26,14 @@ jobs:
         run: python -m pip wheel . --no-deps --wheel-dir dist
 
   compiler:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-latest]
         node-version: ['22', '24']
+        include:
+          - os: windows-latest
+            node-version: '24'
     defaults:
       run:
         working-directory: plq
@@ -48,3 +52,7 @@ jobs:
         run: npm test
       - name: Build and run the CLI
         run: npm run build && node dist/main.js --version
+      - name: Formatter check
+        run: npm run fmt:check
+      - name: Smoke-run the CLI on real data
+        run: npm run smoke

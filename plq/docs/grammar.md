@@ -108,6 +108,10 @@ cross-implementation awareness):
 | `where` position-sensitive | `filter` (row only) + `having` (group only) | explicit stages give precise errors; matches the agreed stage list |
 | `group keys (aggs)` combined | `group by` + `aggregate` stages (one lowering unit) | one concept per stage; maps 1:1 to SQL while keeping one CTE per unit |
 | subquery sources accepted | not part of v1.x | no silent data loss; subqueries are a future feature |
+| `window` reserved | `window` implemented | ranking queries work natively; the prototype uses the `sql` hatch |
+| identifiers may contain `$` | `[A-Za-z_][A-Za-z0-9_]*` only | stricter lexical rule |
+| strings may contain raw newlines | strings are single-line (`\n` escape) | keeps one stage per line |
+| an ordered `.usql` surface also exists | `.plq` is pipeline-only | the prototype hosts two surfaces; the compiler one |
 
 ## 3. Stages
 

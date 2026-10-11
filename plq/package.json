@@ -34,6 +34,8 @@
     "check": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "fmt:check": "node scripts/check-formatter.mjs",
+    "smoke": "node dist/main.js run examples/real/r01_top_products.plq --schema ../examples/spec/schema.json --format json --data orders=../examples/spec/orders.csv --data products=../examples/spec/products.csv",
     "prepack": "npm run build"
   },
   "engines": {

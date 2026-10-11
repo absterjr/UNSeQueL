@@ -1,5 +1,8 @@
 # Compiler backlog (from dogfooding)
 
+This is the backlog for the **TypeScript compiler**. The Python prototype has
+its own at [../../docs/backlog.md](../../docs/backlog.md).
+
 Prioritised gaps found while migrating the five real queries in
 [`examples/real/`](../examples/real/) through the CLI (steps 6-9). Two of the
 five reached for `sql "..."`.
@@ -11,7 +14,7 @@ five reached for `sql "..."`.
 2. **Grand-total windows** — share-of-total needs `SUM(x) over ()`; the grammar
    requires at least one of `partition by` / `order by`, so r05 used a scalar
    subquery in the hatch.
-3. **`select *, expression AS name`** — the frozen `*`-only rule forces
+3. **`select *, name = expression`** — the frozen `*`-only rule forces
    splitting projections into two stages.
 
 ## P1 — language completeness
