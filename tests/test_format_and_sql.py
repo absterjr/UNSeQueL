@@ -332,6 +332,21 @@ class FmtCliTests(unittest.TestCase):
 
 
 class RunCliTests(unittest.TestCase):
+    def test_pipeline_is_inferred_from_the_extension(self):
+        text, code = run_cli("run", str(SPEC / "q09_group_count.pusql"),
+                             "--format", "json",
+                             f"--data=orders={SPEC / 'orders.csv'}")
+        self.assertEqual(code, 0)
+        import json
+        rows = json.loads(text)
+        self.assertEqual(rows[0]["country"], "United Kingdom")
+
+    def test_ordered_parse_failure_hints_at_pipeline(self):
+        with _temp_file("from orders\ngroup country (n = COUNT(*))\n", suffix=".txt") as path:
+            text, code = run_cli("check", path)
+            self.assertEqual(code, 1)
+            self.assertIn("--pipeline", text)
+
     def test_run_memory_engine_executes_the_hatch(self):
         text, code = run_cli("run", str(SPEC / "q21_sql_hatch.pusql"), "--pipeline",
                              "--format", "json",
@@ -349,9 +364,9 @@ class RunCliTests(unittest.TestCase):
 
 
 class _temp_file:
-    def __init__(self, content: str):
+    def __init__(self, content: str, suffix: str = ".pusql"):
         import tempfile
-        self._manager = tempfile.NamedTemporaryFile("w", suffix=".pusql", delete=False)
+        self._manager = tempfile.NamedTemporaryFile("w", suffix=suffix, delete=False)
         self.path = self._manager.name
         self._content = content
 

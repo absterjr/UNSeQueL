@@ -10,7 +10,7 @@ from . import __version__
 from .codegen import emit_sql
 from .duckdb_backend import run_sql
 from .engine import execute
-from .errors import UnsequelError
+from .errors import ParseError, UnsequelError
 from .format import format_pipeline, is_formatted
 from .io import load_sqlite_tables, load_table
 from .parser import parse_query
@@ -126,15 +126,31 @@ def _pipeline_stages(text: str, schema_path: str | None):
     return stages
 
 
+def _wants_pipeline(args) -> bool:
+    """--pipeline, or a .pusql file (the compile/preview commands are pipeline-only)."""
+    if args.pipeline:
+        return True
+    return args.query != "-" and args.query.lower().endswith(".pusql")
+
+
+def _parse_ordered_with_hint(text: str):
+    try:
+        return parse_query(text)
+    except ParseError as exc:
+        raise ParseError(
+            f"{exc}\n  hint: pipeline queries need --pipeline (or use a .pusql file)"
+        ) from None
+
+
 def _cmd_check(args) -> None:
     text = _read_query(args.query)
-    if args.pipeline:
+    if _wants_pipeline(args):
         _pipeline_stages(text, args.schema)
         suffix = " (schema OK)" if args.schema else ""
     else:
         if args.schema:
             raise UnsequelError("--schema is only supported with --pipeline")
-        parse_query(text)
+        _parse_ordered_with_hint(text)
         suffix = ""
     print(f"valid UNSeQueL query{suffix}")
 
@@ -175,8 +191,8 @@ def _cmd_fmt(args) -> None:
 def _cmd_run(args) -> None:
     text = _read_query(args.query)
     if args.engine == "duckdb":
-        if not args.pipeline:
-            raise UnsequelError("--engine duckdb requires --pipeline")
+        if not _wants_pipeline(args):
+            raise UnsequelError("--engine duckdb requires --pipeline (or a .pusql file)")
         if not args.schema:
             raise UnsequelError("--engine duckdb requires --schema")
         if args.sqlite:
@@ -185,13 +201,13 @@ def _cmd_run(args) -> None:
         sql = emit_sql(stages, Schema.load(args.schema))
         result = run_sql(sql, {name: path for name, path in args.data})
     else:
-        if args.pipeline:
+        if _wants_pipeline(args):
             stages = _pipeline_stages(text, args.schema)
             result = execute_pipeline_stages(stages, _load_tables(args))
         else:
             if args.schema:
                 raise UnsequelError("--schema is only supported with --pipeline")
-            result = execute(parse_query(text), _load_tables(args))
+            result = execute(_parse_ordered_with_hint(text), _load_tables(args))
     _print_result(result, args.format)
 
 

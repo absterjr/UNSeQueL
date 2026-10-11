@@ -12,8 +12,9 @@ without the escape hatch.
 1. **Native window syntax** (`window rank = ROW_NUMBER() over (partition by ...
    order by ...)`). The `sql` hatch covers it today, but ranking is the first
    thing analysts reach for and should not require raw SQL.
-2. **`--pipeline` should not be required for `.pusql` files.** Forgetting the
-   flag is the most likely first-run failure; infer from the extension.
+2. ~~**`--pipeline` should not be required for `.pusql` files.**~~ **Done
+   (R3):** the CLI infers pipeline mode from the `.pusql` extension and
+   appends a hint when an ordered-syntax parse fails.
 3. **Stage-located runtime errors for the memory engine.** Parse and schema
    errors point at stage + line; execution errors do not yet.
 
@@ -23,7 +24,9 @@ without the escape hatch.
 5. Subquery / nested-pipeline sources (`from (from orders ...) as x`).
 6. Set operations as stages (`union`, `intersect`, `except`).
 7. Preserve comments in `unsequel fmt` (today they are dropped).
-8. Multi-line `sql """..."""` strings for longer escape hatches.
+8. Triple-quoted `sql """..."""` spelling for longer escape hatches (raw
+   newlines inside a regular `sql "..."` string already work, and the
+   formatter re-escapes them).
 9. Hatch guardrails: reject raw SQL that references `stage_N` CTEs directly
    (multi-statement text, non-query openings, and `join` after the hatch are
    already rejected at parse time; `__input__` substitution already respects
@@ -38,6 +41,10 @@ without the escape hatch.
 12. `preview` for the memory engine (today preview always runs via DuckDB).
 13. Formatter: fold long `group (...)` and `select ...` lines over multiple
     lines when they exceed a width budget.
+14. Pin cross-engine behavior: an explicit `ORDER BY` tie-breaker, a single
+    division-by-zero policy (in-memory `NULL` vs DuckDB infinity), and
+    normalized float rendering in JSON output. Today these differ between the
+    in-memory, DuckDB, and PLQ engines (documented in the README).
 
 ## Intentionally out of scope
 

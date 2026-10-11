@@ -152,6 +152,6 @@ which keeps execution semantics identical to CSV and JSON input.
 
 ## Current boundaries
 
-The 0.2 release is a complete read/query core and intentionally does not
+The 0.5 release is a complete read/query core and intentionally does not
 include table-changing statements, recursive CTEs, scalar subqueries inside
 expressions, user-defined functions, or streaming/native query planning.

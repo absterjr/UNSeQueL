@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- R3 coherence batch: a repository map table names the three dialects
+  (`.usql` ordered, `.pusql` prototype pipeline, `.plq` compiler pipeline) and
+  the compiler grammar §2 delta table covers window/`$`/newline/ordered-surface
+  differences; the Python CLI infers pipeline mode from the `.pusql` extension
+  and hints at `--pipeline` when an ordered parse fails; pipeline-style
+  subquery attempts get a directed message; cross-engine divergences
+  (`ORDER BY` ties, division-by-zero, float rendering) are documented in the
+  README; stale docs fixed (`language-reference` version, pipeline-spec §3.1
+  EBNF and §5 illustrative note, poc-syntax pointer, progress note, plq
+  first-task link); examples READMEs added; the compiler CI gains a formatter
+  check, a dist smoke run, and a Windows leg.
 - `plq` R2 robustness batch: DuckDB failures surface as clean `error:` lines
   (no raw stacks); unknown per-command options are rejected; duplicate or
   dotted `--data` names are rejected with guidance; `compile --stage`

@@ -22,9 +22,10 @@ backlog, and have someone external complete a task using only the docs."
 
 [docs/first-task.md](../first-task.md) is a self-contained 20-minute task
 (setup → run a query → write one → format → schema-check → optional hatch).
-It deliberately withholds the `--pipeline` flag in step 2's command to see
-whether the docs communicate it. The questionnaire at the bottom defines what
-feedback we collect.
+The exercise passes `--pipeline` explicitly; the questionnaire asks whether
+the docs made the flag discoverable. Since then the CLI also infers pipeline
+mode from the `.pusql` extension and appends a hint when an ordered-syntax
+parse fails.
 
 ## What changed
 

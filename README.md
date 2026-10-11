@@ -30,6 +30,17 @@ LIMIT 10
 The point is not to replace SQL. The point is to make the logical execution
 pipeline visible and learnable.
 
+## Repository map
+
+Three surfaces live here. They share the ordered-pipeline idea but are
+different dialects — check this table before copying an example between tools.
+
+| Surface | Extension | Tool | Dialect |
+| --- | --- | --- | --- |
+| Ordered core | `.usql` | `python -m unsequel` | SQL-like order: `SELECT ... FROM ... WHERE ...` (Python prototype) |
+| Pipeline (prototype) | `.pusql` | `python -m unsequel ... --pipeline` (inferred for `.pusql`) | one stage per line; `where` is position-sensitive (row vs group); `group keys (aggregates)` |
+| Pipeline (production) | `.plq` | `plq` CLI in [plq/](plq/README.md) | evolved grammar: `filter`/`having` instead of positional `where`, split `group by` + `aggregate`, implemented `window` — see [plq/docs/grammar.md](plq/docs/grammar.md) §2 for the exact deltas |
+
 ## Status
 
 UNSeQueL 0.5 is a complete query-language core. It includes a real lexer,
@@ -131,7 +142,9 @@ the order above. Multiple `JOIN` clauses are allowed directly after `FROM`.
 
 The pipeline surface — one transform per line, PRQL-style, lowered onto the
 same engine and specified in [docs/pipeline-spec.md](docs/pipeline-spec.md)
-(v0.3.1).
+(v0.3.1). This section documents the **Python prototype dialect** (`.pusql`):
+`where` is position-sensitive and `group` combines keys with aggregates. The
+production compiler uses the dialect in the repository map above.
 
 ```text
 from orders
@@ -258,6 +271,12 @@ streaming execution, better source highlights, native window syntax, and an
 interactive learning mode; the prioritised lists are
 [docs/backlog.md](docs/backlog.md) (prototype) and
 [plq/docs/backlog.md](plq/docs/backlog.md) (compiler).
+
+Known engine differences: different execution engines can order and render
+results slightly differently. Ties in `ORDER BY` are engine-defined;
+division by zero yields `NULL` in the in-memory engine and infinity in DuckDB;
+JSON output renders floats differently (`192.0` vs `177`). Treat the engines
+as semantically equivalent, not byte-for-byte identical.
 
 ## Contributing
 

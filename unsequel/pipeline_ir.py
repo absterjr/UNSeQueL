@@ -266,6 +266,10 @@ def _reject_subquery(source: FromSpec, what: str) -> FromSpec:
 def _parse_from(raw: _Raw) -> From:
     if not raw.tokens:
         raise PipelineError("from requires a table name")
+    if raw.tokens[0].value == "(":
+        raise PipelineError(
+            "subquery sources are not supported in the pipeline grammar; "
+            "chain stages instead")
     return From(raw.keyword, raw.line, _reject_subquery(_parse_table_ref(raw.tokens), "from"))
 
 
@@ -285,6 +289,10 @@ def _parse_join(raw: _Raw) -> Join:
         raise PipelineError("join requires an ON condition")
     if on_index == 0:
         raise PipelineError("join requires a table before ON")
+    if raw.tokens[0].value == "(":
+        raise PipelineError(
+            "subquery sources are not supported in the pipeline grammar; "
+            "join a table instead")
     source = _reject_subquery(_parse_table_ref(raw.tokens[:on_index]), "join")
     on = parse_expression_tokens(raw.tokens[on_index + 1:])
     if contains_aggregate(on):

@@ -119,6 +119,11 @@ class StageLocatedErrorTests(unittest.TestCase):
         self.assertEqual((err.index, err.keyword), (2, "join"))
         self.assertIn("subquery", str(err))
 
+    def test_pipeline_style_subquery_attempt_gets_a_directed_message(self):
+        err = self._error("from (from orders | select order_id) as x")
+        self.assertEqual(err.keyword, "from")
+        self.assertIn("not supported", str(err))
+
     def test_unknown_stage(self):
         err = self._error("from orders\nfrobnicate x")
         self.assertEqual(err.index, 2)

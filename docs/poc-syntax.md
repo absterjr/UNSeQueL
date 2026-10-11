@@ -1,5 +1,10 @@
 # UNSeQueL Pipeline Syntax — POC v0.1 (FROZEN)
 
+> Superseded for current work: see [pipeline-spec.md](pipeline-spec.md)
+> (Python pipeline, v0.3.1) and
+> [../plq/docs/grammar.md](../plq/docs/grammar.md) (production compiler,
+> v1.1). This file stays as the frozen v0.1 history and prior-art credits.
+
 This is the proof-of-concept syntax for pipeline-style UNSeQueL queries. The
 grammar below is frozen for the POC: changes require a new syntax version, not
 a silent edit.

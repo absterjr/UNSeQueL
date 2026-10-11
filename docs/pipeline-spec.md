@@ -96,11 +96,12 @@ stage         = join_stage | where_stage | derive_stage | group_stage
 
 ```ebnf
 from_stage  = "from" , table_ref ;
-table_ref   = ident [ "as" ident ]
-            | "(" , pipeline , ")" "as" ident ;
+table_ref   = ident [ "as" ident ] ;
 ```
 
 - Must be the first stage. Exactly one per pipeline.
+- Nested pipeline sources (`from (from ...) as x`) are not supported; they are
+  tracked in the backlog as a P1 language-completeness item.
 - **IR:** `From(source, alias)`.
 - **SQL:** `stage_1 AS (SELECT * FROM <source> [AS <alias>])`.
 
@@ -309,6 +310,10 @@ WITH stage_1 AS (SELECT * FROM orders),
      stage_8 AS (SELECT * FROM stage_7 LIMIT 3)
 SELECT * FROM stage_8;
 ```
+
+The real `compile` output is more literal than the illustration above: join
+collisions are renamed (`products_product_id`), predicates are parenthesized,
+and every stage is a named CTE. The block is trimmed for readability.
 
 `unsequel preview q20_full_pipeline.pusql --stage 4` runs
 `SELECT * FROM stage_4 LIMIT <sample>` and nothing below it.
