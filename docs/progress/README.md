@@ -20,3 +20,8 @@ The production TypeScript compiler (`plq/`) follows the same nine-step plan;
 its status lives in [plq/README.md](../../plq/README.md), its grammar at
 [plq/docs/grammar.md](../../plq/docs/grammar.md), and its release notes in the
 changelog.
+
+Beyond step 9, the compiler gained the SQL-like execution model (file
+directives, `--lines` selections, stdin input, interactive `repl`) and the VS
+Code extension in `plq/editors/vscode/`; those changes are recorded in the
+changelog.

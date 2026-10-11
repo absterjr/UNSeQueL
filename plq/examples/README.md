@@ -11,13 +11,21 @@ pipeline examples use the older `.pusql` dialect and live in
 | `coverage/c01..c13` | parser fixtures for grammar features the reference set misses (window, aliases, DISTINCT aggregates, NOT variants, CAST, …); feature map in [coverage/README.md](coverage/README.md) |
 | `real/r01..r05` | the five dogfooding queries migrated through the CLI; two use the `sql` hatch, recorded in [../docs/backlog.md](../docs/backlog.md) |
 
-Run any of them with the CLI, for example:
+The five `real/` queries carry their own `# source` directives, so once `plq`
+is on PATH they need no flags:
 
 ```bash
 cd plq
-npm run build
-node dist/main.js run examples/real/r01_top_products.plq \
-  --schema ../examples/spec/schema.json \
+npm install -g .        # once
+plq run examples/real/r01_top_products.plq
+plq run examples/real/r05_share_of_total.plq --format json
+```
+
+The `reference/` and `coverage/` corpora are parse/codegen fixtures and are
+normally driven with explicit flags:
+
+```bash
+plq preview examples/reference/q20_full_pipeline.plq --stage 5 --limit 3 \
   --data orders=../examples/spec/orders.csv \
   --data products=../examples/spec/products.csv
 ```

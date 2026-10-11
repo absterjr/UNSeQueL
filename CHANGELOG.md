@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Documentation pass: every doc now describes the installed-`plq` workflow —
+  the root README compiler section leads with flagless `plq run`/`--lines`/
+  `repl`; `plq/docs/first-task.md` is a flagless exercise (with the `# source`
+  directive and an optional VS Code step); `plq/examples/README.md` splits
+  self-contained `real/` from fixture corpora; `plq/docs/backlog.md` records
+  shipped vs open tooling gaps; `CONTRIBUTING.md` covers
+  `fmt:check`/`editors:check` and the extension folder; the progress log
+  points at the post-step-9 work.
 - Editor experience: the five dogfood queries in `plq/examples/real/` now
   carry `# source` directives and run with zero flags; `plq/editors/vscode/`
   ships a VS Code extension — syntax highlighting, `PLQ: Run Selection`

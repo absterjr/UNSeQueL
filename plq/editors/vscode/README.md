@@ -41,3 +41,9 @@ on a blank line.
 
 - `plq.executable` — the `plq` command to run; set an absolute path if `plq`
   is not on `PATH`.
+
+## Uninstall
+
+```bash
+code --uninstall-extension unsequel.plq-vscode
+```

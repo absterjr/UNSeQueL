@@ -233,26 +233,29 @@ core syntax and execution model.
 
 ## Production compiler (TypeScript)
 
-The executable prototype lives in this Python package. The production
-compiler in [plq/](plq/README.md) is complete: TypeScript/Node targeting
-DuckDB, hand-written recursive descent, one CTE per pipeline unit
+The production compiler in [plq/](plq/README.md) is complete: TypeScript/Node
+targeting DuckDB, hand-written recursive descent, one CTE per pipeline unit
 (`group by` + `aggregate` share one). It ships the frozen grammar
 ([plq/docs/grammar.md](plq/docs/grammar.md), v1.1), lexer, parser with
-stage-located errors, schema-aware validation, codegen verified by golden
-files and DuckDB execution parity, and a CLI with the stage-preview workflow:
+stage-located errors, schema-aware validation, and codegen verified by golden
+files and DuckDB execution parity.
+
+`.plq` files run like SQL — they declare their own sources, and a query can be
+run whole, selected by line range, piped through stdin, or explored in an
+interactive `repl`:
 
 ```bash
 cd plq
-npm install
-npm run build
-node dist/main.js preview examples/reference/q20_full_pipeline.plq \
-  --schema ../examples/spec/schema.json --stage 5 \
-  --data orders=../examples/spec/orders.csv \
-  --data products=../examples/spec/products.csv
+npm install -g .        # once; puts `plq` on PATH
+plq run examples/real/r01_top_products.plq
+plq run examples/real/r01_top_products.plq --lines 4:10
+plq repl
 ```
 
-See [plq/docs/first-task.md](plq/docs/first-task.md) for a guided exercise
-and [plq/docs/backlog.md](plq/docs/backlog.md) for what comes next.
+A VS Code extension (syntax highlighting plus Run Selection/File/REPL) lives
+in [plq/editors/vscode](plq/editors/vscode/README.md). See
+[plq/docs/first-task.md](plq/docs/first-task.md) for a guided exercise and
+[plq/docs/backlog.md](plq/docs/backlog.md) for what comes next.
 
 ## Design principles
 

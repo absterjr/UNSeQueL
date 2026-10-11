@@ -34,12 +34,12 @@ plq --version
 directives (relative to the file), so no flags are needed:
 
 ```bash
-plq run examples/real/r01_top_products.plq             # join + group + top-N
+plq run examples/real/r01_top_products.plq              # join + group + top-N
 plq run examples/real/r03_repeat_customers.plq --format json
-plq run examples/real/r01_top_products.plq --lines 2:7 # run just that range
+plq run examples/real/r01_top_products.plq --lines 4:10 # run just that range
 echo "from orders | take 1" | plq run - \
-  --data orders=../examples/spec/orders.csv            # query from stdin
-plq repl                                               # interactive session
+  --data orders=../examples/spec/orders.csv             # query from stdin
+plq repl                                                # interactive session
 ```
 
 Without a schema file, loaded tables are introspected, so `run`, `compile`,
