@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `plq` R2 robustness batch: DuckDB failures surface as clean `error:` lines
+  (no raw stacks); unknown per-command options are rejected; duplicate or
+  dotted `--data` names are rejected with guidance; `compile --stage`
+  validates its range like `preview`; UTF-8 BOMs are stripped from query and
+  schema files; CRLF input counts as canonical for `fmt --check`;
+  `.gitattributes` pins LF so fresh Windows clones pass the formatter and
+  golden tests. Packaging: `npm pack` now ships LICENSE, docs, and examples;
+  `package.json` gains license/repository/keywords/main/types and a prepack
+  build; the Python package gains classifiers, keywords, and project URLs.
 - `plq` R1 correctness batch: same-stage `derive` chains now compile (earlier
   items are inlined into later ones); window/aggregate/join/select/derive name
   collisions are stage-located errors across parser, analyzer, and codegen;
