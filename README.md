@@ -1,5 +1,9 @@
 # UNSeQueL
 
+[![CI](https://github.com/absterjr/UNSeQueL/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/absterjr/UNSeQueL/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Discussions](https://img.shields.io/badge/community-discussions-blueviolet)](https://github.com/absterjr/UNSeQueL/discussions)
+
 UNSeQueL is a small, open-source query language that lets you write a query
 in the order SQL logically executes it.
 
@@ -29,6 +33,10 @@ LIMIT 10
 
 The point is not to replace SQL. The point is to make the logical execution
 pipeline visible and learnable.
+
+Questions, ideas, and query showcases are welcome in
+[Discussions](https://github.com/absterjr/UNSeQueL/discussions); bugs and
+feature requests have issue templates.
 
 ## Repository map
 
@@ -279,7 +287,8 @@ Planned next steps are transactional storage adapters, recursive queries,
 streaming execution, better source highlights, native window syntax, and an
 interactive learning mode; the prioritised lists are
 [docs/backlog.md](docs/backlog.md) (prototype) and
-[plq/docs/backlog.md](plq/docs/backlog.md) (compiler).
+[plq/docs/backlog.md](plq/docs/backlog.md) (compiler), tracked in the
+[milestones](https://github.com/absterjr/UNSeQueL/milestones).
 
 Known engine differences: different execution engines can order and render
 results slightly differently. Ties in `ORDER BY` are engine-defined;
@@ -290,7 +299,9 @@ as semantically equivalent, not byte-for-byte identical.
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md). Issues, examples, documentation, and
-small parser improvements are welcome.
+small parser improvements are welcome. Questions and open-ended ideas belong
+in [Discussions](https://github.com/absterjr/UNSeQueL/discussions) so they get
+answered without cluttering the tracker.
 
 ## License
 
