@@ -6,9 +6,10 @@
   directives even when the selection excludes them, so running a selected
   query needs no flags (the file is the connection; the selection is the
   query). The REPL gains `.run` to execute the query being typed, a `...>`
-  continuation prompt while a query is open, and a warning when `.quit`
-  discards pending lines. Dev dependencies bumped to vitest 5 (`npm audit`
-  clean).
+  continuation prompt while a query is open, a warning when `.quit`
+  discards pending lines, and IPython-style stripping of pasted `plq>`/`...>`
+  prompt prefixes so example transcripts can be copied wholesale. Dev
+  dependencies bumped to vitest 5 (`npm audit` clean).
 - SQL-like execution model for the compiler: `.plq` files can declare their
   own connection with `# source name: path` and `# schema: path` directives
   (paths relative to the file; `--data`/`--schema` override); `plq run -`

@@ -96,6 +96,15 @@ describe("repl session", () => {
     expect(session.prompt()).toBe("plq> ");
   });
 
+  it("accepts pasted transcripts with prompt prefixes", async () => {
+    const session = new ReplSession({ sources: new Map([["orders", ORDERS]]) });
+    expect(await session.handleLine("plq> .sources")).toContain("orders");
+    await session.handleLine("plq> from orders");
+    await session.handleLine("...> take 1");
+    const out = await session.handleLine("");
+    expect(out).toContain("1 row(s)");
+  });
+
   it("warns when quitting with a pending query", async () => {
     const session = new ReplSession();
     await session.handleLine("from orders");

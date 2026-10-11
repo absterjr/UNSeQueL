@@ -33,6 +33,19 @@ const HELP = `commands:
 
 write one stage per line; end a query with a blank line, a lone ';', or .run`;
 
+const PROMPT_PREFIXES = ["plq> ", "plq>", "...> ", "...>"];
+
+/** Accept pasted transcripts: strip leading `plq>` / `...>` prompt text. */
+function stripPromptPrefixes(line: string): string {
+  let input = line;
+  for (let i = 0; i < 3; i += 1) {
+    const prefix = PROMPT_PREFIXES.find((candidate) => input.startsWith(candidate));
+    if (prefix === undefined) break;
+    input = input.slice(prefix.length);
+  }
+  return input;
+}
+
 export class ReplSession {
   private readonly sources = new Map<string, string>();
   private connection: DuckDBConnection | null = null;
@@ -68,7 +81,8 @@ export class ReplSession {
 
   /** Feed one input line; returns output text ("" when nothing to show). */
   async handleLine(line: string): Promise<string> {
-    const trimmed = line.trim();
+    const input = stripPromptPrefixes(line);
+    const trimmed = input.trim();
     if (trimmed.startsWith(".")) {
       // Dot commands work at any point, like a SQL client.
       return this.command(trimmed);
@@ -79,14 +93,14 @@ export class ReplSession {
       this.buffer = [];
       return this.execute(text);
     }
-    const stripped = line.trimEnd();
+    const stripped = input.trimEnd();
     if (stripped.endsWith(";")) {
       this.buffer.push(stripped.slice(0, -1));
       const text = this.buffer.join("\n");
       this.buffer = [];
       return this.execute(text);
     }
-    this.buffer.push(line);
+    this.buffer.push(input);
     return "";
   }
 
