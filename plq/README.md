@@ -64,6 +64,34 @@ node dist/main.js run examples/reference/q20_full_pipeline.plq \
 node dist/main.js fmt examples/reference/q20_full_pipeline.plq --check
 ```
 
+## Run it like SQL
+
+`.plq` files can declare their own connection, so no flags are needed:
+
+```text
+# source orders: ../examples/spec/orders.csv
+# schema: ../examples/spec/schema.json
+from orders
+group by country
+aggregate revenue = SUM(quantity * unit_price)
+sort -revenue
+```
+
+```bash
+npm link                                  # once, to get `plq` on PATH
+plq run my_query.plq                      # self-contained: no --data flags
+plq run my_query.plq --lines 3:5          # run just the selected range
+echo "from orders | take 1" | plq run -   # query from stdin
+plq repl                                  # interactive session
+```
+
+`repl` is the editor story: select a query in your editor, run
+"Terminal: Run Selected Text in Active Terminal" against a `plq` REPL, and it
+executes on the blank line. Dot commands: `.load name=path`, `.sources`,
+`.schema [path]`, `.format table|json|csv`, `.clear`, `.quit`. Without
+`--schema` or a `# schema:` directive, loaded tables are introspected, so
+`.load orders=orders.csv` followed by a query just works.
+
 Step 2 ships the frozen grammar and the validated reference corpus:
 
 - [`docs/grammar.md`](docs/grammar.md) — every stage's EBNF, IR shape, and

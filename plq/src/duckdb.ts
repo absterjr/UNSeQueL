@@ -11,6 +11,9 @@ import { existsSync } from "node:fs";
 import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 
 import { PlqError } from "./errors.js";
+import { parseSchema, type Schema } from "./schema.js";
+
+export type { DuckDBConnection };
 
 export type Row = Record<string, unknown>;
 
@@ -36,6 +39,18 @@ function readerFor(path: string): string {
   return `read_csv_auto(${quoted(path)})`;
 }
 
+/** Load one CSV/JSON/Parquet file into the connection as table `name`. */
+export async function loadTableSource(connection: DuckDBConnection, name: string,
+                                      path: string): Promise<void> {
+  if (!existsSync(path)) throw new PlqError(`data file not found: ${path}`);
+  try {
+    await connection.run(
+      `CREATE OR REPLACE TABLE ${quotedIdent(name)} AS SELECT * FROM ${readerFor(path)}`);
+  } catch (error) {
+    throw new PlqError(`could not load data file ${path}: ${(error as Error).message}`);
+  }
+}
+
 export async function connect(data: ReadonlyMap<string, string>): Promise<DuckDBConnection> {
   let connection: DuckDBConnection;
   try {
@@ -45,13 +60,7 @@ export async function connect(data: ReadonlyMap<string, string>): Promise<DuckDB
     throw new PlqError(`DuckDB error: ${(error as Error).message}`);
   }
   for (const [name, path] of data) {
-    if (!existsSync(path)) throw new PlqError(`data file not found: ${path}`);
-    try {
-      await connection.run(
-        `CREATE TABLE ${quotedIdent(name)} AS SELECT * FROM ${readerFor(path)}`);
-    } catch (error) {
-      throw new PlqError(`could not load data file ${path}: ${(error as Error).message}`);
-    }
+    await loadTableSource(connection, name, path);
   }
   return connection;
 }
@@ -66,4 +75,24 @@ export async function runSql(connection: DuckDBConnection, sql: string): Promise
   } catch (error) {
     throw new PlqError(`DuckDB error: ${(error as Error).message}`);
   }
+}
+
+/** Build a Schema from the live database (used when no schema file is given). */
+export async function introspectSchema(connection: DuckDBConnection,
+                                       names: readonly string[]): Promise<Schema> {
+  const tables: Record<string, { columns: Record<string, string> }> = {};
+  for (const name of names) {
+    try {
+      const reader = await connection.runAndReadAll(`DESCRIBE ${quotedIdent(name)}`);
+      const rows = reader.getRowObjectsJS() as Array<{
+        column_name: string; column_type: string;
+      }>;
+      tables[name] = {
+        columns: Object.fromEntries(rows.map((row) => [row.column_name, row.column_type])),
+      };
+    } catch (error) {
+      throw new PlqError(`could not introspect table ${name}: ${(error as Error).message}`);
+    }
+  }
+  return parseSchema({ tables });
 }

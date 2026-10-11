@@ -466,9 +466,11 @@ Result: **21/21 queries parse unambiguously on paper** under v1.1.
 
 Canonical form: lowercase stage keywords, one stage per line, single-quoted
 strings, `-column` for descending sort, spaces around binary operators,
-trailing newline. Idempotent. Comments are not preserved. `sql` payloads are
-re-quoted with newlines escaped so a stage never spans lines (§2).
-Implemented in `plq/src/format.ts` with the `fmt --write|--check` CLI command.
+trailing newline. Idempotent. Leading `# source name: path` and `# schema:
+path` file directives are preserved; every other comment is dropped. `sql`
+payloads are re-quoted with newlines escaped so a stage never spans lines
+(§2). Implemented in `plq/src/format.ts` with the `fmt --write|--check` CLI
+command.
 
 ## 8. Dataset
 

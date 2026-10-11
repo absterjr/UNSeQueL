@@ -40,10 +40,12 @@ import {
   type UnaryExpr,
   type WindowStage,
 } from "./ast.js";
+import { splitDirectives } from "./directives.js";
 import { parseProgram } from "./parser.js";
 
 export function formatProgram(source: string): string {
-  return formatStages(parseProgram(source));
+  const directives = splitDirectives(source);
+  return directives.prefix + formatStages(parseProgram(directives.body));
 }
 
 export function formatStages(program: Program): string {

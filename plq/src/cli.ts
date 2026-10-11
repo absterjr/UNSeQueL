@@ -1,18 +1,24 @@
 /**
- * PLQ CLI (plan step 7): check, compile, preview, run.
+ * PLQ CLI: check, compile, preview, run, fmt, and the interactive repl.
  *
- * `preview` is the standout feature: it executes the program truncated at any
- * grammar stage and shows a sample of the intermediate relation, so a
- * pipeline can be stepped through stage by stage without editing it.
+ * SQL-like execution model: a query file may declare its own sources and
+ * schema as leading directives, `-` reads the query from stdin, and
+ * `--lines A:B` runs just a selected range. `preview` remains the standout
+ * feature: run a program truncated at any grammar stage.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { createInterface } from "node:readline";
 
 import { emitSql } from "./codegen.js";
-import { connect, runSql, type SqlResult } from "./duckdb.js";
+import { splitDirectives, type Directives } from "./directives.js";
+import { connect, introspectSchema, runSql, type DuckDBConnection } from "./duckdb.js";
 import { PlqError } from "./errors.js";
 import { formatProgram, isFormatted } from "./format.js";
+import { OUTPUT_FORMATS, formatResult } from "./output.js";
 import { parseProgram } from "./parser.js";
+import { ReplSession } from "./repl.js";
 import { loadSchema, type Schema } from "./schema.js";
 import { analyze } from "./semantics.js";
 
@@ -30,19 +36,32 @@ pipeline query language compiler
 usage: plq <command> [options]
 
 commands:
-  check    <query.plq> [--schema s.json]
-           parse a program; --schema also validates it
-  compile  <query.plq> --schema s.json [--stage N]
+  check    <query.plq> [--schema s.json] [--lines A:B]
+           parse a program; --schema (or a '# schema:' directive) validates it
+  compile  <query.plq> [--schema s.json] [--stage N] [--lines A:B]
            print the generated DuckDB SQL (optionally truncated at stage N)
-  preview  <query.plq> --schema s.json --stage N --data name=path [--limit K]
+  preview  <query.plq> --stage N [--limit K] [--data name=path] [--lines A:B]
            run the program truncated at grammar stage N and show sample rows
-  run      <query.plq> --schema s.json --data name=path [--format table|json|csv]
-           execute the whole program
+  run      <query.plq | -> [--data name=path] [--schema s.json]
+           [--format table|json|csv] [--lines A:B]
+           execute the whole program ('-' reads the query from stdin)
   fmt      <query.plq> [--write | --check]
            print the canonical form; --write rewrites the file, --check exits 1
-           when the file is not canonical
+  repl     [--data name=path] [--schema s.json] [--format table|json|csv]
+           interactive session; a query runs on a blank line or ';'
+           (bare 'plq' opens the repl on a terminal)
 
-options are per command; --help prints this text
+query files can declare their own connection, so no flags are needed:
+
+  # source orders: ../data/orders.csv
+  # source products: ../data/products.csv
+  # schema: ../data/schema.json
+  from orders
+  ...
+
+--data overrides a directive with the same name; --schema overrides
+'# schema:'. Without any schema, tables loaded from the sources are
+introspected automatically.
 `;
 
 class UsageError extends Error {}
@@ -88,15 +107,14 @@ function flag(args: Args, name: string): string | undefined {
   return args.flags.get(name)?.at(-1);
 }
 
-function required(args: Args, name: string): string {
-  const value = flag(args, name);
-  if (value === undefined) throw new UsageError(`--${name} is required`);
-  return value;
+function readAllStdin(): string {
+  return readFileSync(0, "utf8").replace(/^\uFEFF/, "");
 }
 
 function readProgram(args: Args): { text: string; path: string } {
   const path = args.positionals[0];
   if (path === undefined) throw new UsageError("a query file is required");
+  if (path === "-") return { text: readAllStdin(), path };
   try {
     return { text: readFileSync(path, "utf8").replace(/^\uFEFF/, ""), path };
   } catch {
@@ -104,14 +122,23 @@ function readProgram(args: Args): { text: string; path: string } {
   }
 }
 
-function loadSchemaIfGiven(args: Args): Schema | null {
-  const path = flag(args, "schema");
-  return path === undefined ? null : loadSchema(path);
+function applyLines(text: string, spec: string | undefined): string {
+  if (spec === undefined) return text;
+  const match = /^(\d+):(\d+)$/.exec(spec);
+  if (match === null) throw new UsageError("--lines must look like START:END (1-based)");
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (start < 1 || end < start) {
+    throw new UsageError("--lines must be a valid 1-based range");
+  }
+  return text.split(/\r\n|\n/).slice(start - 1, end).join("\n");
 }
 
-function dataSources(args: Args): Map<string, string> {
+function dataSources(args: Args, allowEmpty = false): Map<string, string> {
   const specs = args.flags.get("data") ?? [];
-  if (specs.length === 0) throw new UsageError("at least one --data name=path is required");
+  if (specs.length === 0 && !allowEmpty) {
+    throw new UsageError("at least one --data name=path is required");
+  }
   const data = new Map<string, string>();
   for (const spec of specs) {
     const equals = spec.indexOf("=");
@@ -132,64 +159,47 @@ function dataSources(args: Args): Map<string, string> {
   return data;
 }
 
-// --------------------------------------------------------------------------- //
-// Output formatting
-// --------------------------------------------------------------------------- //
-
-function tableOutput(result: SqlResult): string {
-  const { columns, rows } = result;
-  if (columns.length === 0) return "(0 columns)";
-  const widths = columns.map((column) => Math.max(
-    column.length,
-    ...rows.map((row) => String(valueOf(row[column])).length),
-  ));
-  const header = columns.map((c, i) => c.padEnd(widths[i] as number)).join("  ");
-  const rule = widths.map((w) => "-".repeat(w)).join("  ");
-  const lines = rows.map((row) => columns
-    .map((c, i) => String(valueOf(row[c])).padEnd(widths[i] as number))
-    .join("  "));
-  return [header, rule, ...lines].join("\n");
+function resolveQueryPath(queryPath: string, target: string): string {
+  if (queryPath === "-" || isAbsolute(target)) return target;
+  return resolve(dirname(queryPath), target);
 }
 
-function valueOf(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "bigint") return value.toString();
-  if (value instanceof Date) {
-    const iso = value.toISOString();
-    // DATE columns arrive as midnight UTC; show the date only.
-    return iso.endsWith("T00:00:00.000Z") ? iso.slice(0, 10) : iso;
+/** Directive sources first (paths resolved), then explicit --data overrides. */
+function mergeSources(directives: Directives, args: Args, queryPath: string): Map<string, string> {
+  const merged = new Map<string, string>();
+  for (const [name, relative] of directives.sources) {
+    merged.set(name, resolveQueryPath(queryPath, relative));
   }
-  if (typeof value === "object") return String(value);
-  return String(value);
+  for (const [name, path] of dataSources(args, true)) merged.set(name, path);
+  return merged;
 }
 
-function csvOutput(result: SqlResult): string {
-  const cell = (value: unknown): string => {
-    const text = valueOf(value);
-    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
-  const lines = [result.columns.map(cell).join(",")];
-  for (const row of result.rows) {
-    lines.push(result.columns.map((column) => cell(row[column])).join(","));
+function declaredSchema(args: Args, directives: Directives, queryPath: string): Schema | null {
+  const flagPath = flag(args, "schema");
+  if (flagPath !== undefined) return loadSchema(flagPath);
+  if (directives.schemaPath !== null) {
+    return loadSchema(resolveQueryPath(queryPath, directives.schemaPath));
   }
-  return lines.join("\n");
+  return null;
 }
 
-function jsonReplacer(_key: string, value: unknown): unknown {
-  if (typeof value === "bigint") {
-    const num = Number(value);
-    return Number.isSafeInteger(num) ? num : value.toString();
+async function introspectFromSources(sources: ReadonlyMap<string, string>): Promise<Schema> {
+  const connection = await connect(sources);
+  return introspectSchema(connection, [...sources.keys()]);
+}
+
+async function schemaForConnection(args: Args, directives: Directives, queryPath: string,
+                                   connection: DuckDBConnection,
+                                   sources: ReadonlyMap<string, string>): Promise<Schema> {
+  return declaredSchema(args, directives, queryPath)
+    ?? introspectSchema(connection, [...sources.keys()]);
+}
+
+function validateFormat(value: string): string {
+  if (!(OUTPUT_FORMATS as readonly string[]).includes(value)) {
+    throw new UsageError(`--format must be one of ${OUTPUT_FORMATS.join(", ")}`);
   }
-  if (value === null || typeof value !== "object") return value;
-  if (value instanceof Date) return value.toISOString();
-  if (Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype) return value;
-  return String(value); // DuckDBDecimal and friends
-}
-
-function formatResult(result: SqlResult, format: string): string {
-  if (format === "json") return JSON.stringify(result.rows, jsonReplacer, 2);
-  if (format === "csv") return csvOutput(result);
-  return `${tableOutput(result)}\n\n${result.rows.length} row(s)`;
+  return value;
 }
 
 // --------------------------------------------------------------------------- //
@@ -197,9 +207,11 @@ function formatResult(result: SqlResult, format: string): string {
 // --------------------------------------------------------------------------- //
 
 function cmdCheck(args: Args): string {
-  const { text } = readProgram(args);
-  const program = parseProgram(text);
-  const schema = loadSchemaIfGiven(args);
+  const { text, path } = readProgram(args);
+  const selected = applyLines(text, flag(args, "lines"));
+  const directives = splitDirectives(selected);
+  const program = parseProgram(directives.body);
+  const schema = declaredSchema(args, directives, path);
   if (schema !== null) {
     analyze(program, schema);
     return "valid PLQ query (schema OK)\n";
@@ -207,11 +219,20 @@ function cmdCheck(args: Args): string {
   return "valid PLQ query\n";
 }
 
-function cmdCompile(args: Args): string {
-  const { text } = readProgram(args);
-  const schemaPath = required(args, "schema");
-  const program = parseProgram(text);
-  const schema = loadSchema(schemaPath);
+async function cmdCompile(args: Args): Promise<string> {
+  const { text, path } = readProgram(args);
+  const selected = applyLines(text, flag(args, "lines"));
+  const directives = splitDirectives(selected);
+  const program = parseProgram(directives.body);
+  const sources = mergeSources(directives, args, path);
+  const schema = declaredSchema(args, directives, path)
+    ?? (sources.size > 0
+      ? await introspectFromSources(sources)
+      : (() => {
+        throw new PlqError(
+          "no schema available: pass --schema, add '# schema:' to the file, "
+          + "or provide data sources");
+      })());
   analyze(program, schema);
   const stopAt = flag(args, "stage");
   const stop = stopAt === undefined ? undefined : Number(stopAt);
@@ -225,11 +246,19 @@ function cmdCompile(args: Args): string {
 }
 
 async function cmdPreview(args: Args): Promise<string> {
-  const { text } = readProgram(args);
-  const schema = loadSchema(required(args, "schema"));
-  const program = parseProgram(text);
+  const { text, path } = readProgram(args);
+  const selected = applyLines(text, flag(args, "lines"));
+  const directives = splitDirectives(selected);
+  const program = parseProgram(directives.body);
+  const sources = mergeSources(directives, args, path);
+  if (sources.size === 0) {
+    throw new UsageError("preview needs --data name=path or a '# source' directive");
+  }
+  const connection = await connect(sources);
+  const schema = await schemaForConnection(args, directives, path, connection, sources);
   analyze(program, schema);
-  const stageText = required(args, "stage");
+  const stageText = flag(args, "stage");
+  if (stageText === undefined) throw new UsageError("--stage is required");
   const stage = Number(stageText);
   if (!Number.isInteger(stage) || stage < 1 || stage > program.length) {
     throw new PlqError(`--stage must be between 1 and ${program.length} for this query`);
@@ -241,22 +270,24 @@ async function cmdPreview(args: Args): Promise<string> {
   }
   const inner = emitSql(program, schema, { stopAt: stage }).trimEnd().replace(/;$/, "");
   const sql = `SELECT * FROM (\n${inner}\n) AS _preview LIMIT ${limit}`;
-  const connection = await connect(dataSources(args));
   const result = await runSql(connection, sql);
   const label = `stage ${stage}/${program.length}  (${program[stage - 1]?.keyword})`;
   return `${label}\n${formatResult(result, "table")}\n`;
 }
 
 async function cmdRun(args: Args): Promise<string> {
-  const { text } = readProgram(args);
-  const schema = loadSchema(required(args, "schema"));
-  const program = parseProgram(text);
-  analyze(program, schema);
-  const format = flag(args, "format") ?? "table";
-  if (!["table", "json", "csv"].includes(format)) {
-    throw new UsageError("--format must be table, json, or csv");
+  const { text, path } = readProgram(args);
+  const selected = applyLines(text, flag(args, "lines"));
+  const directives = splitDirectives(selected);
+  const program = parseProgram(directives.body);
+  const sources = mergeSources(directives, args, path);
+  if (sources.size === 0) {
+    throw new UsageError("run needs --data name=path or a '# source' directive");
   }
-  const connection = await connect(dataSources(args));
+  const format = validateFormat(flag(args, "format") ?? "table");
+  const connection = await connect(sources);
+  const schema = await schemaForConnection(args, directives, path, connection, sources);
+  analyze(program, schema);
   const result = await runSql(connection, emitSql(program, schema));
   return `${formatResult(result, format)}\n`;
 }
@@ -272,15 +303,67 @@ function cmdFmt(args: Args): string {
     return "";
   }
   if (write) {
+    if (path === "-") throw new UsageError("--write cannot rewrite stdin");
     writeFileSync(path, formatted, "utf8");
     return "";
   }
   return formatted;
 }
 
+async function cmdRepl(args: Args): Promise<string> {
+  const session = new ReplSession({
+    sources: dataSources(args, true),
+    schemaPath: flag(args, "schema") ?? null,
+    format: validateFormat(flag(args, "format") ?? "table"),
+  });
+  const outputs: string[] = [];
+  for (const line of readAllStdin().split(/\r\n|\n/)) {
+    const out = await session.handleLine(line);
+    if (out !== "") outputs.push(out);
+    if (session.done) break;
+  }
+  return outputs.length > 0 ? `${outputs.join("\n")}\n` : "";
+}
+
 // --------------------------------------------------------------------------- //
-// Entry point
+// Entry points
 // --------------------------------------------------------------------------- //
+
+function errorResult(error: unknown): CliResult {
+  if (error instanceof CheckFailure) {
+    return { code: 1, stdout: "", stderr: "" };
+  }
+  if (error instanceof UsageError) {
+    return { code: 2, stdout: "", stderr: `error: ${error.message}\n\n${USAGE}` };
+  }
+  if (error instanceof PlqError) {
+    return { code: 1, stdout: "", stderr: `error: ${error.message}\n` };
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return { code: 1, stdout: "", stderr: `error: ${message}\n` };
+}
+
+const KNOWN_COMMANDS = ["check", "compile", "preview", "run", "fmt", "repl"] as const;
+
+const ALLOWED_FLAGS: Record<string, readonly string[]> = {
+  check: ["schema", "lines"],
+  compile: ["schema", "stage", "lines", "data"],
+  preview: ["schema", "stage", "limit", "data", "lines"],
+  run: ["schema", "data", "format", "lines"],
+  fmt: ["write", "check"],
+  repl: ["schema", "data", "format"],
+};
+
+function commandArgs(command: string, argv: readonly string[]): Args {
+  const args = parseArgs(argv);
+  const allowed = new Set(ALLOWED_FLAGS[command] ?? []);
+  for (const name of args.flags.keys()) {
+    if (!allowed.has(name)) {
+      throw new UsageError(`unknown option --${name} for '${command}'`);
+    }
+  }
+  return args;
+}
 
 export async function runCli(argv: readonly string[]): Promise<CliResult> {
   const wantsVersion = argv.includes("--version") || argv.includes("-V");
@@ -291,44 +374,59 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
 
   const command = argv[0];
   if (command === undefined) return { code: 2, stdout: "", stderr: USAGE };
-  const known = new Set(["check", "compile", "preview", "run", "fmt"]);
-  if (!known.has(command)) {
+  if (!(KNOWN_COMMANDS as readonly string[]).includes(command)) {
     return { code: 2, stdout: "", stderr: `unknown command '${command}'\n\n${USAGE}` };
   }
 
   try {
-    const args = parseArgs(argv.slice(1));
-    const allowed: Record<string, readonly string[]> = {
-      check: ["schema"],
-      compile: ["schema", "stage"],
-      preview: ["schema", "stage", "limit", "data"],
-      run: ["schema", "data", "format"],
-      fmt: ["write", "check"],
-    };
-    const allowedSet = new Set(allowed[command] ?? []);
-    for (const name of args.flags.keys()) {
-      if (!allowedSet.has(name)) {
-        throw new UsageError(`unknown option --${name} for '${command}'`);
-      }
-    }
+    const args = commandArgs(command, argv.slice(1));
     let stdout: string;
     if (command === "check") stdout = cmdCheck(args);
-    else if (command === "compile") stdout = cmdCompile(args);
+    else if (command === "compile") stdout = await cmdCompile(args);
     else if (command === "preview") stdout = await cmdPreview(args);
     else if (command === "fmt") stdout = cmdFmt(args);
+    else if (command === "repl") stdout = await cmdRepl(args);
     else stdout = await cmdRun(args);
     return { code: 0, stdout, stderr: "" };
   } catch (error) {
-    if (error instanceof CheckFailure) {
-      return { code: 1, stdout: "", stderr: "" };
-    }
-    if (error instanceof UsageError) {
-      return { code: 2, stdout: "", stderr: `error: ${error.message}\n\n${USAGE}` };
-    }
-    if (error instanceof PlqError) {
-      return { code: 1, stdout: "", stderr: `error: ${error.message}\n` };
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    return { code: 1, stdout: "", stderr: `error: ${message}\n` };
+    return errorResult(error);
   }
+}
+
+/** Interactive terminal session (bare `plq` or `plq repl` on a TTY). */
+export async function startInteractiveRepl(argv: readonly string[]): Promise<CliResult> {
+  let session: ReplSession;
+  try {
+    const args = commandArgs("repl", argv.filter((arg) => arg !== "repl"));
+    session = new ReplSession({
+      sources: dataSources(args, true),
+      schemaPath: flag(args, "schema") ?? null,
+      format: validateFormat(flag(args, "format") ?? "table"),
+    });
+  } catch (error) {
+    return errorResult(error);
+  }
+
+  process.stdout.write(
+    `plq ${VERSION} — end a query with a blank line or ';'; .help for commands\n`);
+  const terminal = createInterface({ input: process.stdin, output: process.stdout });
+  terminal.setPrompt("plq> ");
+  terminal.prompt();
+
+  await new Promise<void>((resolveClose) => {
+    terminal.on("line", (line) => {
+      void (async () => {
+        const out = await session.handleLine(line);
+        if (out !== "") process.stdout.write(`${out}\n`);
+        if (session.done) {
+          terminal.close();
+          return;
+        }
+        terminal.prompt();
+      })();
+    });
+    terminal.on("close", () => resolveClose());
+  });
+
+  return { code: 0, stdout: "", stderr: "" };
 }

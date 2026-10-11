@@ -90,10 +90,10 @@ describe("cli: compile", () => {
     expect(result.stdout).not.toContain("stage_5");
   });
 
-  it("requires a schema", async () => {
+  it("explains the schema options when none is available", async () => {
     const result = await runCli(["compile", Q20]);
-    expect(result.code).toBe(2);
-    expect(result.stderr).toContain("--schema is required");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("pass --schema");
   });
 });
 

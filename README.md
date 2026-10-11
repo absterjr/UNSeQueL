@@ -41,6 +41,10 @@ different dialects — check this table before copying an example between tools.
 | Pipeline (prototype) | `.pusql` | `python -m unsequel ... --pipeline` (inferred for `.pusql`) | one stage per line; `where` is position-sensitive (row vs group); `group keys (aggregates)` |
 | Pipeline (production) | `.plq` | `plq` CLI in [plq/](plq/README.md) | evolved grammar: `filter`/`having` instead of positional `where`, split `group by` + `aggregate`, implemented `window` — see [plq/docs/grammar.md](plq/docs/grammar.md) §2 for the exact deltas |
 
+`.plq` files can also declare their own connection (`# source orders: path`)
+and run like SQL: `plq run query.plq`, `--lines A:B` selections, stdin, and an
+interactive `plq repl` — see "Run it like SQL" in the compiler README.
+
 ## Status
 
 UNSeQueL 0.5 is a complete query-language core. It includes a real lexer,

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- SQL-like execution model for the compiler: `.plq` files can declare their
+  own connection with `# source name: path` and `# schema: path` directives
+  (paths relative to the file; `--data`/`--schema` override); `plq run -`
+  reads the query from stdin and `--lines A:B` runs a selected range; without
+  a schema file, loaded sources are introspected so `run`, `compile`, and
+  `preview` work flagless; new interactive `repl` (a query executes on a
+  blank line or `;`; dot commands `.load`/`.sources`/`.schema`/`.format`/
+  `.clear`/`.quit`), opened by `plq repl` or a bare `plq` on a terminal; the
+  formatter preserves file directives. `npm link` verified so `plq` is a
+  first-class command. Tests cover directives, selection ranges,
+  introspection, and the session engine.
 - R3 coherence batch: a repository map table names the three dialects
   (`.usql` ordered, `.pusql` prototype pipeline, `.plq` compiler pipeline) and
   the compiler grammar §2 delta table covers window/`$`/newline/ordered-surface

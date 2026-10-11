@@ -1,0 +1,180 @@
+/**
+ * Interactive REPL session (SQL-like execution model).
+ *
+ * A query executes when the user enters a blank line or ends it with `;`, so
+ * multiple queries can be typed or pasted one after another. Dot commands
+ * manage the "connection": `.load name=path`, `.sources`, `.schema`,
+ * `.format`, `.clear`, `.quit`. Without an explicit schema, the session
+ * introspects the loaded sources, so `.load` plus a query just works.
+ */
+
+import { emitSql } from "./codegen.js";
+import { connect, introspectSchema, loadTableSource, runSql, type DuckDBConnection } from "./duckdb.js";
+import { PlqError } from "./errors.js";
+import { OUTPUT_FORMATS, formatResult } from "./output.js";
+import { parseProgram } from "./parser.js";
+import { loadSchema, type Schema } from "./schema.js";
+import { analyze } from "./semantics.js";
+
+export interface ReplOptions {
+  sources?: ReadonlyMap<string, string>;
+  schemaPath?: string | null;
+  format?: string;
+}
+
+const HELP = `commands:
+  .load name=path   load a CSV/JSON/Parquet file as a table
+  .sources          list loaded sources
+  .schema [path]    show or set an explicit schema file
+  .format table|json|csv
+  .clear            discard the query being typed
+  .quit             exit
+
+end a query with a blank line or ';' to execute it`;
+
+export class ReplSession {
+  private readonly sources = new Map<string, string>();
+  private connection: DuckDBConnection | null = null;
+  private schema: Schema | null = null;
+  private explicitSchema: string | null;
+  private format: string;
+  private buffer: string[] = [];
+  private quitting = false;
+
+  constructor(options: ReplOptions = {}) {
+    for (const [name, path] of options.sources ?? []) this.sources.set(name, path);
+    this.explicitSchema = options.schemaPath ?? null;
+    if (this.explicitSchema !== null) this.schema = loadSchema(this.explicitSchema);
+    this.format = options.format ?? "table";
+  }
+
+  get done(): boolean {
+    return this.quitting;
+  }
+
+  get pendingLines(): number {
+    return this.buffer.length;
+  }
+
+  sourceNames(): string[] {
+    return [...this.sources.keys()];
+  }
+
+  /** Feed one input line; returns output text ("" when nothing to show). */
+  async handleLine(line: string): Promise<string> {
+    const trimmed = line.trim();
+    if (trimmed.startsWith(".")) {
+      // Dot commands work at any point, like a SQL client.
+      return this.command(trimmed);
+    }
+    if (trimmed === "") {
+      if (this.buffer.length === 0) return "";
+      const text = this.buffer.join("\n");
+      this.buffer = [];
+      return this.execute(text);
+    }
+    const stripped = line.trimEnd();
+    if (stripped.endsWith(";")) {
+      this.buffer.push(stripped.slice(0, -1));
+      const text = this.buffer.join("\n");
+      this.buffer = [];
+      return this.execute(text);
+    }
+    this.buffer.push(line);
+    return "";
+  }
+
+  private async command(line: string): Promise<string> {
+    const [name = "", ...rest] = line.split(/\s+/);
+    const argument = rest.join(" ").trim();
+    switch (name) {
+      case ".help":
+        return HELP;
+      case ".quit":
+      case ".exit":
+        this.quitting = true;
+        return "";
+      case ".clear":
+        this.buffer = [];
+        return "";
+      case ".format": {
+        if (argument === "") return `format: ${this.format}`;
+        if (!(OUTPUT_FORMATS as readonly string[]).includes(argument)) {
+          return `error: --format must be one of ${OUTPUT_FORMATS.join(", ")}`;
+        }
+        this.format = argument;
+        return `format: ${this.format}`;
+      }
+      case ".sources":
+        return this.sources.size === 0
+          ? "(no sources)"
+          : [...this.sources].map(([table, path]) => `${table}: ${path}`).join("\n");
+      case ".schema": {
+        if (argument === "") {
+          return this.explicitSchema === null ? "(no explicit schema; using introspected)"
+            : `schema: ${this.explicitSchema}`;
+        }
+        try {
+          this.schema = loadSchema(argument);
+          this.explicitSchema = argument;
+        } catch (error) {
+          return `error: ${(error as Error).message}`;
+        }
+        return `schema: ${argument}`;
+      }
+      case ".load": {
+        const equals = argument.indexOf("=");
+        if (equals <= 0) return "error: .load needs name=path";
+        const table = argument.slice(0, equals).trim();
+        const path = argument.slice(equals + 1).trim();
+        try {
+          if (this.connection !== null) {
+            await loadTableSource(this.connection, table, path);
+            this.sources.set(table, path);
+            await this.refreshIntrospectedSchema();
+          } else {
+            this.sources.set(table, path);
+            await this.ensureReady();
+          }
+        } catch (error) {
+          if (error instanceof PlqError) return `error: ${error.message}`;
+          return `error: ${(error as Error).message}`;
+        }
+        return `loaded ${table}`;
+      }
+      default:
+        return `unknown command '${name}'; try .help`;
+    }
+  }
+
+  private async ensureReady(): Promise<DuckDBConnection> {
+    if (this.connection === null) {
+      this.connection = await connect(new Map());
+      for (const [table, path] of this.sources) {
+        await loadTableSource(this.connection, table, path);
+      }
+      await this.refreshIntrospectedSchema();
+    }
+    return this.connection;
+  }
+
+  private async refreshIntrospectedSchema(): Promise<void> {
+    if (this.explicitSchema !== null || this.connection === null) return;
+    this.schema = await introspectSchema(this.connection, [...this.sources.keys()]);
+  }
+
+  private async execute(text: string): Promise<string> {
+    if (text.trim() === "") return "";
+    try {
+      const program = parseProgram(text);
+      const connection = await this.ensureReady();
+      const schema = this.schema ?? await introspectSchema(connection, [...this.sources.keys()]);
+      analyze(program, schema);
+      const result = await runSql(connection, emitSql(program, schema));
+      return formatResult(result, this.format);
+    } catch (error) {
+      if (error instanceof PlqError) return `error: ${error.message}`;
+      return `error: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+}
