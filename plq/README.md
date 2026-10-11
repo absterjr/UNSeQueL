@@ -88,9 +88,14 @@ plq repl                                  # interactive session
 `repl` is the editor story: select a query in your editor, run
 "Terminal: Run Selected Text in Active Terminal" against a `plq` REPL, and it
 executes on the blank line. Dot commands: `.load name=path`, `.sources`,
-`.schema [path]`, `.format table|json|csv`, `.clear`, `.quit`. Without
+`.schema [path]`, `.format table|json|csv`, `.clear`, `.quit`, and `.run` to
+execute the query being typed without a blank line. Without
 `--schema` or a `# schema:` directive, loaded tables are introspected, so
 `.load orders=orders.csv` followed by a query just works.
+
+`--lines A:B` runs one query out of a multi-query file; the file's `# source`
+and `# schema` directives always apply, even when the selected range excludes
+them.
 
 Step 2 ships the frozen grammar and the validated reference corpus:
 

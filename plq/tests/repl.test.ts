@@ -86,6 +86,23 @@ describe("repl session", () => {
     expect(session.done).toBe(true);
   });
 
+  it("executes the pending buffer with .run", async () => {
+    const session = new ReplSession({ sources: new Map([["orders", ORDERS]]) });
+    await session.handleLine("from orders");
+    await session.handleLine("take 1");
+    expect(session.prompt()).toBe("...> ");
+    const out = await session.handleLine(".run");
+    expect(out).toContain("1 row(s)");
+    expect(session.prompt()).toBe("plq> ");
+  });
+
+  it("warns when quitting with a pending query", async () => {
+    const session = new ReplSession();
+    await session.handleLine("from orders");
+    expect(await session.handleLine(".quit")).toContain("discarded 1 pending line(s)");
+    expect(session.done).toBe(true);
+  });
+
   it("clears the pending buffer", async () => {
     const session = new ReplSession();
     await session.handleLine("from orders");
@@ -125,6 +142,27 @@ describe("cli: selection and schema-less execution", () => {
       const invalid = await runCli(["run", path, "--lines", "5:1", `--data=orders=${ORDERS}`]);
       expect(invalid.code).toBe(2);
       expect(invalid.stderr).toContain("--lines");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps file directives when --lines excludes them", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "plq-lines2-"));
+    const path = join(directory, "two.plq");
+    try {
+      writeFileSync(path,
+        `# source orders: ${ORDERS}\n`
+        + "from orders\ngroup by country\naggregate n = COUNT(*)\nsort country\n\n"
+        + "from orders\nfilter quantity >= 5\nselect order_id, customer, quantity\n"
+        + "sort order_id\n");
+      const second = await runCli(["run", path, "--lines", "7:10", "--format", "json"]);
+      expect(second.code).toBe(0);
+      expect((JSON.parse(second.stdout) as unknown[]).length).toBe(6);
+
+      const first = await runCli(["run", path, "--lines", "2:5", "--format", "json"]);
+      expect(first.code).toBe(0);
+      expect((JSON.parse(first.stdout) as unknown[]).length).toBe(3);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

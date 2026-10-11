@@ -183,6 +183,29 @@ function declaredSchema(args: Args, directives: Directives, queryPath: string): 
   return null;
 }
 
+interface QueryInput {
+  /** Full file text (directives included). */
+  text: string;
+  path: string;
+  /** Parsed from the selected range; directives come from the whole file. */
+  program: ReturnType<typeof parseProgram>;
+  /** Directives found at the top of the whole file (the "connection"). */
+  directives: Directives;
+}
+
+/**
+ * The file is the connection; `--lines A:B` (or a terminal selection) picks
+ * one query out of it. Directives therefore always come from the whole file,
+ * even when the selection excludes them.
+ */
+function readQueryInput(args: Args): QueryInput {
+  const { text, path } = readProgram(args);
+  const directives = splitDirectives(text);
+  const selected = applyLines(text, flag(args, "lines"));
+  const program = parseProgram(splitDirectives(selected).body);
+  return { text, path, program, directives };
+}
+
 async function introspectFromSources(sources: ReadonlyMap<string, string>): Promise<Schema> {
   const connection = await connect(sources);
   return introspectSchema(connection, [...sources.keys()]);
@@ -207,10 +230,7 @@ function validateFormat(value: string): string {
 // --------------------------------------------------------------------------- //
 
 function cmdCheck(args: Args): string {
-  const { text, path } = readProgram(args);
-  const selected = applyLines(text, flag(args, "lines"));
-  const directives = splitDirectives(selected);
-  const program = parseProgram(directives.body);
+  const { path, program, directives } = readQueryInput(args);
   const schema = declaredSchema(args, directives, path);
   if (schema !== null) {
     analyze(program, schema);
@@ -220,10 +240,7 @@ function cmdCheck(args: Args): string {
 }
 
 async function cmdCompile(args: Args): Promise<string> {
-  const { text, path } = readProgram(args);
-  const selected = applyLines(text, flag(args, "lines"));
-  const directives = splitDirectives(selected);
-  const program = parseProgram(directives.body);
+  const { path, program, directives } = readQueryInput(args);
   const sources = mergeSources(directives, args, path);
   const schema = declaredSchema(args, directives, path)
     ?? (sources.size > 0
@@ -246,13 +263,11 @@ async function cmdCompile(args: Args): Promise<string> {
 }
 
 async function cmdPreview(args: Args): Promise<string> {
-  const { text, path } = readProgram(args);
-  const selected = applyLines(text, flag(args, "lines"));
-  const directives = splitDirectives(selected);
-  const program = parseProgram(directives.body);
+  const { path, program, directives } = readQueryInput(args);
   const sources = mergeSources(directives, args, path);
   if (sources.size === 0) {
-    throw new UsageError("preview needs --data name=path or a '# source' directive");
+    throw new UsageError(
+      "preview needs --data name=path or a '# source' directive at the top of the file");
   }
   const connection = await connect(sources);
   const schema = await schemaForConnection(args, directives, path, connection, sources);
@@ -276,13 +291,11 @@ async function cmdPreview(args: Args): Promise<string> {
 }
 
 async function cmdRun(args: Args): Promise<string> {
-  const { text, path } = readProgram(args);
-  const selected = applyLines(text, flag(args, "lines"));
-  const directives = splitDirectives(selected);
-  const program = parseProgram(directives.body);
+  const { path, program, directives } = readQueryInput(args);
   const sources = mergeSources(directives, args, path);
   if (sources.size === 0) {
-    throw new UsageError("run needs --data name=path or a '# source' directive");
+    throw new UsageError(
+      "run needs --data name=path or a '# source' directive at the top of the file");
   }
   const format = validateFormat(flag(args, "format") ?? "table");
   const connection = await connect(sources);
@@ -408,10 +421,13 @@ export async function startInteractiveRepl(argv: readonly string[]): Promise<Cli
   }
 
   process.stdout.write(
-    `plq ${VERSION} — end a query with a blank line or ';'; .help for commands\n`);
+    `plq ${VERSION} — one stage per line; run a query with a blank line, ';', or .run\n`);
   const terminal = createInterface({ input: process.stdin, output: process.stdout });
-  terminal.setPrompt("plq> ");
-  terminal.prompt();
+  const showPrompt = () => {
+    terminal.setPrompt(session.prompt());
+    terminal.prompt();
+  };
+  showPrompt();
 
   await new Promise<void>((resolveClose) => {
     terminal.on("line", (line) => {
@@ -422,7 +438,7 @@ export async function startInteractiveRepl(argv: readonly string[]): Promise<Cli
           terminal.close();
           return;
         }
-        terminal.prompt();
+        showPrompt();
       })();
     });
     terminal.on("close", () => resolveClose());

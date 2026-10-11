@@ -23,6 +23,7 @@ export interface ReplOptions {
 }
 
 const HELP = `commands:
+  .run              execute the query being typed now
   .load name=path   load a CSV/JSON/Parquet file as a table
   .sources          list loaded sources
   .schema [path]    show or set an explicit schema file
@@ -30,7 +31,7 @@ const HELP = `commands:
   .clear            discard the query being typed
   .quit             exit
 
-end a query with a blank line or ';' to execute it`;
+write one stage per line; end a query with a blank line, a lone ';', or .run`;
 
 export class ReplSession {
   private readonly sources = new Map<string, string>();
@@ -54,6 +55,11 @@ export class ReplSession {
 
   get pendingLines(): number {
     return this.buffer.length;
+  }
+
+  /** Prompt shown before the next line: continuation while a query is open. */
+  prompt(): string {
+    return this.buffer.length > 0 ? "...> " : "plq> ";
   }
 
   sourceNames(): string[] {
@@ -90,10 +96,22 @@ export class ReplSession {
     switch (name) {
       case ".help":
         return HELP;
+      case ".run": {
+        if (this.buffer.length === 0) return "(nothing to run)";
+        const text = this.buffer.join("\n");
+        this.buffer = [];
+        return this.execute(text);
+      }
       case ".quit":
-      case ".exit":
+      case ".exit": {
         this.quitting = true;
+        if (this.buffer.length > 0) {
+          const discarded = this.buffer.length;
+          this.buffer = [];
+          return `discarded ${discarded} pending line(s)`;
+        }
         return "";
+      }
       case ".clear":
         this.buffer = [];
         return "";
