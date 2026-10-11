@@ -51,7 +51,9 @@ describe("codegen: golden files", () => {
     expect(files).toHaveLength(21);
     for (const file of files) {
       const name = file.replace(/\.plq$/, "");
-      const expected = readFileSync(join(GOLDEN, `${name}.sql`), "utf8").trimEnd();
+      const expected = readFileSync(join(GOLDEN, `${name}.sql`), "utf8")
+        .replace(/\r\n/g, "\n")
+        .trimEnd();
       expect(generate(name).trimEnd(), name).toBe(expected);
     }
   });

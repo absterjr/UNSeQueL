@@ -20,10 +20,17 @@ describe("formatter: corpus", () => {
   it("treats every reference query as canonical", () => {
     expect(referenceFiles).toHaveLength(21);
     for (const file of referenceFiles) {
-      const source = readFileSync(join(REFERENCE, file), "utf8");
+      const source = readFileSync(join(REFERENCE, file), "utf8").replace(/\r\n/g, "\n");
       expect(formatProgram(source), file).toBe(source);
       expect(isFormatted(source), file).toBe(true);
     }
+  });
+
+  it("treats CRLF input as canonical and normalizes on format", () => {
+    const lf = "from orders\nsort order_id\n";
+    const crlf = lf.replace(/\n/g, "\r\n");
+    expect(isFormatted(crlf)).toBe(true);
+    expect(formatProgram(crlf)).toBe(lf);
   });
 
   it("is idempotent and re-parseable on the coverage corpus", () => {
@@ -100,6 +107,18 @@ describe("formatter: CLI", () => {
     const result = await runCli(["fmt", path]);
     expect(result.code).toBe(0);
     expect(result.stdout).toBe(readFileSync(path, "utf8"));
+  });
+
+  it("--check accepts CRLF files", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "plq-crlf-"));
+    const path = join(directory, "query.plq");
+    try {
+      writeFileSync(path, "from orders\r\nsort order_id\r\n");
+      const result = await runCli(["fmt", path, "--check"]);
+      expect(result.code).toBe(0);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("--check exits 1 for non-canonical text and 0 after --write", async () => {

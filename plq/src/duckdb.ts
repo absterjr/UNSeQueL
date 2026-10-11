@@ -37,20 +37,33 @@ function readerFor(path: string): string {
 }
 
 export async function connect(data: ReadonlyMap<string, string>): Promise<DuckDBConnection> {
-  const instance = await DuckDBInstance.create(":memory:");
-  const connection = await instance.connect();
+  let connection: DuckDBConnection;
+  try {
+    const instance = await DuckDBInstance.create(":memory:");
+    connection = await instance.connect();
+  } catch (error) {
+    throw new PlqError(`DuckDB error: ${(error as Error).message}`);
+  }
   for (const [name, path] of data) {
     if (!existsSync(path)) throw new PlqError(`data file not found: ${path}`);
-    await connection.run(
-      `CREATE TABLE ${quotedIdent(name)} AS SELECT * FROM ${readerFor(path)}`);
+    try {
+      await connection.run(
+        `CREATE TABLE ${quotedIdent(name)} AS SELECT * FROM ${readerFor(path)}`);
+    } catch (error) {
+      throw new PlqError(`could not load data file ${path}: ${(error as Error).message}`);
+    }
   }
   return connection;
 }
 
 export async function runSql(connection: DuckDBConnection, sql: string): Promise<SqlResult> {
-  const reader = await connection.runAndReadAll(sql);
-  return {
-    columns: reader.columnNames(),
-    rows: reader.getRowObjectsJS() as Row[],
-  };
+  try {
+    const reader = await connection.runAndReadAll(sql);
+    return {
+      columns: reader.columnNames(),
+      rows: reader.getRowObjectsJS() as Row[],
+    };
+  } catch (error) {
+    throw new PlqError(`DuckDB error: ${(error as Error).message}`);
+  }
 }

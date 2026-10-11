@@ -123,6 +123,72 @@ describe("cli: preview", () => {
   });
 });
 
+describe("cli: options and data validation", () => {
+  it("rejects unknown options per command", async () => {
+    const bogus = await runCli(["check", Q20, "--bogus"]);
+    expect(bogus.code).toBe(2);
+    expect(bogus.stderr).toContain("unknown option --bogus");
+    const previewFormat = await runCli([
+      "preview", Q20, "--schema", SCHEMA, "--stage", "1", "--format", "json", ...DATA,
+    ]);
+    expect(previewFormat.code).toBe(2);
+    expect(previewFormat.stderr).toContain("unknown option --format");
+  });
+
+  it("rejects duplicate --data names", async () => {
+    const result = await runCli([
+      "run", Q20, "--schema", SCHEMA, "--data", "orders=a.csv", "--data", "orders=b.csv",
+    ]);
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain("duplicate --data name 'orders'");
+  });
+
+  it("requires name=path for dotted data names", async () => {
+    const result = await runCli(["run", Q20, "--schema", SCHEMA, "--data", "my.data.csv"]);
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain("use --data name=path");
+  });
+
+  it("validates the --stage range for compile", async () => {
+    const result = await runCli(["compile", Q20, "--schema", SCHEMA, "--stage", "99"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("between 1 and 9");
+  });
+
+  it("strips a UTF-8 BOM from query and schema files", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "plq-bom-"));
+    try {
+      const queryPath = join(directory, "query.plq");
+      writeFileSync(queryPath, "\uFEFFfrom orders\n");
+      const schemaPath = join(directory, "schema.json");
+      writeFileSync(schemaPath, `\uFEFF${readFileSync(SCHEMA, "utf8")}`);
+      const result = await runCli(["check", queryPath, "--schema", schemaPath]);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain("valid PLQ query (schema OK)");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reports DuckDB errors as clean error lines", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "plq-dberr-"));
+    try {
+      const queryPath = join(directory, "query.plq");
+      writeFileSync(queryPath,
+        'from orders\nsql "SELECT bogus_col FROM __input__"\nselect bogus_col\n');
+      const result = await runCli([
+        "run", queryPath, "--schema", SCHEMA,
+        `--data=orders=${join(ROOT, "examples", "spec", "orders.csv")}`,
+      ]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("error: DuckDB error:");
+      expect(result.stderr).not.toContain("Node.js");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("cli: run", () => {
   it("executes the whole program as JSON", async () => {
     const result = await runCli([

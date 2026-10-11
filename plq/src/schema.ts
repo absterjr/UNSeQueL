@@ -82,7 +82,7 @@ export function parseSchema(data: unknown, origin = "<schema>"): Schema {
 export function loadSchema(path: string): Schema {
   let text: string;
   try {
-    text = readFileSync(path, "utf8");
+    text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
   } catch {
     throw new SchemaError(`schema file not found: ${path}`);
   }

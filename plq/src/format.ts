@@ -51,7 +51,9 @@ export function formatStages(program: Program): string {
 }
 
 export function isFormatted(source: string): boolean {
-  return formatProgram(source) === source;
+  // CRLF input is canonical as long as its line content matches; only real
+  // differences fail the check.
+  return formatProgram(source) === source.replace(/\r\n/g, "\n");
 }
 
 // --------------------------------------------------------------------------- //

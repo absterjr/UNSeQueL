@@ -1,0 +1,4 @@
+# Keep line endings LF in the repository and in checkouts so the PLQ
+# formatter's --check and the golden-file tests behave identically on every
+# platform.
+* text=auto eol=lf

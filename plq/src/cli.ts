@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { emitSql } from "./codegen.js";
 import { connect, runSql, type SqlResult } from "./duckdb.js";
 import { PlqError } from "./errors.js";
-import { formatProgram } from "./format.js";
+import { formatProgram, isFormatted } from "./format.js";
 import { parseProgram } from "./parser.js";
 import { loadSchema, type Schema } from "./schema.js";
 import { analyze } from "./semantics.js";
@@ -98,7 +98,7 @@ function readProgram(args: Args): { text: string; path: string } {
   const path = args.positionals[0];
   if (path === undefined) throw new UsageError("a query file is required");
   try {
-    return { text: readFileSync(path, "utf8"), path };
+    return { text: readFileSync(path, "utf8").replace(/^\uFEFF/, ""), path };
   } catch {
     throw new PlqError(`query file not found: ${path}`);
   }
@@ -116,10 +116,17 @@ function dataSources(args: Args): Map<string, string> {
   for (const spec of specs) {
     const equals = spec.indexOf("=");
     if (equals > 0) {
-      data.set(spec.slice(0, equals), spec.slice(equals + 1));
+      const name = spec.slice(0, equals);
+      if (data.has(name)) throw new UsageError(`duplicate --data name '${name}'`);
+      data.set(name, spec.slice(equals + 1));
       continue;
     }
+    if (equals === 0) throw new UsageError("--data must look like name=path");
     const name = spec.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? spec;
+    if (name.includes(".") || name.length === 0) {
+      throw new UsageError(`cannot derive a table name from '${spec}'; use --data name=path`);
+    }
+    if (data.has(name)) throw new UsageError(`duplicate --data name '${name}'`);
     data.set(name, spec);
   }
   return data;
@@ -211,6 +218,9 @@ function cmdCompile(args: Args): string {
   if (stop !== undefined && !Number.isInteger(stop)) {
     throw new UsageError("--stage must be an integer");
   }
+  if (stop !== undefined && (stop < 1 || stop > program.length)) {
+    throw new PlqError(`--stage must be between 1 and ${program.length} for this query`);
+  }
   return `${emitSql(program, schema, { stopAt: stop })}\n`;
 }
 
@@ -258,7 +268,7 @@ function cmdFmt(args: Args): string {
   if (check && write) throw new UsageError("--check and --write are mutually exclusive");
   const formatted = formatProgram(text);
   if (check) {
-    if (formatted !== text) throw new CheckFailure();
+    if (!isFormatted(text)) throw new CheckFailure();
     return "";
   }
   if (write) {
@@ -288,6 +298,19 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
 
   try {
     const args = parseArgs(argv.slice(1));
+    const allowed: Record<string, readonly string[]> = {
+      check: ["schema"],
+      compile: ["schema", "stage"],
+      preview: ["schema", "stage", "limit", "data"],
+      run: ["schema", "data", "format"],
+      fmt: ["write", "check"],
+    };
+    const allowedSet = new Set(allowed[command] ?? []);
+    for (const name of args.flags.keys()) {
+      if (!allowedSet.has(name)) {
+        throw new UsageError(`unknown option --${name} for '${command}'`);
+      }
+    }
     let stdout: string;
     if (command === "check") stdout = cmdCheck(args);
     else if (command === "compile") stdout = cmdCompile(args);
@@ -305,6 +328,7 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
     if (error instanceof PlqError) {
       return { code: 1, stdout: "", stderr: `error: ${error.message}\n` };
     }
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    return { code: 1, stdout: "", stderr: `error: ${message}\n` };
   }
 }
