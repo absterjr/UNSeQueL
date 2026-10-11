@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { emitSql } from "../src/codegen.js";
+import { splitDirectives } from "../src/directives.js";
 import { formatProgram } from "../src/format.js";
 import { parseProgram } from "../src/parser.js";
 import { loadSchema } from "../src/schema.js";
@@ -11,8 +12,10 @@ import { analyze } from "../src/semantics.js";
 /**
  * Plan step 9: dogfooding. The five queries in examples/real/ are real analyst
  * tasks migrated through the CLI; two of them needed the sql hatch, which is
- * recorded in docs/backlog.md. This suite parses, validates, formats, and
- * executes each one against the sample dataset.
+ * recorded in docs/backlog.md. Each file declares its sources with `# source`
+ * directives so it runs flagless (`plq run examples/real/r01_top_products.plq`).
+ * This suite parses, validates, formats, and executes each one against the
+ * sample dataset.
  */
 
 const ROOT = join(__dirname, "..", "..");
@@ -38,11 +41,12 @@ describe("dogfood: real queries", () => {
   it("parses, validates, and stays formatter-idempotent", () => {
     for (const file of files) {
       const source = readFileSync(join(REAL, file), "utf8");
-      const program = parseProgram(source);
+      expect(splitDirectives(source).sources.size, file).toBeGreaterThan(0);
+      const program = parseProgram(splitDirectives(source).body);
       analyze(program, SCHEMA);
       const once = formatProgram(source);
       expect(formatProgram(once), file).toBe(once);
-      expect(parseProgram(once).length, file).toBe(program.length);
+      expect(parseProgram(splitDirectives(once).body).length, file).toBe(program.length);
     }
   });
 
@@ -58,7 +62,8 @@ describe("dogfood: real queries", () => {
     const results = new Map<string, Array<Record<string, unknown>>>();
     for (const file of files) {
       const name = file.replace(/\.plq$/, "");
-      const program = parseProgram(readFileSync(join(REAL, file), "utf8"));
+      const source = readFileSync(join(REAL, file), "utf8");
+      const program = parseProgram(splitDirectives(source).body);
       const reader = await connection.runAndReadAll(emitSql(program, SCHEMA));
       results.set(name, reader.getRowObjectsJS() as Array<Record<string, unknown>>);
     }

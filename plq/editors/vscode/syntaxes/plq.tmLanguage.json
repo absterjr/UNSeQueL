@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "PLQ",
+  "scopeName": "source.plq",
+  "patterns": [
+    { "include": "#directives" },
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#functions" },
+    { "include": "#operators" },
+    { "include": "#numbers" }
+  ],
+  "repository": {
+    "directives": {
+      "patterns": [
+        {
+          "match": "^\\s*#\\s*(source\\s+[A-Za-z_][A-Za-z0-9_]*|schema)\\s*:(.*)$",
+          "captures": {
+            "1": { "name": "keyword.control.directive.plq" },
+            "2": { "name": "string.unquoted.path.plq" }
+          }
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "match": "#.*$",
+          "name": "comment.line.number-sign.plq"
+        },
+        {
+          "match": "--.*$",
+          "name": "comment.line.double-dash.plq"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.plq",
+          "patterns": [
+            { "match": "\\\\.", "name": "constant.character.escape.plq" }
+          ]
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(?:from|join|left|filter|derive|group|by|aggregate|having|window|select|sort|skip|take|distinct|sql|union|except|intersect|each)\\b",
+          "name": "keyword.control.stage.plq"
+        },
+        {
+          "match": "\\b(?:on|as|over|partition|order|asc|desc|and|or|not|in|like|between|is|null|case|when|then|else|end|cast|true|false)\\b",
+          "name": "keyword.operator.word.plq"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "match": "(?i)\\b(?:count|sum|avg|min|max|coalesce|nullif|lower|upper|abs|round|length|trim|concat|row_number|rank|dense_rank|lag|lead)\\b(?=\\s*\\()",
+          "name": "support.function.plq"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "match": "(?:<>|!=|<=|>=|=|<|>|\\|)",
+          "name": "keyword.operator.comparison.plq"
+        },
+        {
+          "match": "(?:\\*|/|%|\\+|-)",
+          "name": "keyword.operator.arithmetic.plq"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "match": "\\b\\d+(?:\\.\\d+)?\\b",
+          "name": "constant.numeric.plq"
+        }
+      ]
+    }
+  }
+}

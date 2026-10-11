@@ -1,3 +1,5 @@
+# source orders: ../../../examples/spec/orders.csv
+# source customers: ../../../examples/spec/customers.csv
 # Real query: revenue by customer segment with average order value
 from orders
 join customers on customer = customers.customer

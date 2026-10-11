@@ -1,9 +1,71 @@
 # plq — pipeline query language compiler
 
-TypeScript compiler for the pipeline query language: one transform per line,
-compiled to DuckDB SQL with one CTE per stage.
+Write a query in the order it executes — one transform per line — and run it
+against CSV/Parquet/JSON files with one command:
 
-This is the production implementation of the plan the team locked in:
+```text
+# source orders: ../spec/orders.csv
+from orders
+group by country
+aggregate revenue = SUM(quantity * unit_price)
+sort -revenue
+```
+
+```bash
+plq run my_query.plq
+```
+
+Plans are compiled to DuckDB SQL with one CTE per pipeline unit.
+
+## Install
+
+From this directory (the npm package is not published yet):
+
+```bash
+npm install -g .        # puts `plq` on PATH
+plq --version
+```
+
+`npm link` works the same way for development.
+
+## Run queries like SQL
+
+`.plq` files declare their own connection with `# source name: path`
+directives (relative to the file), so no flags are needed:
+
+```bash
+plq run examples/real/r01_top_products.plq             # join + group + top-N
+plq run examples/real/r03_repeat_customers.plq --format json
+plq run examples/real/r01_top_products.plq --lines 2:7 # run just that range
+echo "from orders | take 1" | plq run - \
+  --data orders=../examples/spec/orders.csv            # query from stdin
+plq repl                                               # interactive session
+```
+
+Without a schema file, loaded tables are introspected, so `run`, `compile`,
+and `preview` work flagless. `--data`/`--schema` override directives when you
+need them. `--lines A:B` selects one query out of a multi-query file; the
+file's directives always apply, even when the range excludes them.
+
+Inside `plq repl`: one stage per line; a query runs on a blank line, a lone
+`;`, or `.run`. Dot commands:
+`.load name=path`, `.sources`, `.schema [path]`, `.format table|json|csv`,
+`.clear`, `.quit`. Pasted `plq>`/`...>` prompt prefixes are stripped, so
+example transcripts can be copied wholesale.
+
+## Use it from your editor
+
+`plq/editors/vscode/` ships a VS Code extension (syntax highlighting plus
+`PLQ: Run Selection`, `PLQ: Run File`, `PLQ: Open REPL`). Install it with F5
+in that folder or from a VSIX — see
+[editors/vscode/README.md](editors/vscode/README.md). Run Selection executes
+`plq run <file> --lines A:B`, so select a query, run it, done.
+
+In any editor that can send text to a terminal: open `plq repl` and use
+"Run Selected Text in Active Terminal"; the selected stages execute on a
+blank line.
+
+## Locked decisions
 
 | Decision | Locked value |
 | --- | --- |
@@ -13,12 +75,11 @@ This is the production implementation of the plan the team locked in:
 | Codegen | one CTE per pipeline stage |
 
 The executable prototype lives in the Python package at the repository root;
-this package is the production compiler, complete across the same 9-step plan.
-It implements an **evolved dialect** of the prototype's pipeline surface —
-`filter`/`having` instead of position-sensitive `where`, split `group by` +
-`aggregate`, and an implemented `window` stage. The exact deltas are in
-[docs/grammar.md](docs/grammar.md) §2; do not copy `.pusql` examples into
-`.plq` files or vice versa.
+this package is the production compiler. It implements an **evolved dialect**
+of the prototype's pipeline surface — `filter`/`having` instead of
+position-sensitive `where`, split `group by` + `aggregate`, and an implemented
+`window` stage. The exact deltas are in [docs/grammar.md](docs/grammar.md) §2;
+do not copy `.pusql` examples into `.plq` files or vice versa.
 
 ## Plan status
 
@@ -37,67 +98,7 @@ It implements an **evolved dialect** of the prototype's pipeline surface —
 All nine plan steps are complete; see the repository changelog for release
 notes and [docs/backlog.md](docs/backlog.md) for what comes next.
 
-## Try it
-
-```bash
-cd plq
-npm install
-npm run build
-
-# generated SQL (truncated at grammar stage 4)
-node dist/main.js compile examples/reference/q20_full_pipeline.plq \
-  --schema ../examples/spec/schema.json --stage 4
-
-# step through the pipeline: show the relation after stage 5
-node dist/main.js preview examples/reference/q20_full_pipeline.plq \
-  --schema ../examples/spec/schema.json --stage 5 --limit 3 \
-  --data orders=../examples/spec/orders.csv \
-  --data products=../examples/spec/products.csv
-
-# execute the whole program
-node dist/main.js run examples/reference/q20_full_pipeline.plq \
-  --schema ../examples/spec/schema.json --format json \
-  --data orders=../examples/spec/orders.csv \
-  --data products=../examples/spec/products.csv
-
-# canonical formatting
-node dist/main.js fmt examples/reference/q20_full_pipeline.plq --check
-```
-
-## Run it like SQL
-
-`.plq` files can declare their own connection, so no flags are needed:
-
-```text
-# source orders: ../examples/spec/orders.csv
-# schema: ../examples/spec/schema.json
-from orders
-group by country
-aggregate revenue = SUM(quantity * unit_price)
-sort -revenue
-```
-
-```bash
-npm link                                  # once, to get `plq` on PATH
-plq run my_query.plq                      # self-contained: no --data flags
-plq run my_query.plq --lines 3:5          # run just the selected range
-echo "from orders | take 1" | plq run -   # query from stdin
-plq repl                                  # interactive session
-```
-
-`repl` is the editor story: select a query in your editor, run
-"Terminal: Run Selected Text in Active Terminal" against a `plq` REPL, and it
-executes on the blank line. Dot commands: `.load name=path`, `.sources`,
-`.schema [path]`, `.format table|json|csv`, `.clear`, `.quit`, and `.run` to
-execute the query being typed without a blank line. Without
-`--schema` or a `# schema:` directive, loaded tables are introspected, so
-`.load orders=orders.csv` followed by a query just works.
-
-`--lines A:B` runs one query out of a multi-query file; the file's `# source`
-and `# schema` directives always apply, even when the selected range excludes
-them.
-
-Step 2 ships the frozen grammar and the validated reference corpus:
+## What ships
 
 - [`docs/grammar.md`](docs/grammar.md) — every stage's EBNF, IR shape, and
   DuckDB lowering, plus the hand-parse validation of all 21 queries
@@ -106,24 +107,21 @@ Step 2 ships the frozen grammar and the validated reference corpus:
 - [`examples/coverage/`](examples/coverage/README.md) — parser fixtures for
   grammar features the reference set does not exercise (window, aliases,
   DISTINCT aggregates, NOT variants, CAST, …)
-- contract layer in place: `src/ast.ts` (stage/expr nodes with spans, the
-  grammar-stage → CTE lowering-unit map) and `src/errors.ts` (`PlqError`,
-  `LexError`, `ParseError`, `PipelineError`)
 - SQL codegen with two-way verification: golden files in `tests/golden/` and
   DuckDB execution parity against the hand-written equivalents in
-  `tests/handwritten/` (using the `@duckdb/node-api` runtime dependency)
-- dogfooding: five real analyst queries in
-  [`examples/real/`](examples/real/), the prioritised gaps they found in
-  [docs/backlog.md](docs/backlog.md), and an external-feedback exercise in
-  [docs/first-task.md](docs/first-task.md)
+  `tests/handwritten/`
+- dogfooding: five real analyst queries in [`examples/real/`](examples/real/),
+  the prioritised gaps they found in [docs/backlog.md](docs/backlog.md), and an
+  external-feedback exercise in [docs/first-task.md](docs/first-task.md)
 
 ## Development
 
 ```bash
-cd plq
 npm install
-npm run check   # tsc for src and tests
-npm test        # vitest
-npm run build   # dist/main.js
-node dist/main.js --version
+npm run check         # tsc for src and tests
+npm test              # vitest
+npm run build         # dist/main.js
+npm run fmt:check     # formatter fixtures stay canonical
+npm run editors:check # VS Code extension JSON + regexes
+npm run smoke         # node dist/main.js run examples/real/r01_top_products.plq
 ```

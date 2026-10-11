@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Editor experience: the five dogfood queries in `plq/examples/real/` now
+  carry `# source` directives and run with zero flags; `plq/editors/vscode/`
+  ships a VS Code extension — syntax highlighting, `PLQ: Run Selection`
+  (piped as `plq run <file> --lines A:B`), `PLQ: Run File`, `PLQ: Open REPL` —
+  validated by a new `npm run editors:check` CI step; the compiler README now
+  leads with the installed `plq` command ("run queries like SQL") and moves
+  `node dist/main.js` into the development section.
 - Editor-selection fix: `--lines A:B` now keeps the file's `# source`/`# schema`
   directives even when the selection excludes them, so running a selected
   query needs no flags (the file is the connection; the selection is the

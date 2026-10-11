@@ -54,5 +54,7 @@ jobs:
         run: npm run build && node dist/main.js --version
       - name: Formatter check
         run: npm run fmt:check
+      - name: Editors check
+        run: npm run editors:check
       - name: Smoke-run the CLI on real data
         run: npm run smoke

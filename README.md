@@ -43,7 +43,9 @@ different dialects — check this table before copying an example between tools.
 
 `.plq` files can also declare their own connection (`# source orders: path`)
 and run like SQL: `plq run query.plq`, `--lines A:B` selections, stdin, and an
-interactive `plq repl` — see "Run it like SQL" in the compiler README.
+interactive `plq repl` — see "Run it like SQL" in the compiler README. A VS
+Code extension (syntax highlighting, Run Selection/File/REPL) ships in
+[plq/editors/vscode](plq/editors/vscode/README.md).
 
 ## Status
 

@@ -27,7 +27,8 @@
     "README.md",
     "LICENSE",
     "docs",
-    "examples"
+    "examples",
+    "editors"
   ],
   "scripts": {
     "build": "tsc",
@@ -35,7 +36,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "fmt:check": "node scripts/check-formatter.mjs",
-    "smoke": "node dist/main.js run examples/real/r01_top_products.plq --schema ../examples/spec/schema.json --format json --data orders=../examples/spec/orders.csv --data products=../examples/spec/products.csv",
+    "editors:check": "node scripts/check-editors.mjs && node --check editors/vscode/extension.js",
+    "smoke": "node dist/main.js run examples/real/r01_top_products.plq --format json && node dist/main.js run examples/real/r03_repeat_customers.plq --format csv",
     "prepack": "npm run build"
   },
   "engines": {

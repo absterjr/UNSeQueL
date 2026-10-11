@@ -1,0 +1,84 @@
+{
+  "name": "plq-vscode",
+  "displayName": "PLQ",
+  "description": "Syntax highlighting and run commands for .plq pipeline query files (from, filter, derive, select, ... -> DuckDB).",
+  "version": "0.1.0",
+  "publisher": "unsequel",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/absterjr/UNSeQueL.git",
+    "directory": "plq/editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:plq",
+    "onCommand:plq.runSelection",
+    "onCommand:plq.runFile",
+    "onCommand:plq.openRepl"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "plq",
+        "aliases": ["PLQ", "plq"],
+        "extensions": [".plq"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "plq",
+        "scopeName": "source.plq",
+        "path": "./syntaxes/plq.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "plq.runSelection",
+        "title": "PLQ: Run Selection",
+        "category": "PLQ"
+      },
+      {
+        "command": "plq.runFile",
+        "title": "PLQ: Run File",
+        "category": "PLQ"
+      },
+      {
+        "command": "plq.openRepl",
+        "title": "PLQ: Open REPL",
+        "category": "PLQ"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "plq.runSelection",
+          "when": "editorLangId == plq",
+          "group": "navigation@1"
+        },
+        {
+          "command": "plq.runFile",
+          "when": "editorLangId == plq",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "PLQ",
+      "properties": {
+        "plq.executable": {
+          "type": "string",
+          "default": "plq",
+          "description": "The plq executable to run. Use an absolute path if plq is not on PATH."
+        }
+      }
+    }
+  }
+}

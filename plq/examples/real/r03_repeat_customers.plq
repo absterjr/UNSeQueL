@@ -1,3 +1,4 @@
+# source orders: ../../../examples/spec/orders.csv
 # Real query: repeat customers (group filter with a COUNT)
 from orders
 group by customer

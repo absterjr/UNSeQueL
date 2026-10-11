@@ -1,3 +1,4 @@
+# source orders: ../../../examples/spec/orders.csv
 # Real query: monthly revenue trend.
 # Gap: the language has no date functions, so month extraction uses the hatch.
 from orders

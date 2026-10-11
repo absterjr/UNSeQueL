@@ -1,3 +1,4 @@
+# source orders: ../../../examples/spec/orders.csv
 # Real query: share of total revenue per order.
 # Gap: grand-total windows need `over ()` (rejected today); the hatch covers it.
 from orders

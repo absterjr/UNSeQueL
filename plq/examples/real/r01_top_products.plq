@@ -1,3 +1,5 @@
+# source orders: ../../../examples/spec/orders.csv
+# source products: ../../../examples/spec/products.csv
 # Real query: top products by revenue (join + group + top-N)
 from orders
 join products on product_id = products.product_id
