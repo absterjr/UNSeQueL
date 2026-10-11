@@ -325,6 +325,54 @@ describe("parser: ordering rules", () => {
       expect((error as ParseError).message).toContain("cannot span lines");
     }
   });
+
+  it("rejects joins after a sql stage", () => {
+    const error = expectPipelineError(
+      'from orders\nsql "SELECT * FROM __input__"\njoin members on customer = members.customer',
+    );
+    expect(error.message).toContain("after a sql stage");
+  });
+});
+
+describe("parser: duplicate declarations", () => {
+  it("rejects duplicate select outputs", () => {
+    expect(expectPipelineError("from orders\nselect quantity, quantity = 1").message)
+      .toContain("more than once");
+  });
+
+  it("rejects duplicate derive names", () => {
+    expect(expectPipelineError("from orders\nderive a = quantity, a = quantity * 2").message)
+      .toContain("more than once");
+  });
+
+  it("rejects duplicate group keys and aggregate names", () => {
+    expect(expectPipelineError(
+      "from orders\ngroup by country, country\naggregate n = COUNT(*)").message)
+      .toContain("more than once");
+    expect(expectPipelineError(
+      "from orders\ngroup by country\naggregate n = COUNT(*), n = SUM(quantity)").message)
+      .toContain("more than once");
+  });
+});
+
+describe("parser: functions and the hatch", () => {
+  it("rejects unknown function names", () => {
+    expect(expectPipelineError("from orders\nderive x = FOO(quantity)").message)
+      .toContain("unknown function 'FOO'");
+  });
+
+  it("accepts the documented scalar functions", () => {
+    const program = parse(
+      "from orders\nderive x = COALESCE(customer, 'n/a'), y = ROUND(quantity, 2)");
+    expect(program).toHaveLength(2);
+  });
+
+  it("accepts leading comments before the sql query keyword", () => {
+    const line = parse('from orders\nsql "-- lead\\nSELECT order_id FROM __input__"');
+    expect(line[1]?.kind).toBe("sql");
+    const block = parse('from orders\nsql "/* lead */ SELECT order_id FROM __input__"');
+    expect(block[1]?.kind).toBe("sql");
+  });
 });
 
 describe("parser: aggregates and the escape hatch", () => {

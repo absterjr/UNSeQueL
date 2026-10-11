@@ -152,6 +152,29 @@ describe("semantics: invalid programs", () => {
     expect(error.message).toContain("region");
   });
 
+  it("rejects window names colliding with live columns", () => {
+    const error = semanticError(
+      "from orders\nwindow quantity = ROW_NUMBER() over (order by order_id)");
+    expect(error.stageKeyword).toBe("window");
+    expect(error.message).toContain("conflicts with a live column");
+  });
+
+  it("rejects aggregates that reuse a group key name", () => {
+    const error = semanticError(
+      "from orders\ngroup by country\naggregate country = COUNT(*)");
+    expect(error.stageKeyword).toBe("aggregate");
+    expect(error.message).toContain("conflicts with the group key");
+  });
+
+  it("rejects repeated joins that expose duplicate columns", () => {
+    const error = semanticError(
+      "from orders\n"
+      + "join products on product_id = products.product_id\n"
+      + "join products on product_id = products.product_id");
+    expect(error.stageKeyword).toBe("join");
+    expect(error.message).toContain("duplicate column");
+  });
+
   it("skips checks after the hatch", () => {
     const lineage = analyze(
       parseProgram('from orders\nsql "SELECT 1 AS x"\nfilter bogus > 1'), SCHEMA);

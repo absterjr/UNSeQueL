@@ -5,7 +5,8 @@ import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 import { loweringUnits } from "../src/ast.js";
 import { CodegenError, emitSql } from "../src/codegen.js";
 import { parseProgram } from "../src/parser.js";
-import { loadSchema } from "../src/schema.js";
+import { loadSchema, parseSchema, type Schema } from "../src/schema.js";
+import { analyze } from "../src/semantics.js";
 
 /**
  * Plan step 6: DuckDB SQL codegen, one CTE per lowering unit.
@@ -18,9 +19,22 @@ import { loadSchema } from "../src/schema.js";
 
 const ROOT = join(__dirname, "..", "..");
 const REFERENCE = join(__dirname, "..", "examples", "reference");
+const COVERAGE = join(__dirname, "..", "examples", "coverage");
 const GOLDEN = join(__dirname, "golden");
 const HANDWRITTEN = join(__dirname, "handwritten");
-const SCHEMA = loadSchema(join(ROOT, "examples", "spec", "schema.json"));
+const ROOT_SCHEMA = join(ROOT, "examples", "spec", "schema.json");
+const SCHEMA = loadSchema(ROOT_SCHEMA);
+
+// The coverage corpus includes a qualified source and a non-dataset column;
+// extend the repository schema for those fixtures (same as semantics tests).
+const EXTENDED: Schema = (() => {
+  const raw = JSON.parse(readFileSync(ROOT_SCHEMA, "utf8")) as {
+    tables: Record<string, { columns: Record<string, string> }>;
+  };
+  raw.tables["analytics.orders"] = raw.tables["orders"] as { columns: Record<string, string> };
+  (raw.tables["orders"] as { columns: Record<string, string> }).columns["shipped"] = "boolean";
+  return parseSchema(raw);
+})();
 
 const files = readdirSync(REFERENCE).filter((f) => f.endsWith(".plq")).sort();
 
@@ -82,9 +96,41 @@ describe("codegen: errors", () => {
       .toThrow(/conflicts with a live column/);
   });
 
+  it("inlines earlier derived names within one derive stage", () => {
+    const program = parseProgram("from orders\nderive a = quantity * 2, b = a + 1");
+    const sql = emitSql(program, SCHEMA);
+    expect(sql).toContain("(quantity * 2) AS a");
+    expect(sql).toContain("((quantity * 2) + 1) AS b");
+  });
+
+  it("preserves identifiers abutting __input__", () => {
+    const program = parseProgram(
+      'from orders\nsql "SELECT col__input__, __input__.order_id FROM __input__"');
+    const sql = emitSql(program, SCHEMA);
+    expect(sql).toContain("col__input__");
+    expect(sql).toContain("stage_1.order_id");
+  });
+
   it("rejects an invalid stopAt", () => {
     expect(() => emitSql(parseProgram("from orders"), SCHEMA, { stopAt: 0 }))
       .toThrow(CodegenError);
+  });
+});
+
+describe("codegen: corpus agreement", () => {
+  it("lowers every fixture that parses and analyzes (check => compile)", () => {
+    const fixtures: Array<{ file: string; schema: Schema }> = [
+      ...readdirSync(REFERENCE).filter((f) => f.endsWith(".plq"))
+        .map((file) => ({ file: join(REFERENCE, file), schema: SCHEMA })),
+      ...readdirSync(COVERAGE).filter((f) => f.endsWith(".plq"))
+        .map((file) => ({ file: join(COVERAGE, file), schema: EXTENDED })),
+    ];
+    expect(fixtures).toHaveLength(34);
+    for (const { file, schema } of fixtures) {
+      const program = parseProgram(readFileSync(file, "utf8"));
+      analyze(program, schema);
+      expect(() => emitSql(program, schema), file).not.toThrow();
+    }
   });
 });
 
@@ -131,5 +177,14 @@ describe("codegen: DuckDB execution parity", () => {
       const handwritten = await rows(connection, handwrittenSql);
       expect(generated, name).toEqual(handwritten);
     }
+  });
+
+  it("executes same-stage derive chains", async () => {
+    const program = parseProgram(
+      "from orders\nderive a = quantity * 2, b = a + 1\n"
+      + "select order_id, a, b\nsort order_id\ntake 1");
+    const reader = await connection.runAndReadAll(emitSql(program, SCHEMA));
+    const result = reader.getRowObjectsJS() as Array<Record<string, unknown>>;
+    expect(result).toEqual([{ order_id: 5001n, a: 20n, b: 21n }]);
   });
 });

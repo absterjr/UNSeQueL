@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `plq` R1 correctness batch: same-stage `derive` chains now compile (earlier
+  items are inlined into later ones); window/aggregate/join/select/derive name
+  collisions are stage-located errors across parser, analyzer, and codegen;
+  `join` after a `sql` hatch is rejected at parse time (grammar §3.13); the
+  formatter keeps `--` sequences lexable (`-(-x)`, negated sort keys);
+  `__input__` substitution gained word boundaries; unknown scalar functions
+  are rejected at parse time; `sql` leading comments are accepted per the
+  grammar; coverage-corpus codegen, check⇒compile agreement, and a same-stage
+  derive DuckDB execution test were added.
+
 ## 0.5.0 - 2026-10-10
 
 TypeScript compiler (`plq/`) 0.1.0: all nine plan steps complete.

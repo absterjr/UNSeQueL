@@ -196,8 +196,8 @@ key         = identifier | named_expr ;
 aggregate_stage = "aggregate" , aggregate_item , { "," , aggregate_item } ;
 aggregate_item  = [ identifier , "=" ] , agg_call ;
 agg_call        = ( "COUNT" , "(" , "*" , ")" )
-                | ( "COUNT" , "(" , "DISTINCT" , expr , ")" )
-                | ( "SUM" | "AVG" | "MIN" | "MAX" ) , "(" , expr , ")" ;
+                | ( "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" ) ,
+                  "(" , [ "DISTINCT" ] , expr , ")" ;
 ```
 
 - At most once, immediately after `group by`.
@@ -321,6 +321,9 @@ sql_stage = "sql" , string ;
 - One string literal containing a single query that starts with `SELECT` or
   `WITH` (leading whitespace and comments are allowed); a `;` outside string
   literals and comments is rejected.
+- `join` may not follow a `sql` stage: the hatch output's columns are opaque,
+  so the compiler cannot qualify or rename them safely. Join before the hatch
+  or express the join in SQL.
 - The previous relation is the table `__input__`; named tables stay visible.
 - A `sql` stage starts a fresh relation: phase, tail state, and the
   once-per-segment stages (`group by`, `aggregate`, `having`, `skip`,

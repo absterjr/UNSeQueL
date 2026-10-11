@@ -120,7 +120,12 @@ function renderInner(expr: Expr): string {
       if (unary.op === "not") {
         return `NOT ${render(unary.operand, PRECEDENCE.comparison)}`;
       }
-      return `${unary.op}${render(unary.operand, PRECEDENCE.unary)}`;
+      const operand = render(unary.operand, PRECEDENCE.unary);
+      // `--` would re-lex as a comment; keep the two minus signs apart.
+      if (unary.op === "-" && operand.startsWith("-")) {
+        return `-(${operand})`;
+      }
+      return `${unary.op}${operand}`;
     }
     case "binary": {
       const binary = expr as BinaryExpr;
@@ -187,7 +192,10 @@ function renderSource(source: { name: string; alias: string | null }): string {
 }
 
 function renderSortKey(key: SortKey): string {
-  return `${key.descending ? "-" : ""}${render(key.expr)}`;
+  const rendered = render(key.expr);
+  if (!key.descending) return rendered;
+  // `-` followed by a negative key would re-lex as a comment (`--`).
+  return rendered.startsWith("-") ? `-(${rendered})` : `-${rendered}`;
 }
 
 function named(name: string, expr: Expr): string {

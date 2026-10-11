@@ -69,7 +69,7 @@ const SQL_KEYWORDS = new Set([
   "with",
 ]);
 
-const INPUT_NAME = /\b__input__\b/;
+const INPUT_NAME_LENGTH = "__input__".length;
 
 function ident(name: string): string {
   if (SAFE_IDENT.test(name) && !SQL_KEYWORDS.has(name.toLowerCase())) return name;
@@ -256,16 +256,21 @@ function substituteInput(text: string, replacement: string): string {
       i = end;
       continue;
     }
-    const match = INPUT_NAME.exec(text.slice(i, i + 16));
-    if (match !== null && text.startsWith("__input__", i)) {
+    if (text.startsWith("__input__", i)
+        && !isWordChar(text[i - 1])
+        && !isWordChar(text[i + INPUT_NAME_LENGTH])) {
       out.push(replacement);
-      i += "__input__".length;
+      i += INPUT_NAME_LENGTH;
       continue;
     }
     out.push(char);
     i += 1;
   }
   return out.join("");
+}
+
+function isWordChar(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z0-9_]/.test(char);
 }
 
 // --------------------------------------------------------------------------- //
@@ -330,6 +335,10 @@ function joinStage(stage: JoinStage, schema: Schema, prevCte: string,
   const newLive = [...live];
   for (const column of table.columns.keys()) {
     const exposed = taken.has(column) ? `${label}_${column}` : column;
+    if (taken.has(exposed)) {
+      throw stageError(stage,
+        `join exposes duplicate column '${exposed}'; alias one of the joins`);
+    }
     projected.push(exposed === column
       ? `${ident(label)}.${ident(column)}`
       : `${ident(label)}.${ident(column)} AS ${ident(exposed)}`);
@@ -356,13 +365,20 @@ function deriveStage(stage: DeriveStage, prevCte: string, cols: Cols,
         `derive '${item.name}' conflicts with a live column; choose another name`);
     }
   }
-  const additions = stage.items
-    .map((item) => aliased(render(item.expr, cols), item.name))
-    .join(", ");
+  // Items resolve left-to-right. SQL aliases are not visible inside one SELECT
+  // list, so an earlier item is inlined into later item expressions.
+  const scope = new Map(cols.lookup);
+  const additions: string[] = [];
+  for (const item of stage.items) {
+    const rendered = render(item.expr, new Cols(scope, cols.opaque));
+    additions.push(aliased(rendered, item.name));
+    // Rendered binary/case expressions already come parenthesized.
+    scope.set(item.name, rendered);
+  }
   const lookup = new Map(cols.lookup);
   for (const item of stage.items) lookup.set(item.name, ident(item.name));
   return {
-    sql: `SELECT *, ${additions} FROM ${prevCte}`,
+    sql: `SELECT *, ${additions.join(", ")} FROM ${prevCte}`,
     cols: new Cols(lookup, cols.opaque),
     live: [...live, ...stage.items.map((item) => item.name)],
   };
@@ -393,6 +409,10 @@ function singleStageSql(stage: Stage, prevCte: string, cols: Cols,
     case "having":
       return { sql: `SELECT * FROM ${prevCte} WHERE ${render(stage.condition, cols)}`, cols, live };
     case "window": {
+      if (live.includes(stage.name)) {
+        throw stageError(stage,
+          `window '${stage.name}' conflicts with a live column; choose another name`);
+      }
       const lookup = new Map(cols.lookup);
       lookup.set(stage.name, ident(stage.name));
       return {

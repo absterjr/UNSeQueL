@@ -11,6 +11,7 @@
  */
 
 import {
+  expressionName,
   spanning,
   tokenSpan,
   type AggregateStage,
@@ -59,6 +60,10 @@ const STAGE_STARTS = new Set([
 
 const AGGREGATES = new Set(["count", "sum", "avg", "min", "max"]);
 
+const SCALAR_FUNCTIONS = new Set([
+  "coalesce", "nullif", "lower", "upper", "abs", "round", "length", "trim", "concat",
+]);
+
 const WINDOW_FUNCTIONS = new Set([
   "row_number", "rank", "dense_rank", "lag", "lead", "sum", "avg", "count", "min", "max",
 ]);
@@ -91,6 +96,7 @@ export function parseProgram(source: string): Program {
   let projected = false;
   let tailStarted = false;
   let sortSeen = false;
+  let afterHatch = false;
 
   for (let position = 0; position < entries.length; position += 1) {
     const entry = entries[position] as (typeof entries)[number];
@@ -134,6 +140,9 @@ export function parseProgram(source: string): Program {
     }
     if ((keyword === "join" || keyword === "left join") && grouped) {
       throw fail("join cannot appear after group by");
+    }
+    if ((keyword === "join" || keyword === "left join") && afterHatch) {
+      throw fail("join cannot appear after a sql stage; the hatch output columns are opaque");
     }
     if (keyword === "filter" && grouped) {
       throw fail("filter cannot appear after group by; use having");
@@ -180,6 +189,7 @@ export function parseProgram(source: string): Program {
       projected = false;
       tailStarted = false;
       sortSeen = false;
+      afterHatch = true;
       for (const key of [...seen.keys()]) {
         if (key !== "from") seen.delete(key);
       }
@@ -428,6 +438,8 @@ function parseStageBody(
     case "derive": {
       const items = parseCommaList(reader, (r) => parseNamedExpr(r, "derive"));
       reader.expectEnd();
+      rejectDuplicateNames(items.map((item) => item.name),
+                           (name) => reader.fail(`derive defines '${name}' more than once`));
       return {
         ...base(index, keyword, span), kind: "derive",
         phase: grouped ? "group" : "row", items,
@@ -436,11 +448,15 @@ function parseStageBody(
     case "group by": {
       const keys = parseCommaList(reader, parseGroupKey);
       reader.expectEnd();
+      rejectDuplicateNames(keys.map((key) => key.name),
+                           (name) => reader.fail(`group key '${name}' appears more than once`));
       return { ...base(index, keyword, span), kind: "group by", keys } satisfies GroupByStage;
     }
     case "aggregate": {
       const items = parseCommaList(reader, parseAggregateItem);
       reader.expectEnd();
+      rejectDuplicateNames(items.map((item) => item.name),
+                           (name) => reader.fail(`aggregate '${name}' is defined more than once`));
       return { ...base(index, keyword, span), kind: "aggregate", items } satisfies AggregateStage;
     }
     case "having": {
@@ -497,6 +513,10 @@ function parseStageBody(
       }
       const items = parseCommaList(reader, parseSelectItem);
       reader.expectEnd();
+      rejectDuplicateNames(
+        items.map((item) => item.alias ?? expressionName(item.expr)),
+        (name) => reader.fail(
+          `select projects '${name}' more than once; add an alias to one of them`));
       return { ...base(index, keyword, span), kind: "select", star: false, items } satisfies SelectStage;
     }
     case "sort": {
@@ -528,7 +548,7 @@ function parseStageBody(
       if (text.includes(";")) {
         reader.fail("sql stage must be a single SELECT statement; ';' is not allowed", token);
       }
-      const firstWord = text.trim().split(/\s+/, 1)[0]?.toUpperCase() ?? "";
+      const firstWord = firstSqlWord(text);
       if (firstWord !== "SELECT" && firstWord !== "WITH") {
         reader.fail("sql stage must be a query; start it with SELECT or WITH", token);
       }
@@ -570,6 +590,40 @@ function parseCommaList<T>(reader: TokenReader, parseItem: (reader: TokenReader)
     items.push(parseItem(reader));
   }
   return items;
+}
+
+function rejectDuplicateNames(names: readonly string[],
+                              fail: (name: string) => never): void {
+  const seen = new Set<string>();
+  for (const name of names) {
+    if (seen.has(name)) fail(name);
+    seen.add(name);
+  }
+}
+
+/** First keyword of a sql payload, skipping whitespace and comments. */
+function firstSqlWord(text: string): string {
+  let i = 0;
+  while (i < text.length) {
+    const char = text[i] as string;
+    if (/\s/.test(char)) {
+      i += 1;
+      continue;
+    }
+    if (text.startsWith("--", i)) {
+      const newline = text.indexOf("\n", i);
+      i = newline < 0 ? text.length : newline + 1;
+      continue;
+    }
+    if (text.startsWith("/*", i)) {
+      const close = text.indexOf("*/", i + 2);
+      i = close < 0 ? text.length : close + 2;
+      continue;
+    }
+    break;
+  }
+  const match = /[A-Za-z_][A-Za-z0-9_]*/.exec(text.slice(i));
+  return match ? match[0].toUpperCase() : "";
 }
 
 function parseNamedExpr(reader: TokenReader, what: string): NamedExpr {
@@ -920,6 +974,12 @@ function parseNameOrCall(reader: TokenReader, context: ExprContext): Expr {
   }
   if (distinct && star) {
     reader.fail("COUNT(DISTINCT *) is not valid; name a column instead", nameToken);
+  }
+  if (!AGGREGATES.has(lowered) && !SCALAR_FUNCTIONS.has(lowered)) {
+    reader.fail(
+      `unknown function '${nameToken.value}'; supported functions: `
+      + `COUNT, SUM, AVG, MIN, MAX, COALESCE, NULLIF, LOWER, UPPER, ABS, ROUND, LENGTH, TRIM, CONCAT`,
+      nameToken);
   }
   if (!context.inAggregate && AGGREGATES.has(lowered)) {
     reader.fail(

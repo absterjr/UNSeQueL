@@ -75,6 +75,18 @@ describe("formatter: rules", () => {
       .toBe("from orders\ngroup by country\naggregate n = COUNT(*)\n");
   });
 
+  it("keeps consecutive minus signs lexable", () => {
+    for (const source of [
+      "from orders\nderive a = - -3",
+      "from orders\nsort - -quantity",
+      "from orders\nwindow rn = ROW_NUMBER() over (order by - -quantity)",
+    ]) {
+      const once = formatProgram(source);
+      expect(once, source).not.toContain("--");
+      expect(formatProgram(once), source).toBe(once);
+    }
+  });
+
   it("normalizes skip/take spacing and window spelling", () => {
     expect(formatProgram(
       "from orders\nwindow rn = ROW_NUMBER() over (order by quantity DESC)\ntake 3"))

@@ -216,6 +216,10 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
           const family = typeFamily(declared);
           scope.set(`${label}.${column}`, family);
           const exposed = taken.has(column) ? `${label}_${column}` : column;
+          if (taken.has(exposed)) {
+            throw semanticError(stage,
+              `join exposes duplicate column '${exposed}'; alias one of the joins`);
+          }
           scope.set(exposed, family);
           taken.add(exposed);
         }
@@ -249,6 +253,10 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
         const rowScope = groupRowScope ?? scope;
         for (const item of stage.items) {
           checkRefs(item.call, rowScope, stage, `aggregate '${item.name}'`);
+          if (scope.known(item.name)) {
+            throw semanticError(stage,
+              `aggregate '${item.name}' conflicts with the group key of the same name`);
+          }
           const fname = item.call.name.toUpperCase();
           if ((fname === "SUM" || fname === "AVG") && item.call.args.length > 0) {
             const argFamily = infer(item.call.args[0] as Expr, rowScope);
@@ -274,6 +282,10 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
         }
         for (const key of stage.call.orderBy) {
           checkRefs(key.expr, scope, stage, `window '${stage.name}'`);
+        }
+        if (scope.known(stage.name)) {
+          throw semanticError(stage,
+            `window '${stage.name}' conflicts with a live column; choose another name`);
         }
         scope.set(stage.name, windowFamily(stage.call, scope));
         break;
