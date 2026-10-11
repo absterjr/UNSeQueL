@@ -1,0 +1,50 @@
+name: Bug report
+description: Something does not work as documented.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - plq compiler (TypeScript)
+        - Python prototype (unsequel)
+        - VS Code extension
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include the exact query and the full error or output.
+      placeholder: |
+        $ plq run my_query.plq
+        error: ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest query and data (or a link) that shows the problem.
+      placeholder: |
+        # source orders: data.csv
+        from orders
+        ...
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Version and OS
+      description: "`plq --version` or `python -m unsequel --version`, plus your operating system."
+    validations:
+      required: true

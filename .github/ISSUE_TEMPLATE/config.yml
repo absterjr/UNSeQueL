@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions, ideas, and query showcase
+    url: https://github.com/absterjr/UNSeQueL/discussions
+    about: Ask questions, share queries you migrated, and discuss ideas in Discussions.
+  - name: Guided first task (20 minutes)
+    url: https://github.com/absterjr/UNSeQueL/blob/main/plq/docs/first-task.md
+    about: Try the compiler and send back where you got stuck.

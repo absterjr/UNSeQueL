@@ -1,0 +1,4 @@
+# Default owner for everything in this repository.
+# PRs touching any path request @absterjr as reviewer; the protect-main
+# ruleset requires a code owner review before merge.
+* @absterjr

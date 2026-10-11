@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a language feature, stage, function, or tooling improvement.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - plq compiler (.plq)
+        - Python prototype (.usql / .pusql)
+        - Tooling / editor
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to express?
+      description: Describe the analysis or workflow, not the syntax you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: sketch
+    attributes:
+      label: Proposed syntax (optional)
+      placeholder: |
+        from orders
+        ...
+    validations:
+      required: false
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workarounds today
+      description: How do you solve it now (e.g. the `sql` hatch)? If it is already in docs/backlog.md, mention which item.
+    validations:
+      required: false
