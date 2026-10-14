@@ -5,10 +5,10 @@
 - Naming migration: the production TypeScript package, executable, and VS Code
   extension all use the full `unsequel` / `UNSeQueL` name; the canonical query
   suffix is `.unsequel` (converted from `.plq` throughout the corpus, examples,
-  tests, and docs). The Python package remains `unsequel`, with
-  `unsequel-python` as its console script and `python -m unsequel` unchanged.
-  The v0.6.0 release assets keep their original names; the follow-up release
-  uses the full brand.
+  tests, and docs). The compiler folder in the repository is now `compiler/`
+  (was `plq/`). The Python package remains `unsequel`, with `unsequel-python`
+  as its console script and `python -m unsequel` unchanged. The v0.6.0 release
+  assets keep their original names; the follow-up release uses the full brand.
 
 ## 0.6.0 (Python) / plq 0.2.0 — 2026-10-14
 
@@ -38,14 +38,14 @@
   owned by another publisher (the executable remains `plq`).
 - Documentation pass: every doc now describes the installed-`plq` workflow —
   the root README compiler section leads with flagless `plq run`/`--lines`/
-  `repl`; `plq/docs/first-task.md` is a flagless exercise (with the `# source`
-  directive and an optional VS Code step); `plq/examples/README.md` splits
-  self-contained `real/` from fixture corpora; `plq/docs/backlog.md` records
+  `repl`; `compiler/docs/first-task.md` is a flagless exercise (with the `# source`
+  directive and an optional VS Code step); `compiler/examples/README.md` splits
+  self-contained `real/` from fixture corpora; `compiler/docs/backlog.md` records
   shipped vs open tooling gaps; `CONTRIBUTING.md` covers
   `fmt:check`/`editors:check` and the extension folder; the progress log
   points at the post-step-9 work.
-- Editor experience: the five dogfood queries in `plq/examples/real/` now
-  carry `# source` directives and run with zero flags; `plq/editors/vscode/`
+- Editor experience: the five dogfood queries in `compiler/examples/real/` now
+  carry `# source` directives and run with zero flags; `compiler/editors/vscode/`
   ships a VS Code extension — syntax highlighting, `PLQ: Run Selection`
   (piped as `plq run <file> --lines A:B`), `PLQ: Run File`, `PLQ: Open REPL` —
   validated by a new `npm run editors:check` CI step; the compiler README now
@@ -102,13 +102,13 @@
 
 ## 0.5.0 - 2026-10-10
 
-TypeScript compiler (`plq/`) 0.1.0: all nine plan steps complete.
+TypeScript compiler (`compiler/`) 0.1.0: all nine plan steps complete.
 Python prototype 0.5.0: audit refinements A1–A9 / P-Fix1–8, spec v0.3.1.
 
 - `plq` Step 9 (dogfood + external feedback): five real analyst queries in
-  `plq/examples/real/` migrated through the CLI — two needed the `sql` hatch
+  `compiler/examples/real/` migrated through the CLI — two needed the `sql` hatch
   (month bucketing, share-of-total), which drove the prioritised gaps in
-  `plq/docs/backlog.md`; `plq/docs/first-task.md` is the external-feedback
+  `compiler/docs/backlog.md`; `compiler/docs/first-task.md` is the external-feedback
   exercise; a dogfood test parses, validates, formats, and executes all five
   against the sample dataset. Dogfooding found and fixed a real bug: the
   hatch's opaque column tracking is now preserved through following
@@ -132,8 +132,8 @@ Python prototype 0.5.0: audit refinements A1–A9 / P-Fix1–8, spec v0.3.1.
   chain with one CTE per lowering unit (`group by` + `aggregate` share one),
   with `stopAt` truncation that keeps the unit containing a grammar stage.
   Shared output-naming moved to `src/ast.ts` (`expressionName`). Verified
-  two ways: 21 golden files (`plq/tests/golden/`) and DuckDB execution parity
-  against the hand-written equivalents (`plq/tests/handwritten/`, run with
+  two ways: 21 golden files (`compiler/tests/golden/`) and DuckDB execution parity
+  against the hand-written equivalents (`compiler/tests/handwritten/`, run with
   the `@duckdb/node-api` devDependency).
 - `plq` Step 5 (schema-aware validation): `src/schema.ts` loads JSON schemas
   and collapses type strings into families; `src/semantics.ts` (`analyze`)
@@ -147,14 +147,14 @@ Python prototype 0.5.0: audit refinements A1–A9 / P-Fix1–8, spec v0.3.1.
 - Prototype parity: schema analysis resolves `derive` items left-to-right, so
   an item may reference an earlier item in the same stage (matching both
   engines).
-- Scaffolded the production compiler (`plq/`): TypeScript/Node package with a
+- Scaffolded the production compiler (`compiler/`): TypeScript/Node package with a
   strict `tsc` setup, vitest runner, an empty `plq` CLI (`--version`, `--help`,
   usage exit), and a Node 22/24 CI job. Plan Step 1 of the TypeScript stack
   decision (DuckDB target, recursive descent, one CTE per stage).
-- `plq` Step 2: frozen language specification v1.0 (`plq/docs/grammar.md`) and
+- `plq` Step 2: frozen language specification v1.0 (`compiler/docs/grammar.md`) and
   the 21 reference queries converted to `.plq` syntax in
-  `plq/examples/reference/`, hand-validated against the grammar.
-- `plq` Step 3: the lexer (`plq/src/lexer.ts`) — case-insensitive keywords,
+  `compiler/examples/reference/`, hand-validated against the grammar.
+- `plq` Step 3: the lexer (`compiler/src/lexer.ts`) — case-insensitive keywords,
   single-line strings with escapes, `#`/`--` comments, CRLF-safe line/column
   tracking, and token-level errors. All 21 reference queries tokenize; 17
   lexer tests including five malformed-input cases.
@@ -205,7 +205,7 @@ Python prototype 0.5.0: audit refinements A1–A9 / P-Fix1–8, spec v0.3.1.
   the stage-located `PipelineError`.
 - `plq` lexer alignment (audit batch B2): tokens carry exclusive end positions
   (spans); `LexError` extends the shared `PlqError` base
-  (`plq/src/errors.ts`); dangling-backslash input gets an explicit error; 11
+  (`compiler/src/errors.ts`); dangling-backslash input gets an explicit error; 11
   edge tests cover lone CR, tabs, number forms, `a--b` comments,
   reserved-word collisions, and function-name identifiers.
 - Prototype refinement (audit batch A5–A9): pipeline grammar rejects subquery

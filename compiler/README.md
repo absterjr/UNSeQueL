@@ -69,7 +69,7 @@ example transcripts can be copied wholesale.
 
 ## Use it from your editor
 
-`plq/editors/vscode/` ships the UNSeQueL VS Code extension (syntax highlighting
+`compiler/editors/vscode/` ships the UNSeQueL VS Code extension (syntax highlighting
 for `.unsequel` files, plus `UNSeQueL: Run Selection`,
 `UNSeQueL: Run File`, `UNSeQueL: Open REPL`).
 Install it with F5

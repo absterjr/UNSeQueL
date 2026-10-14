@@ -62,7 +62,7 @@ describe("cli: check", () => {
   });
 
   it("surfaces stage-located errors", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-"));
     const path = join(directory, "bad.unsequel");
     writeFileSync(path, "from orders\nfilter missing_column > 1\n");
     try {
@@ -156,7 +156,7 @@ describe("cli: options and data validation", () => {
   });
 
   it("strips a UTF-8 BOM from query and schema files", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-bom-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-bom-"));
     try {
       const queryPath = join(directory, "query.unsequel");
       writeFileSync(queryPath, "\uFEFFfrom orders\n");
@@ -171,7 +171,7 @@ describe("cli: options and data validation", () => {
   });
 
   it("reports DuckDB errors as clean error lines", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-dberr-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-dberr-"));
     try {
       const queryPath = join(directory, "query.unsequel");
       writeFileSync(queryPath,
@@ -201,7 +201,7 @@ describe("cli: run", () => {
   });
 
   it("preserves leading zeros, literal NULL-like strings, and supports CSV overrides", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-csv-types-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-csv-types-"));
     try {
       const data = join(directory, "codes.csv");
       const query = join(directory, "query.unsequel");

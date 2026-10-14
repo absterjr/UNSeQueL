@@ -116,7 +116,7 @@ describe("formatter: CLI", () => {
   });
 
   it("--check accepts CRLF files", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-crlf-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-crlf-"));
       const path = join(directory, "query.unsequel");
     try {
       writeFileSync(path, "from orders\r\nsort order_id\r\n");
@@ -128,7 +128,7 @@ describe("formatter: CLI", () => {
   });
 
   it("--check exits 1 for non-canonical text and 0 after --write", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-fmt-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-fmt-"));
       const path = join(directory, "query.unsequel");
     try {
       writeFileSync(path, "FROM orders\n");

@@ -20,5 +20,5 @@ Step 4 must parse every file; step 5+ may extend them with schemas.
 | c12_window | `window` stage, `partition by`/`order by`, `COUNT(*) OVER`, repeatable |
 | c13_unary | unary plus and minus |
 
-Lexer-level validation lives in `plq/tests/coverage.test.ts` and parse
-validation in `plq/tests/parser.test.ts` (step 4).
+Lexer-level validation lives in `compiler/tests/coverage.test.ts` and parse
+validation in `compiler/tests/parser.test.ts` (step 4).

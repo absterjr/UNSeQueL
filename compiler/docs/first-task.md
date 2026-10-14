@@ -12,7 +12,7 @@ Requires Node 22 or newer.
 
 ```bash
 git clone https://github.com/absterjr/UNSeQueL.git
-cd UNSeQueL/plq
+cd UNSeQueL/compiler
 npm install
 npm install -g .        # puts `unsequel` on PATH (`npm link` also works)
 unsequel --version

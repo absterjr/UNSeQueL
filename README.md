@@ -60,12 +60,12 @@ prototype dialects retained for comparison; their grammars differ from the
 | --- | --- | --- | --- |
 | Ordered prototype | `.usql` | `python -m unsequel` | `FROM ... WHERE ... GROUP BY ... HAVING ... SELECT ... ORDER BY ...` |
 | Pipeline (prototype) | `.pusql` | `python -m unsequel ... --pipeline` (inferred for `.pusql`) | one stage per line; `where` is position-sensitive (row vs group); `group keys (aggregates)` |
-| Pipeline (recommended) | `.unsequel` | `unsequel` CLI and [UNSeQueL VS Code extension](plq/editors/vscode/README.md) | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows and backtick identifiers; DuckDB target — [grammar v1.2](plq/docs/grammar.md) |
+| Pipeline (recommended) | `.unsequel` | `unsequel` CLI and [UNSeQueL VS Code extension](compiler/editors/vscode/README.md) | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows and backtick identifiers; DuckDB target — [grammar v1.2](compiler/docs/grammar.md) |
 
 New here? Run one self-contained query — no schema or data flags required:
 
 ```bash
-cd plq
+cd compiler
 npm install -g .
 unsequel run examples/real/r01_top_products.unsequel
 ```
@@ -73,7 +73,7 @@ unsequel run examples/real/r01_top_products.unsequel
 `.unsequel` files can declare their own sources, run a line selection, read from
 stdin, or open an interactive `unsequel repl`. A VS Code extension (syntax
 highlighting, Run Selection/File/REPL) is in
-[plq/editors/vscode](plq/editors/vscode/README.md).
+[compiler/editors/vscode](compiler/editors/vscode/README.md).
 
 ## Status
 
@@ -261,11 +261,11 @@ prototype syntax and [semantics/conformance notes](docs/semantics.md).
 
 ## Production compiler (TypeScript)
 
-The production compiler in [plq/](plq/README.md) is a growing DuckDB-targeted
+The production compiler in [compiler/](compiler/README.md) is a growing DuckDB-targeted
 implementation in TypeScript/Node. It uses a hand-written recursive-descent
 parser, one CTE per lowering unit, schema-aware validation, and golden plus
 DuckDB execution tests. Its current frozen specification is
-[UNSeQueL grammar v1.2](plq/docs/grammar.md); CTEs, set operators, subquery sources,
+[UNSeQueL grammar v1.2](compiler/docs/grammar.md); CTEs, set operators, subquery sources,
 and non-DuckDB targets remain outside its implemented subset.
 
 `.unsequel` files run like SQL — they declare their own sources, and a query can be
@@ -273,7 +273,7 @@ run whole, selected by line range, piped through stdin, or explored in an
 interactive `repl`:
 
 ```bash
-cd plq
+cd compiler
   npm install -g .        # once; puts `unsequel` on PATH
 unsequel run examples/real/r01_top_products.unsequel
 unsequel run examples/real/r01_top_products.unsequel --lines 4:10
@@ -281,9 +281,9 @@ unsequel repl
 ```
 
 A VS Code extension (syntax highlighting plus Run Selection/File/REPL) lives
-in [plq/editors/vscode](plq/editors/vscode/README.md). See
-[plq/docs/first-task.md](plq/docs/first-task.md) for a guided exercise and
-[plq/docs/backlog.md](plq/docs/backlog.md) for what comes next.
+in [compiler/editors/vscode](compiler/editors/vscode/README.md). See
+[compiler/docs/first-task.md](compiler/docs/first-task.md) for a guided exercise and
+[compiler/docs/backlog.md](compiler/docs/backlog.md) for what comes next.
 
 ## How UNSeQueL fits among query languages
 
@@ -329,7 +329,7 @@ implemented by the production compiler, even though the Python ordered prototype
 of those features.
 
 The prioritised lists are [docs/backlog.md](docs/backlog.md) (Python
-prototype) and [plq/docs/backlog.md](plq/docs/backlog.md) (compiler), tracked
+prototype) and [compiler/docs/backlog.md](compiler/docs/backlog.md) (compiler), tracked
 in the [milestones](https://github.com/absterjr/UNSeQueL/milestones).
 
 Known engine differences include tie ordering, division by zero (`NULL` in the

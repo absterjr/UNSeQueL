@@ -9,8 +9,8 @@
 > enforcement outside `group`. The parser now rejects pipelines the in-memory
 > engine cannot execute in stage order instead of returning wrong rows.
 >
-> The production TypeScript compiler (`plq/`) implements an evolved grammar
-> ([plq/docs/grammar.md](../plq/docs/grammar.md), v1.2); this document remains
+> The production TypeScript compiler (`compiler/`) implements an evolved grammar
+> ([compiler/docs/grammar.md](../compiler/docs/grammar.md), v1.2); this document remains
 > the reference for the Python prototype's pipeline surface.
 
 This is the authoritative grammar and lowering spec for the pipeline surface of

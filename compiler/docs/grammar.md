@@ -122,7 +122,7 @@ cross-implementation awareness):
 
 ## 3. Stages
 
-The TypeScript contract for every node below is `plq/src/ast.ts`; each stage
+The TypeScript contract for every node below is `compiler/src/ast.ts`; each stage
 node carries its 1-based grammar index and its source span.
 
 ### 3.1 `from`
@@ -490,7 +490,7 @@ strings, `-column` for descending sort, spaces around binary operators,
 trailing newline. Idempotent. Leading `# source name: path` and `# schema:
 path` file directives are preserved; every other comment is dropped. `sql`
 payloads are re-quoted with newlines escaped so a stage never spans lines
-(§2). Implemented in `plq/src/format.ts` with the `fmt --write|--check` CLI
+(§2). Implemented in `compiler/src/format.ts` with the `fmt --write|--check` CLI
 command.
 
 ## 8. Dataset

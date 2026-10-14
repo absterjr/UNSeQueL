@@ -2,7 +2,7 @@
 
 > Superseded for current work: see [pipeline-spec.md](pipeline-spec.md)
 > (Python pipeline, v0.3.1) and
-> [../plq/docs/grammar.md](../plq/docs/grammar.md) (production compiler,
+> [../compiler/docs/grammar.md](../compiler/docs/grammar.md) (production compiler,
 > v1.2). This file stays as the frozen v0.1 history and prior-art credits.
 
 This is the proof-of-concept syntax for pipeline-style UNSeQueL queries. The

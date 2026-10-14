@@ -132,7 +132,7 @@ describe("repl session", () => {
 
 describe("cli: selection and schema-less execution", () => {
   it("runs only the selected line range", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-lines-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-lines-"));
     const path = join(directory, "two_queries.unsequel");
     try {
       writeFileSync(path, "from orders\ntake 1\n\nfrom orders\ntake 2\n");
@@ -157,7 +157,7 @@ describe("cli: selection and schema-less execution", () => {
   });
 
   it("keeps file directives when --lines excludes them", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-lines2-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-lines2-"));
     const path = join(directory, "two.unsequel");
     try {
       writeFileSync(path,
@@ -189,7 +189,7 @@ describe("cli: selection and schema-less execution", () => {
   });
 
   it("honors '# source' directives so files are self-contained", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-self-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-self-"));
     const path = join(directory, "self.unsequel");
     try {
       writeFileSync(path, `# source orders: ${ORDERS}\nfrom orders\ntake 1\n`);
@@ -202,7 +202,7 @@ describe("cli: selection and schema-less execution", () => {
   });
 
   it("honors a '# schema:' directive for check", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "plq-schema-"));
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-schema-"));
     const path = join(directory, "checked.unsequel");
     try {
       writeFileSync(path, `# schema: ${SCHEMA}\nfrom orders\ntake 1\n`);

@@ -16,7 +16,7 @@ The five `real/` queries carry their own `# source` directives, so once `unseque
 is on PATH they need no flags:
 
 ```bash
-cd plq
+cd compiler
 npm install -g .        # once
 unsequel run examples/real/r01_top_products.unsequel
 unsequel run examples/real/r05_share_of_total.unsequel --format json

@@ -16,13 +16,13 @@ flags are needed. Both run commands are also in the editor context menu.
 
 Until the extension is on the Marketplace, install it from this folder.
 
-**Developer mode (fastest):** open the `plq/editors/vscode` folder in VS Code
+**Developer mode (fastest):** open the `compiler/editors/vscode` folder in VS Code
 and press `F5` — a second VS Code window opens with the extension loaded.
 
 **Local install (permanent):**
 
 ```bash
-cd plq/editors/vscode
+cd compiler/editors/vscode
 npx @vscode/vsce package
 code --install-extension unsequel-vscode-0.3.0.vsix
 ```

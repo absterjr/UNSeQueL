@@ -11,7 +11,7 @@ VS Code extension). The Python `.usql` and `.pusql` surfaces are prototypes
 retained for comparison and learning; they have different grammars and are not
 three dialects a beginner is expected to choose between. See the
 [repository map](../README.md#repository-map) and the
-[UNSeQueL grammar](../plq/docs/grammar.md).
+[UNSeQueL grammar](../compiler/docs/grammar.md).
 
 UNSeQueL's aim is to make relational transformations readable in the order
 they are applied. That does not remove the need to learn SQL: the generated
@@ -91,7 +91,7 @@ python -m unsequel run customer.usql \
 
 The same delimiter and type overrides are passed to the optional DuckDB
 backend. The production compiler applies equivalent whole-column inference before loading CSVs;
-its CLI options are documented in [plq/README.md](../plq/README.md).
+its CLI options are documented in [compiler/README.md](../compiler/README.md).
 
 ## Engine boundaries
 
@@ -114,6 +114,6 @@ cases belong here before a semantic change is considered complete.
 
 The production compiler is DuckDB-only today. Its stage composition, joins, backtick identifiers,
 whole-relation windows, CSV inference and limitations are specified in
-[plq/docs/grammar.md](../plq/docs/grammar.md); the prioritized unimplemented
-features are in [plq/docs/backlog.md](../plq/docs/backlog.md). It is not a
+[compiler/docs/grammar.md](../compiler/docs/grammar.md); the prioritized unimplemented
+features are in [compiler/docs/backlog.md](../compiler/docs/backlog.md). It is not a
 portable warehouse query language yet.

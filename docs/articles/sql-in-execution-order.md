@@ -45,7 +45,7 @@ Try it:
 
 ```bash
 git clone https://github.com/absterjr/UNSeQueL.git
-cd UNSeQueL/plq
+cd UNSeQueL/compiler
 npm install -g .
 unsequel run examples/real/r01_top_products.unsequel
 ```

@@ -12,12 +12,12 @@ python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
 
-## TypeScript compiler (`plq/`)
+## TypeScript compiler (`compiler/`)
 
 The production compiler has its own development loop:
 
 ```bash
-cd plq
+cd compiler
 npm install
 npm run check         # tsc for src and tests
 npm test              # vitest, including DuckDB execution parity
@@ -26,11 +26,11 @@ npm run editors:check # VS Code extension manifest and grammar regexes
 npm run build         # dist/main.js
 ```
 
-The VS Code extension lives in `plq/editors/vscode/`: open that folder and
+The VS Code extension lives in `compiler/editors/vscode/`: open that folder and
 press F5 to try it, or `npx @vscode/vsce package` for a VSIX. Its grammar is
-[plq/docs/grammar.md](plq/docs/grammar.md) (frozen v1.2); the reference corpus
-in `plq/examples/reference/` is the behavioural baseline, and
-[plq/docs/backlog.md](plq/docs/backlog.md) lists the prioritised gaps.
+[compiler/docs/grammar.md](compiler/docs/grammar.md) (frozen v1.2); the reference corpus
+in `compiler/examples/reference/` is the behavioural baseline, and
+[compiler/docs/backlog.md](compiler/docs/backlog.md) lists the prioritised gaps.
 
 ## Good first contributions
 

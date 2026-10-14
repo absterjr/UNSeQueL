@@ -28,6 +28,6 @@ learners acquire SQL faster or retain it better.
 - Publish anonymized aggregate results and the task materials before making
   comparative learning claims.
 
-The repository's [`plq/docs/first-task.md`](../plq/docs/first-task.md) is a
+The repository's [`compiler/docs/first-task.md`](../compiler/docs/first-task.md) is a
 usability exercise, not this controlled study: its feedback must not be cited
 as proof of learning effectiveness.

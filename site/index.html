@@ -67,8 +67,8 @@
     <nav aria-label="Main navigation">
       <a href="https://github.com/absterjr/UNSeQueL">GitHub</a>
       <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>
-      <a href="https://github.com/absterjr/UNSeQueL/blob/main/plq/docs/semantics.md">Semantics</a>
-      <a href="https://github.com/absterjr/UNSeQueL/blob/main/plq/editors/vscode/README.md">VS Code</a>
+      <a href="https://github.com/absterjr/UNSeQueL/blob/main/compiler/docs/semantics.md">Semantics</a>
+      <a href="https://github.com/absterjr/UNSeQueL/blob/main/compiler/editors/vscode/README.md">VS Code</a>
     </nav>
   </header>
 
@@ -77,7 +77,7 @@
     <h1>Write queries in the order they run.</h1>
     <p>UNSeQueL is a small query language for reading transformations top to bottom: start with data, filter, group, project, then sort and take. Run `.unsequel` files directly against local CSV, JSON, or Parquet data.</p>
     <div class="actions">
-      <a class="button" href="https://github.com/absterjr/UNSeQueL/tree/main/plq">Try UNSeQueL</a>
+      <a class="button" href="https://github.com/absterjr/UNSeQueL/tree/main/compiler">Try UNSeQueL</a>
       <a class="button secondary" href="https://github.com/absterjr/UNSeQueL/discussions">Ask or discuss</a>
     </div>
   </section>
@@ -122,7 +122,7 @@ LIMIT 10</pre></div>
   <section>
     <h2>Start here</h2>
     <div class="card"><pre>git clone https://github.com/absterjr/UNSeQueL.git
-cd UNSeQueL/plq
+cd UNSeQueL/compiler
 npm install -g .
 unsequel run examples/real/r01_top_products.unsequel</pre></div>
     <p style="margin-top:16px">The npm package will be published as <code>unsequel</code>; until then, the source install above works. For the Python prototypes, source semantics, grammar, issues, and the 20-minute first task, visit the <a href="https://github.com/absterjr/UNSeQueL">repository README</a> and <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>.</p>

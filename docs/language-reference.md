@@ -2,7 +2,7 @@
 
 This reference documents the **Python ordered `.usql` prototype**. New users
 should start with the production `.unsequel` compiler and its
-[grammar](../plq/docs/grammar.md); the `.pusql` prototype has a third, older
+[grammar](../compiler/docs/grammar.md); the `.pusql` prototype has a third, older
 pipeline dialect.
 
 UNSeQueL is line-oriented on purpose: each stage is easy to see while reading
@@ -170,4 +170,4 @@ The Python prototype is a read/query subset, not a full SQL implementation. It
 does not include table-changing statements, recursive CTEs, scalar subqueries
 inside expressions, user-defined functions, or streaming/native query
 planning. The production compiler has a different, documented subset; see
-[the compiler backlog](../plq/docs/backlog.md).
+[the compiler backlog](../compiler/docs/backlog.md).

@@ -16,12 +16,12 @@ implementation plan.
 | 8 — Raw-SQL escape hatch and formatter | [step-08-sql-hatch-and-formatter.md](step-08-sql-hatch-and-formatter.md) | done |
 | 9 — Dogfood and outside feedback | [step-09-dogfood.md](step-09-dogfood.md) | done |
 
-The production TypeScript compiler (`plq/`) follows the same nine-step plan;
-its status lives in [plq/README.md](../../plq/README.md), its grammar at
-[plq/docs/grammar.md](../../plq/docs/grammar.md), and its release notes in the
+The production TypeScript compiler (`compiler/`) follows the same nine-step plan;
+its status lives in [compiler/README.md](../../compiler/README.md), its grammar at
+[compiler/docs/grammar.md](../../compiler/docs/grammar.md), and its release notes in the
 changelog.
 
 Beyond step 9, the compiler gained the SQL-like execution model (file
 directives, `--lines` selections, stdin input, interactive `repl`) and the VS
-Code extension in `plq/editors/vscode/`; those changes are recorded in the
+Code extension in `compiler/editors/vscode/`; those changes are recorded in the
 changelog.
