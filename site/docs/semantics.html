@@ -15,8 +15,7 @@
   <link rel="stylesheet" href="../style.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23101827'/%3E%3Cpath d='M22 26v30a18 18 0 0 0 36 0V26M66 74V26l24 48V26' fill='none' stroke='%235eead4' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
-<body>
-<main>
+<body class="docs">
   <header class="site">
     <a class="brand" href="../index.html">UNSeQueL</a>
     <nav class="site" aria-label="Main navigation">
@@ -27,13 +26,44 @@
     </nav>
   </header>
 
+<div class="docs-shell">
+  <aside class="sidebar" aria-label="Documentation">
+    <nav>
+      <p class="sidebar-heading">Documentation</p>
+      <ul class="sidebar-list">
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="language.html">Language guide</a></li>
+        <li><a href="expressions.html">Expressions and functions</a></li>
+        <li><a href="cli.html">CLI reference</a></li>
+        <li><a href="semantics.html" aria-current="page">Semantics and data rules</a>
+          <ul class="sidebar-sub">
+            <li><a href="#nulls">NULLs and logic</a></li>
+            <li><a href="#csv">CSV loading</a></li>
+            <li><a href="#naming">Column naming</a></li>
+            <li><a href="#ordering">Sort order</a></li>
+            <li><a href="#set-nested">Set operators and nesting</a></li>
+            <li><a href="#hatch">sql hatch</a></li>
+            <li><a href="#engines">Engine boundaries</a></li>
+          </ul>
+        </li>
+        <li><a href="examples.html">Worked examples</a></li>
+        <li><a href="vscode.html">VS Code</a></li>
+        <li><a href="prototype.html">Python prototype</a></li>
+        <li><a href="comparison.html">Comparison and scope</a></li>
+        <li><a href="roadmap.html">Roadmap</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main class="docs-main">
   <div class="crumb"><a href="../index.html">Home</a> / <a href="./index.html">Documentation</a> / Semantics and data rules</div>
 
   <h1>Semantics and data rules</h1>
   <p class="lead">The compiler lowers each program to DuckDB SQL and executes it in an in-memory DuckDB. These are the behaviors the tests pin down.</p>
 
   <section>
-    <h2>NULLs and logic</h2>
+    <h2 id="nulls">NULLs and logic</h2>
     <ul>
       <li><code>filter</code>, <code>having</code>, and join conditions keep only rows where the condition is <code>TRUE</code>; <code>FALSE</code> and <code>NULL</code> drop the row. Use <code>is null</code> rather than <code>= null</code>.</li>
       <li><code>and</code>/<code>or</code> follow SQL three-valued logic (<code>null and false</code> is <code>false</code>, <code>null or true</code> is <code>true</code>).</li>
@@ -43,7 +73,7 @@
   </section>
 
   <section>
-    <h2>CSV loading and type inference</h2>
+    <h2 id="csv">CSV loading and type inference</h2>
     <p>Before loading a CSV, the compiler scans the header and all rows itself, then tells DuckDB the inferred types. Inference is per column, not per cell:</p>
     <ul>
       <li>a column whose non-empty values are all integers becomes <code>BIGINT</code>; all numeric (including decimals) becomes <code>DOUBLE</code>;</li>
@@ -58,7 +88,7 @@
   </section>
 
   <section>
-    <h2>Column naming and ambiguity</h2>
+    <h2 id="naming">Column naming and ambiguity</h2>
     <ul>
       <li>Qualified names use the source label: the alias if given, otherwise the last segment of the table name.</li>
       <li>After a join, a bare name that exists on both sides is an <strong>error</strong> — qualify it. <code>select *</code> exposes a colliding right column as <code>&lt;label&gt;_&lt;column&gt;</code>.</li>
@@ -69,7 +99,7 @@
   </section>
 
   <section>
-    <h2>Sort order and pagination</h2>
+    <h2 id="ordering">Sort order and pagination</h2>
     <ul>
       <li><code>sort</code> records an internal row ordinal. Filters, derives, windows, joins, projections, and pagination preserve it; the final query orders by that ordinal, then removes it from visible output.</li>
       <li><code>group by</code>, <code>distinct</code>, set operators, and <code>sql</code> reset the ordering boundary. Add a final <code>sort</code> when output order matters.</li>
@@ -79,7 +109,7 @@
   </section>
 
   <section>
-    <h2>Set operators and nested programs</h2>
+    <h2 id="set-nested">Set operators and nested programs</h2>
     <ul>
       <li><code>union</code> deduplicates, <code>union all</code> keeps duplicates; <code>intersect</code> and <code>except</code> follow SQL. Both sides must have the same column count (checked unless a side is <code>sql</code>-opaque); names and order follow the left side.</li>
       <li><code>with</code> definitions are program-scoped, may reference earlier definitions, and are resolved before schema tables in <code>from</code>/<code>join</code>.</li>
@@ -88,7 +118,7 @@
   </section>
 
   <section>
-    <h2>The <code>sql</code> hatch</h2>
+    <h2 id="hatch">The <code>sql</code> hatch</h2>
     <ul>
       <li>One query per stage, starting with <code>SELECT</code> or <code>WITH</code>; <code>;</code> outside strings/comments is rejected.</li>
       <li>The previous relation is <code>__input__</code>; named tables remain visible. Substitution never touches string literals or comments.</li>
@@ -97,7 +127,7 @@
   </section>
 
   <section>
-    <h2>Engine boundaries</h2>
+    <h2 id="engines">Engine boundaries</h2>
     <p>The production compiler targets DuckDB only. Type errors, unsupported expressions, and runtime data problems surface as clean <code>error:</code> lines. Known boundaries relative to standard SQL and to the Python prototype:</p>
     <ul>
       <li>DuckDB is the execution engine, so function and type behavior is DuckDB's, not a portable ANSI subset.</li>
@@ -114,5 +144,6 @@
 
   <footer class="site">UNSeQueL is open source under MIT. Compiler 0.4.0, DuckDB 1.x target.</footer>
 </main>
+</div>
 </body>
 </html>

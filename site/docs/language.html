@@ -15,8 +15,7 @@
   <link rel="stylesheet" href="../style.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23101827'/%3E%3Cpath d='M22 26v30a18 18 0 0 0 36 0V26M66 74V26l24 48V26' fill='none' stroke='%235eead4' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
-<body>
-<main>
+<body class="docs">
   <header class="site">
     <a class="brand" href="../index.html">UNSeQueL</a>
     <nav class="site" aria-label="Main navigation">
@@ -27,6 +26,43 @@
     </nav>
   </header>
 
+<div class="docs-shell">
+  <aside class="sidebar" aria-label="Documentation">
+    <nav>
+      <p class="sidebar-heading">Documentation</p>
+      <ul class="sidebar-list">
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="language.html" aria-current="page">Language guide</a>
+          <ul class="sidebar-sub">
+            <li><a href="#stage-model">Stage model</a></li>
+            <li><a href="#with">with</a></li>
+            <li><a href="#from">from</a></li>
+            <li><a href="#join">join</a></li>
+            <li><a href="#filter-derive">filter and derive</a></li>
+            <li><a href="#group-aggregate">group by + aggregate</a></li>
+            <li><a href="#having">having</a></li>
+            <li><a href="#window">window</a></li>
+            <li><a href="#select">select</a></li>
+            <li><a href="#tail">sort / skip / take / distinct</a></li>
+            <li><a href="#set-operators">Set operators</a></li>
+            <li><a href="#sql-hatch">sql hatch</a></li>
+            <li><a href="#comments">Comments and separators</a></li>
+          </ul>
+        </li>
+        <li><a href="expressions.html">Expressions and functions</a></li>
+        <li><a href="cli.html">CLI reference</a></li>
+        <li><a href="semantics.html">Semantics and data rules</a></li>
+        <li><a href="examples.html">Worked examples</a></li>
+        <li><a href="vscode.html">VS Code</a></li>
+        <li><a href="prototype.html">Python prototype</a></li>
+        <li><a href="comparison.html">Comparison and scope</a></li>
+        <li><a href="roadmap.html">Roadmap</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main class="docs-main">
   <div class="crumb"><a href="../index.html">Home</a> / <a href="./index.html">Documentation</a> / Language guide</div>
 
   <h1>Language guide</h1>
@@ -42,7 +78,7 @@ sort -revenue
 take 3</pre>
 
   <section>
-    <h2>Stage model</h2>
+    <h2 id="stage-model">Stage model</h2>
     <table>
       <tr><th>Stage</th><th>Purpose</th></tr>
       <tr><td><code>with</code></td><td>Define a named CTE (nested program) before <code>from</code>.</td></tr>
@@ -63,7 +99,7 @@ take 3</pre>
   </section>
 
   <section>
-    <h2><code>with</code> — named CTEs</h2>
+    <h2 id="with"><code>with</code> — named CTEs</h2>
     <pre>with recent = (from orders | filter quantity &gt; 1 | select customer, quantity)
 from recent as r
 join customers as c on r.customer = c.customer
@@ -72,7 +108,7 @@ select r.customer, c.segment, r.quantity</pre>
   </section>
 
   <section>
-    <h2><code>from</code> — sources</h2>
+    <h2 id="from"><code>from</code> — sources</h2>
     <pre>from orders                      -- schema table
 from recent                      -- CTE defined with `with`
 from (from orders | take 2) as top   -- aliased subquery source</pre>
@@ -80,7 +116,7 @@ from (from orders | take 2) as top   -- aliased subquery source</pre>
   </section>
 
   <section>
-    <h2><code>join</code> — combining relations</h2>
+    <h2 id="join"><code>join</code> — combining relations</h2>
     <pre>join products on orders.product_id = products.product_id
 left join members on orders.customer = members.customer
 right join regions on orders.country = regions.country
@@ -90,41 +126,41 @@ cross join calendar</pre>
   </section>
 
   <section>
-    <h2><code>filter</code> and <code>derive</code></h2>
+    <h2 id="filter-derive"><code>filter</code> and <code>derive</code></h2>
     <pre>filter quantity &gt;= 5 and country in ('United Kingdom', 'Netherlands')
 derive line_total = quantity * unit_price, tax = line_total * 0.2</pre>
     <p><code>derive</code> items resolve left to right inside one stage, so an item may reference an earlier item from the same stage. A derived name must not collide with a live column.</p>
   </section>
 
   <section>
-    <h2><code>group by</code> + <code>aggregate</code></h2>
+    <h2 id="group-aggregate"><code>group by</code> + <code>aggregate</code></h2>
     <pre>group by country
 aggregate orders = COUNT(*), revenue = SUM(quantity * unit_price), best = MAX(quantity)</pre>
     <p>Aggregates are <code>COUNT</code> (including <code>COUNT(*)</code> and <code>COUNT(DISTINCT x)</code>), <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, and <code>MAX</code>. After the unit, only the group keys, the aggregate names, and later group-phase <code>derive</code> values are addressable. Nesting aggregates is rejected. The pair may repeat later in the pipeline to aggregate an aggregate.</p>
   </section>
 
   <section>
-    <h2><code>having</code></h2>
+    <h2 id="having"><code>having</code></h2>
     <pre>having revenue &gt; 100</pre>
     <p>Filters the grouped relation. It runs before a later <code>select</code>, so a select alias is not in scope yet — reference the aggregate name instead.</p>
   </section>
 
   <section>
-    <h2><code>window</code></h2>
+    <h2 id="window"><code>window</code></h2>
     <pre>window rank = ROW_NUMBER() over (partition by customer order by quantity desc, order_id)
 window total = SUM(line_total) over ()</pre>
     <p>Window functions: <code>ROW_NUMBER</code>, <code>RANK</code>, <code>DENSE_RANK</code>, <code>LAG</code>, <code>LEAD</code>, <code>SUM</code>, <code>AVG</code>, <code>COUNT</code>, <code>MIN</code>, <code>MAX</code>. <code>over ()</code> is valid for whole-relation aggregates such as a share of total. Frames (<code>rows between ...</code>) are not implemented yet.</p>
   </section>
 
   <section>
-    <h2><code>select</code></h2>
+    <h2 id="select"><code>select</code></h2>
     <pre>select customer, revenue
 select *, margin = revenue - cost</pre>
     <p>A projection: later stages see the projected columns, and a name introduced here must not duplicate a live column. <code>select x = y</code> means "output column <em>x</em> from expression <em>y</em>", never a comparison.</p>
   </section>
 
   <section>
-    <h2><code>sort</code>, <code>skip</code>, <code>take</code>, <code>distinct</code></h2>
+    <h2 id="tail"><code>sort</code>, <code>skip</code>, <code>take</code>, <code>distinct</code></h2>
     <pre>sort -revenue, customer
 skip 5
 take 10
@@ -133,7 +169,7 @@ distinct</pre>
   </section>
 
   <section>
-    <h2>Set operators</h2>
+    <h2 id="set-operators">Set operators</h2>
     <pre>from orders
 select customer, country
 union (from customers | select customer, country)
@@ -143,14 +179,14 @@ sort customer, country</pre>
   </section>
 
   <section>
-    <h2><code>sql</code> — escape hatch</h2>
+    <h2 id="sql-hatch"><code>sql</code> — escape hatch</h2>
     <pre>from orders
 sql "SELECT *, line_total / (SELECT SUM(line_total) FROM __input__) AS share FROM __input__"</pre>
     <p>One query per stage, starting with <code>SELECT</code> or <code>WITH</code>. The previous relation is <code>__input__</code>; named tables stay visible. Columns after the hatch are treated as opaque, so joins after a <code>sql</code> stage are rejected. Use it for anything the stages cannot express yet.</p>
   </section>
 
   <section>
-    <h2>Comments and separators</h2>
+    <h2 id="comments">Comments and separators</h2>
     <pre># full-line comment
 -- SQL-style comment
 from orders | take 1   -- `|` separates stages on one line</pre>
@@ -164,5 +200,6 @@ from orders | take 1   -- `|` separates stages on one line</pre>
 
   <footer class="site">UNSeQueL is open source under MIT. Grammar v1.3 (compiler 0.4.0).</footer>
 </main>
+</div>
 </body>
 </html>

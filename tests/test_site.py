@@ -32,9 +32,17 @@ class SiteMetadataParser(HTMLParser):
         self.description = None
         self.stylesheets = []
         self.links = []
+        self.anchors = []
+        self.ids = []
+        self.has_sidebar = False
+        self.current_page_links = 0
+        self.sidebar_current_links = 0
+        self.in_sidebar = False
 
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
+        if "id" in values:
+            self.ids.append(values["id"])
         if tag == "title":
             self.in_title = True
         if tag == "link" and values.get("rel") == "canonical":
@@ -43,12 +51,23 @@ class SiteMetadataParser(HTMLParser):
             self.stylesheets.append(values.get("href"))
         if tag == "meta" and values.get("name") == "description":
             self.description = values.get("content")
+        if tag == "aside" and "sidebar" in (values.get("class") or ""):
+            self.has_sidebar = True
+            self.in_sidebar = True
+        if values.get("aria-current") == "page":
+            self.current_page_links += 1
+            if self.in_sidebar:
+                self.sidebar_current_links += 1
         if tag == "a" and values.get("href"):
             self.links.append(values["href"])
+            if values["href"].startswith("#"):
+                self.anchors.append(values["href"][1:])
 
     def handle_endtag(self, tag):
         if tag == "title":
             self.in_title = False
+        if tag == "aside":
+            self.in_sidebar = False
 
     def handle_data(self, data):
         if self.in_title:
@@ -113,6 +132,23 @@ class SiteTests(unittest.TestCase):
         for page in DOC_PAGES:
             url_path = "docs/" if page == "docs/index.html" else page
             self.assertIn(f"{CANONICAL}{url_path}", locations)
+
+    def test_docs_pages_have_sidebar_with_current_page_marked(self):
+        for page in DOC_PAGES:
+            with self.subTest(page=page):
+                parser = parse_page(SITE / page)
+                self.assertTrue(parser.has_sidebar, "missing <aside class=\"sidebar\">")
+                self.assertEqual(parser.sidebar_current_links, 1,
+                                 "exactly one sidebar link should be marked current")
+
+    def test_in_page_anchor_links_resolve_to_ids(self):
+        for page in sorted(SITE.rglob("*.html")):
+            parser = parse_page(page)
+            self.assertEqual(len(parser.ids), len(set(parser.ids)),
+                             f"{page.name}: duplicate id attributes")
+            for anchor in parser.anchors:
+                with self.subTest(page=page.name, anchor=anchor):
+                    self.assertIn(anchor, parser.ids)
 
     def test_social_preview_is_a_github_sized_png(self):
         png = (SITE / "social-preview.png").read_bytes()
