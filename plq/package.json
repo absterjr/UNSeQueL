@@ -1,16 +1,21 @@
 {
-  "name": "plq",
-  "version": "0.1.0",
-  "description": "PLQ compiler: pipeline query language, compiles to DuckDB SQL one CTE per pipeline unit.",
+  "name": "unsequel-plq",
+  "version": "0.2.0",
+  "description": "UNSeQueL PLQ compiler: write SQL-like queries in execution order and compile composable stages to DuckDB SQL.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/absterjr/UNSeQueL.git",
     "directory": "plq"
   },
+  "homepage": "https://absterjr.github.io/UNSeQueL/",
   "keywords": [
     "query-language",
+    "unsequel",
     "sql",
+    "from-first",
+    "execution-order",
+    "sql-pipeline",
     "duckdb",
     "pipeline",
     "compiler",
@@ -37,7 +42,7 @@
     "test:watch": "vitest",
     "fmt:check": "node scripts/check-formatter.mjs",
     "editors:check": "node scripts/check-editors.mjs && node --check editors/vscode/extension.js",
-    "smoke": "node dist/main.js run examples/real/r01_top_products.plq --format json && node dist/main.js run examples/real/r03_repeat_customers.plq --format csv",
+    "smoke": "node dist/main.js run examples/real/r01_top_products.plq --format json && node dist/main.js run examples/real/r03_repeat_customers.plq --format csv && node dist/main.js run examples/real/r04_monthly_revenue.plq --format csv && node dist/main.js run examples/real/r05_share_of_total.plq --format json",
     "prepack": "npm run build"
   },
   "engines": {

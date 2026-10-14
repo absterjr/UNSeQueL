@@ -33,8 +33,8 @@ plq --version
    ```bash
    plq preview examples/reference/q20_full_pipeline.plq \
      --stage 5 --limit 3 \
-     --data orders=../examples/spec/orders.csv \
-     --data products=../examples/spec/products.csv
+     --data orders=examples/spec/orders.csv \
+     --data products=examples/spec/products.csv
    ```
 
 4. Write `my_query.plq` answering: *which customers spent more than 150 in
@@ -42,7 +42,7 @@ plq --version
    `sort`. Start the file with a directive so it runs flagless:
 
    ```text
-   # source orders: ../examples/spec/orders.csv
+   # source orders: examples/spec/orders.csv
    ```
 
    Sample data: [../../examples/spec/orders.csv](../../examples/spec/orders.csv).

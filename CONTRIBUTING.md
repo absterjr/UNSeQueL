@@ -28,7 +28,7 @@ npm run build         # dist/main.js
 
 The VS Code extension lives in `plq/editors/vscode/`: open that folder and
 press F5 to try it, or `npx @vscode/vsce package` for a VSIX. Its grammar is
-[plq/docs/grammar.md](plq/docs/grammar.md) (frozen v1.1); the reference corpus
+[plq/docs/grammar.md](plq/docs/grammar.md) (frozen v1.2); the reference corpus
 in `plq/examples/reference/` is the behavioural baseline, and
 [plq/docs/backlog.md](plq/docs/backlog.md) lists the prioritised gaps.
 

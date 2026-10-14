@@ -13,7 +13,9 @@ import { createInterface } from "node:readline";
 
 import { emitSql } from "./codegen.js";
 import { splitDirectives, type Directives } from "./directives.js";
-import { connect, introspectSchema, runSql, type DuckDBConnection } from "./duckdb.js";
+import {
+  connect, introspectSchema, runSql, type DuckDBConnection, type SourceOptions,
+} from "./duckdb.js";
 import { PlqError } from "./errors.js";
 import { formatProgram, isFormatted } from "./format.js";
 import { OUTPUT_FORMATS, formatResult } from "./output.js";
@@ -28,7 +30,7 @@ export interface CliResult {
   stderr: string;
 }
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 const USAGE = `plq ${VERSION}
 pipeline query language compiler
@@ -39,15 +41,19 @@ commands:
   check    <query.plq> [--schema s.json] [--lines A:B]
            parse a program; --schema (or a '# schema:' directive) validates it
   compile  <query.plq> [--schema s.json] [--stage N] [--lines A:B]
+           [--data name=path] [--delimiter C] [--column-type table.column=type]
            print the generated DuckDB SQL (optionally truncated at stage N)
   preview  <query.plq> --stage N [--limit K] [--data name=path] [--lines A:B]
+           [--delimiter C] [--column-type table.column=type]
            run the program truncated at grammar stage N and show sample rows
   run      <query.plq | -> [--data name=path] [--schema s.json]
-           [--format table|json|csv] [--lines A:B]
+           [--format table|json|csv] [--lines A:B] [--delimiter C]
+           [--column-type table.column=type]
            execute the whole program ('-' reads the query from stdin)
   fmt      <query.plq> [--write | --check]
            print the canonical form; --write rewrites the file, --check exits 1
   repl     [--data name=path] [--schema s.json] [--format table|json|csv]
+           [--delimiter C] [--column-type table.column=type]
            interactive session; a query runs on a blank line or ';'
            (bare 'plq' opens the repl on a terminal)
 
@@ -174,6 +180,57 @@ function mergeSources(directives: Directives, args: Args, queryPath: string): Ma
   return merged;
 }
 
+function normalizeColumnType(typeName: string): string {
+  const key = typeName.trim().toLowerCase();
+  const aliases: Readonly<Record<string, string>> = {
+    text: "VARCHAR", string: "VARCHAR", varchar: "VARCHAR", char: "VARCHAR",
+    int: "BIGINT", integer: "BIGINT", bigint: "BIGINT", smallint: "SMALLINT",
+    number: "DOUBLE", numeric: "DOUBLE", float: "FLOAT", real: "FLOAT", double: "DOUBLE",
+    bool: "BOOLEAN", boolean: "BOOLEAN", date: "DATE", time: "TIME",
+    timestamp: "TIMESTAMP", datetime: "TIMESTAMP",
+  };
+  const alias = aliases[key];
+  if (alias !== undefined) return alias;
+  const decimal = /^decimal\(\s*\d+\s*(?:,\s*\d+\s*)?\)$/i.exec(typeName.trim());
+  if (decimal !== null) return typeName.trim().toUpperCase().replace(/\s+/g, "");
+  throw new UsageError(
+    `unsupported --column-type '${typeName}'; use text, integer, number, boolean, date, time, timestamp, or decimal(p,s)`);
+}
+
+function sourceOptions(args: Args, sources: ReadonlyMap<string, string>): SourceOptions {
+  const delimiter = flag(args, "delimiter");
+  if (delimiter !== undefined
+      && (delimiter.length !== 1 || delimiter === '"' || delimiter === "\r" || delimiter === "\n")) {
+    throw new UsageError("--delimiter must be exactly one non-quote character");
+  }
+  const columnTypes = new Map<string, Map<string, string>>();
+  for (const spec of args.flags.get("column-type") ?? []) {
+    const equals = spec.lastIndexOf("=");
+    const dot = spec.indexOf(".");
+    if (dot <= 0 || equals <= dot + 1 || equals === spec.length - 1) {
+      throw new UsageError("--column-type must look like table.column=type");
+    }
+    const requestedTable = spec.slice(0, dot);
+    const table = [...sources.keys()].find(
+      (name) => name.toLowerCase() === requestedTable.toLowerCase());
+    if (table === undefined) {
+      throw new UsageError(`--column-type refers to table '${requestedTable}', not supplied by --data or '# source'`);
+    }
+    let column = spec.slice(dot + 1, equals).trim();
+    if ((column.startsWith("`") && column.endsWith("`"))
+        || (column.startsWith('"') && column.endsWith('"'))) {
+      column = column.slice(1, -1).replace(/``/g, "`").replace(/""/g, '"');
+    }
+    if (column === "") throw new UsageError("--column-type column name cannot be empty");
+    const types = columnTypes.get(table) ?? new Map<string, string>();
+    const key = column.toLowerCase();
+    if (types.has(key)) throw new UsageError(`duplicate --column-type for ${table}.${column}`);
+    types.set(key, normalizeColumnType(spec.slice(equals + 1)));
+    columnTypes.set(table, types);
+  }
+  return { ...(delimiter === undefined ? {} : { delimiter }), columnTypes };
+}
+
 function declaredSchema(args: Args, directives: Directives, queryPath: string): Schema | null {
   const flagPath = flag(args, "schema");
   if (flagPath !== undefined) return loadSchema(flagPath);
@@ -206,8 +263,9 @@ function readQueryInput(args: Args): QueryInput {
   return { text, path, program, directives };
 }
 
-async function introspectFromSources(sources: ReadonlyMap<string, string>): Promise<Schema> {
-  const connection = await connect(sources);
+async function introspectFromSources(sources: ReadonlyMap<string, string>,
+                                     options: SourceOptions): Promise<Schema> {
+  const connection = await connect(sources, options);
   return introspectSchema(connection, [...sources.keys()]);
 }
 
@@ -242,9 +300,10 @@ function cmdCheck(args: Args): string {
 async function cmdCompile(args: Args): Promise<string> {
   const { path, program, directives } = readQueryInput(args);
   const sources = mergeSources(directives, args, path);
+  const options = sourceOptions(args, sources);
   const schema = declaredSchema(args, directives, path)
     ?? (sources.size > 0
-      ? await introspectFromSources(sources)
+      ? await introspectFromSources(sources, options)
       : (() => {
         throw new PlqError(
           "no schema available: pass --schema, add '# schema:' to the file, "
@@ -269,7 +328,7 @@ async function cmdPreview(args: Args): Promise<string> {
     throw new UsageError(
       "preview needs --data name=path or a '# source' directive at the top of the file");
   }
-  const connection = await connect(sources);
+  const connection = await connect(sources, sourceOptions(args, sources));
   const schema = await schemaForConnection(args, directives, path, connection, sources);
   analyze(program, schema);
   const stageText = flag(args, "stage");
@@ -298,7 +357,7 @@ async function cmdRun(args: Args): Promise<string> {
       "run needs --data name=path or a '# source' directive at the top of the file");
   }
   const format = validateFormat(flag(args, "format") ?? "table");
-  const connection = await connect(sources);
+  const connection = await connect(sources, sourceOptions(args, sources));
   const schema = await schemaForConnection(args, directives, path, connection, sources);
   analyze(program, schema);
   const result = await runSql(connection, emitSql(program, schema));
@@ -324,8 +383,10 @@ function cmdFmt(args: Args): string {
 }
 
 async function cmdRepl(args: Args): Promise<string> {
+  const sources = dataSources(args, true);
   const session = new ReplSession({
-    sources: dataSources(args, true),
+    sources,
+    sourceOptions: sourceOptions(args, sources),
     schemaPath: flag(args, "schema") ?? null,
     format: validateFormat(flag(args, "format") ?? "table"),
   });
@@ -360,11 +421,11 @@ const KNOWN_COMMANDS = ["check", "compile", "preview", "run", "fmt", "repl"] as 
 
 const ALLOWED_FLAGS: Record<string, readonly string[]> = {
   check: ["schema", "lines"],
-  compile: ["schema", "stage", "lines", "data"],
-  preview: ["schema", "stage", "limit", "data", "lines"],
-  run: ["schema", "data", "format", "lines"],
+  compile: ["schema", "stage", "lines", "data", "delimiter", "column-type"],
+  preview: ["schema", "stage", "limit", "data", "lines", "delimiter", "column-type"],
+  run: ["schema", "data", "format", "lines", "delimiter", "column-type"],
   fmt: ["write", "check"],
-  repl: ["schema", "data", "format"],
+  repl: ["schema", "data", "format", "delimiter", "column-type"],
 };
 
 function commandArgs(command: string, argv: readonly string[]): Args {
@@ -411,8 +472,10 @@ export async function startInteractiveRepl(argv: readonly string[]): Promise<Cli
   let session: ReplSession;
   try {
     const args = commandArgs("repl", argv.filter((arg) => arg !== "repl"));
+    const sources = dataSources(args, true);
     session = new ReplSession({
-      sources: dataSources(args, true),
+      sources,
+      sourceOptions: sourceOptions(args, sources),
       schemaPath: flag(args, "schema") ?? null,
       format: validateFormat(flag(args, "format") ?? "table"),
     });

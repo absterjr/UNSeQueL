@@ -64,11 +64,11 @@ describe("cli: check", () => {
   it("surfaces stage-located errors", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-"));
     const path = join(directory, "bad.plq");
-    writeFileSync(path, "from orders\ntake 5\nfilter quantity > 1\n");
+    writeFileSync(path, "from orders\nfilter missing_column > 1\n");
     try {
-      const result = await runCli(["check", path]);
+      const result = await runCli(["check", path, "--schema", SCHEMA]);
       expect(result.code).toBe(1);
-      expect(result.stderr).toContain("stage 3 (filter)");
+      expect(result.stderr).toContain("stage 2 (filter)");
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -80,7 +80,7 @@ describe("cli: compile", () => {
     const result = await runCli(["compile", Q20, "--schema", SCHEMA]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("WITH stage_1 AS (");
-    expect(result.stdout).toContain("SELECT * FROM stage_8;");
+    expect(result.stdout).toContain("FROM stage_8 ORDER BY __unsequel_internal_order_");
   });
 
   it("truncates at a grammar stage, keeping the group unit whole", async () => {
@@ -198,6 +198,34 @@ describe("cli: run", () => {
     const rows = JSON.parse(result.stdout) as Array<Record<string, unknown>>;
     expect(rows).toHaveLength(3);
     expect(rows[0]?.["category"]).toBe("home");
+  });
+
+  it("preserves leading zeros, literal NULL-like strings, and supports CSV overrides", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "plq-csv-types-"));
+    try {
+      const data = join(directory, "codes.csv");
+      const query = join(directory, "query.plq");
+      writeFileSync(data, "postal;label\n02134;None\n00501;Nan\n");
+      writeFileSync(query, "from codes\nselect postal, label\n");
+      const inferred = await runCli([
+        "run", query, "--format", "json", "--delimiter", ";", `--data=codes=${data}`,
+      ]);
+      expect(inferred.code).toBe(0);
+      expect(JSON.parse(inferred.stdout)).toEqual([
+        { postal: "02134", label: "None" },
+        { postal: "00501", label: "Nan" },
+      ]);
+
+      writeFileSync(query, "from codes\nselect postal\n");
+      const overridden = await runCli([
+        "run", query, "--format", "json", "--delimiter", ";",
+        "--column-type", "codes.postal=integer", `--data=codes=${data}`,
+      ]);
+      expect(overridden.code).toBe(0);
+      expect(JSON.parse(overridden.stdout)).toEqual([{ postal: 2134 }, { postal: 501 }]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("reports a missing data file", async () => {

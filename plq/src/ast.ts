@@ -249,7 +249,7 @@ export interface FromStage extends StageBase {
 
 export interface JoinStage extends StageBase {
   kind: "join";
-  joinKind: "inner" | "left";
+  joinKind: "inner" | "left" | "right" | "full" | "cross";
   source: SourceRef;
   on: Expr;
 }

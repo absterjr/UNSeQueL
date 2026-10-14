@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://absterjr.github.io/UNSeQueL/sitemap.xml

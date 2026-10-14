@@ -1,5 +1,5 @@
 from orders
-join customers on customer = customers.customer
-group customer (revenue = SUM(quantity * unit_price))
+join customers on orders.customer = customers.customer
+group customer = orders.customer (revenue = SUM(quantity * unit_price))
 sort -revenue
 take 2

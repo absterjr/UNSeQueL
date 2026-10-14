@@ -1,9 +1,7 @@
-# source orders: ../../../examples/spec/orders.csv
+# source orders: ../spec/orders.csv
 # Real query: monthly revenue trend.
-# Gap: the language has no date functions, so month extraction uses the hatch.
 from orders
-sql "SELECT order_id, strftime(order_date, '%Y-%m') AS month, quantity, unit_price FROM __input__"
-derive line_total = quantity * unit_price
+derive month = strftime(order_date, '%Y-%m')
 group by month
-aggregate revenue = SUM(line_total), orders = COUNT(*)
+aggregate revenue = SUM(quantity * unit_price), orders = COUNT(*)
 sort month

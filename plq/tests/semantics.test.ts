@@ -133,6 +133,15 @@ describe("semantics: invalid programs", () => {
     expect(error.message).toContain("unknown column 'quantity'");
   });
 
+  it("explains that SELECT aliases do not exist yet in HAVING", () => {
+    const error = semanticError(
+      "from orders\ngroup by customer\naggregate n = COUNT(*)\n"
+      + "having chosen > 1\nselect customer, chosen = n");
+    expect(error.stageKeyword).toBe("having");
+    expect(error.message).toContain("runs before select");
+    expect(error.message).toContain("SELECT alias 'chosen'");
+  });
+
   it("rejects deriving over a live column", () => {
     const error = semanticError("from orders\nderive order_id = quantity");
     expect(error.message).toContain("conflicts with a live column");
@@ -169,10 +178,17 @@ describe("semantics: invalid programs", () => {
   it("rejects repeated joins that expose duplicate columns", () => {
     const error = semanticError(
       "from orders\n"
-      + "join products on product_id = products.product_id\n"
-      + "join products on product_id = products.product_id");
+      + "join products on orders.product_id = products.product_id\n"
+      + "join products on orders.product_id = products.product_id");
     expect(error.stageKeyword).toBe("join");
     expect(error.message).toContain("duplicate column");
+  });
+
+  it("rejects unqualified references made ambiguous by one join", () => {
+    const error = semanticError(
+      "from orders\njoin products on orders.product_id = products.product_id\nselect product_id");
+    expect(error.stageKeyword).toBe("select");
+    expect(error.message).toContain("ambiguous column 'product_id'");
   });
 
   it("skips checks after the hatch", () => {

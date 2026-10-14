@@ -4,41 +4,44 @@ This is the backlog for the **TypeScript compiler**. The Python prototype has
 its own at [../../docs/backlog.md](../../docs/backlog.md).
 
 Prioritised gaps found while migrating the five real queries in
-[`examples/real/`](../examples/real/) through the CLI (steps 6-9). Two of the
-five reached for `sql "..."`.
+[`examples/real/`](../examples/real/) through the CLI (steps 6-9). The first
+version needed the SQL hatch for monthly dates and share-of-total; v1.2 adds
+native functions and whole-relation windows for those queries.
 
-## P0 — needed to express everyday analysis without the hatch
+## P0 — next for everyday analysis
 
-1. **Date/time functions** (`strftime`, `date_trunc`, month bucketing) — r04
-   needed the hatch to group orders by month.
-2. **Grand-total windows** — share-of-total needs `SUM(x) over ()`; the grammar
-   requires at least one of `partition by` / `order by`, so r05 used a scalar
-   subquery in the hatch.
-3. **`select *, name = expression`** — the frozen `*`-only rule forces
-   splitting projections into two stages.
+1. **Date literals and temporal type checks.** `strftime` and `date_trunc` are
+   available, but date comparisons are still based on the input type/inference
+   rather than a dedicated date-literal syntax.
+2. **More scalar and aggregate functions** needed for everyday analysis, with
+   type families and DuckDB parity tests for each addition.
 
 ## P1 — language completeness
 
-4. Nested pipeline sources (`from (from orders ...) as x`) and pipeline CTEs.
+4. CTEs, nested pipeline sources (`from (from orders ...) as x`), and
+   `UNION` / `INTERSECT` / `EXCEPT` in `.plq`.
 5. Window frame clauses (`rows between ...`).
-6. More aggregate functions (`MEDIAN`, `STDDEV`, `STRING_AGG`).
-7. Date literals (comparisons today are string literals against dates).
+6. A second SQL target (e.g. PostgreSQL) if user feedback confirms warehouse
+   portability is a core requirement; DuckDB remains the only target today.
+7. More aggregate functions (`MEDIAN`, `STDDEV`, `STRING_AGG`).
 
 ## P2 — tooling
 
-8. `--format json` for `preview` (currently table only).
-9. VS Code extension polish: remember the PLQ terminal's working directory
+8. VS Code extension polish: remember the PLQ terminal's working directory
    per workspace, optionally run `plq fmt` on save, and publish the extension
    to the Marketplace.
-10. Standalone binaries — spike `bun build --compile` or Node SEA with the
-    DuckDB native addon so users need neither Node nor npm.
-11. `--data` globs/directories.
+9. Standalone binaries — spike `bun build --compile` or Node SEA with the
+   DuckDB native addon so users need neither Node nor npm.
+10. `--data` globs/directories and per-source delimiter settings (the current
+    delimiter option applies to all loaded CSVs).
 
-Shipped since dogfooding: stdin input (`plq run -`), file directives with
-flagless `run`/`compile`/`preview`, `--lines A:B` selections that keep the
-file's directives, interactive `repl` (`.run`, pasted-prompt stripping),
-source introspection when no JSON schema is given, and the VS Code extension
-in [`../editors/vscode/`](../editors/vscode/).
+Shipped since the original dogfood pass: `strftime`/`date_trunc`, `over ()`,
+`select *, expression = ...`, right/full/cross joins, repeated group/aggregate
+units, relational stages after projections/joins/pagination, stable sort order
+through later stages, backtick identifiers, strict ambiguous-column errors,
+stdin (`plq run -`), file directives, line selections, interactive `repl`,
+source introspection, and the VS Code extension in
+[`../editors/vscode/`](../editors/vscode/).
 
 ## Intentionally out of scope
 

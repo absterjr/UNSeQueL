@@ -3,8 +3,10 @@
 import contextlib
 import io
 import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from unsequel.cli import main
 
@@ -50,8 +52,9 @@ class CompileTests(unittest.TestCase):
         self.assertNotIn("stage_5", text)
 
     def test_compile_reports_schema_error_with_stage(self):
-        text, code = run_cli("compile", "-", "--schema", SCHEMA)
-        # reading '-' with no stdin yields empty -> parse error, not a crash
+        with patch("sys.stdin", io.StringIO("")):
+            text, code = run_cli("compile", "-", "--schema", SCHEMA)
+        # Explicitly patched empty stdin makes this deterministic and non-blocking.
         self.assertEqual(code, 1)
         self.assertIn("error:", text)
 
@@ -82,6 +85,61 @@ class PreviewTests(unittest.TestCase):
                           "--schema", SCHEMA, "--format", "json", *DATA)
         mem, _ = run_cli("run", FULL, "--pipeline", "--format", "json", *DATA)
         self.assertEqual(_nums(json.loads(duck)), _nums(json.loads(mem)))
+
+    def test_duckdb_reader_honors_csv_delimiter_and_type_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory) / "orders.csv"
+            query = Path(directory) / "query.pusql"
+            schema = Path(directory) / "schema.json"
+            data.write_text("postal;quantity\n02134;2\n00501;3\n", encoding="utf-8")
+            query.write_text("from orders\nselect postal\n", encoding="utf-8")
+            schema.write_text(
+                json.dumps({"tables": {"orders": {"columns": {
+                    "postal": "integer", "quantity": "integer",
+                }}}}),
+                encoding="utf-8")
+            text, code = run_cli(
+                "run", str(query), "--pipeline", "--engine", "duckdb",
+                "--schema", str(schema), "--delimiter", ";",
+                "--column-type", "orders.postal=integer", "--format", "json",
+                f"--data=orders={data}")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(text), [{"postal": 2134}, {"postal": 501}])
+
+
+class CliInputOutputTests(unittest.TestCase):
+    def test_empty_results_print_headers_and_zero_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory) / "orders.csv"
+            query = Path(directory) / "empty.usql"
+            data.write_text("id,quantity\n1,2\n", encoding="utf-8")
+            query.write_text("FROM orders WHERE quantity > 100 SELECT id\n", encoding="utf-8")
+            text, code = run_cli("run", str(query), f"--data=orders={data}")
+        self.assertEqual(code, 0)
+        self.assertIn("id", text)
+        self.assertIn("0 row(s)", text)
+
+    def test_header_only_csv_is_a_valid_empty_table(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory) / "orders.csv"
+            query = Path(directory) / "empty.usql"
+            data.write_text("id,quantity\n", encoding="utf-8")
+            query.write_text("FROM orders SELECT id\n", encoding="utf-8")
+            text, code = run_cli("run", str(query), f"--data=orders={data}")
+        self.assertEqual(code, 0)
+        self.assertIn("0 row(s)", text)
+
+    def test_csv_delimiter_and_column_type_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory) / "orders.csv"
+            query = Path(directory) / "query.usql"
+            data.write_text("postal;quantity\n02134;2\n00501;3\n", encoding="utf-8")
+            query.write_text("FROM orders SELECT postal\n", encoding="utf-8")
+            text, code = run_cli(
+                "run", str(query), f"--data=orders={data}", "--delimiter", ";",
+                "--column-type", "orders.postal=integer", "--format", "json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(text), [{"postal": 2134}, {"postal": 501}])
 
 
 if __name__ == "__main__":

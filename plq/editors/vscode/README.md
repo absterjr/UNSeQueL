@@ -1,4 +1,4 @@
-# PLQ for VS Code
+# UNSeQueL PLQ for VS Code
 
 Syntax highlighting and run commands for `.plq` files — run queries like SQL
 clients run `.sql` files.
@@ -24,12 +24,12 @@ and press `F5` — a second VS Code window opens with the extension loaded.
 ```bash
 cd plq/editors/vscode
 npx @vscode/vsce package --allow-missing-repository
-code --install-extension plq-vscode-0.1.0.vsix
+code --install-extension plq-vscode-0.2.0.vsix
 ```
 
 **Manual copy:** copy `editors/vscode/` into your extensions directory
-(`%USERPROFILE%\.vscode\extensions\plq-vscode-0.1.0` on Windows,
-`~/.vscode/extensions/plq-vscode-0.1.0` elsewhere) and restart VS Code.
+(`%USERPROFILE%\.vscode\extensions\plq-vscode-0.2.0` on Windows,
+`~/.vscode/extensions/plq-vscode-0.2.0` elsewhere) and restart VS Code.
 
 ## Without the extension
 

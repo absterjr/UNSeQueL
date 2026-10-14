@@ -36,6 +36,7 @@ export interface StageLineage {
 
 class Scope {
   private readonly families = new Map<string, TypeFamily>();
+  private readonly ambiguousNames = new Set<string>();
 
   known(name: string): boolean {
     return this.families.has(name);
@@ -47,6 +48,18 @@ class Scope {
 
   set(name: string, family: TypeFamily): void {
     this.families.set(name, family);
+  }
+
+  markAmbiguous(name: string): void {
+    this.ambiguousNames.add(name.toLowerCase());
+  }
+
+  isAmbiguous(name: string): boolean {
+    return this.ambiguousNames.has(name.toLowerCase());
+  }
+
+  entries(): Array<[string, TypeFamily]> {
+    return [...this.families.entries()];
   }
 
   bareNames(): string[] {
@@ -65,6 +78,10 @@ function semanticError(stage: Stage, message: string): SemanticError {
 
 function checkRefs(expr: Expr, scope: Scope, stage: Stage, role: string): void {
   for (const name of identifiers(expr)) {
+    if (!name.includes(".") && scope.isAmbiguous(name)) {
+      throw semanticError(stage,
+        `${role} references ambiguous column '${name}'; qualify it with a source label`);
+    }
     if (!scope.known(name)) {
       throw semanticError(stage, `${role} references unknown column '${name}'`);
     }
@@ -145,6 +162,8 @@ function infer(expr: Expr, scope: Scope): TypeFamily {
     case "call": {
       const name = expr.name.toUpperCase();
       if (["SUM", "AVG", "COUNT", "ABS", "ROUND", "LENGTH"].includes(name)) return "numeric";
+      if (name === "STRFTIME") return "text";
+      if (name === "DATE_TRUNC") return "temporal";
       if (["MIN", "MAX", "COALESCE"].includes(name) && expr.args.length > 0) {
         return infer(expr.args[0] as Expr, scope);
       }
@@ -215,6 +234,7 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
         for (const [column, declared] of table.columns) {
           const family = typeFamily(declared);
           scope.set(`${label}.${column}`, family);
+          if (scope.known(column)) scope.markAmbiguous(column);
           const exposed = taken.has(column) ? `${label}_${column}` : column;
           if (taken.has(exposed)) {
             throw semanticError(stage,
@@ -243,7 +263,20 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
         const groupScope = new Scope();
         for (const key of stage.keys) {
           checkRefs(key.expr, scope, stage, `group key '${key.name}'`);
-          groupScope.set(key.name, infer(key.expr, scope));
+          const family = infer(key.expr, scope);
+          groupScope.set(key.name, family);
+          if (key.expr.kind === "name") {
+            if (key.expr.name.includes(".")) {
+              groupScope.set(key.expr.name, family);
+            } else {
+              for (const [name, sourceFamily] of scope.entries()) {
+                if (name.includes(".")
+                    && name.split(".").pop()?.toLowerCase() === key.expr.name.toLowerCase()) {
+                  groupScope.set(name, sourceFamily);
+                }
+              }
+            }
+          }
         }
         groupRowScope = scope;
         scope = groupScope;
@@ -271,6 +304,22 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
         break;
       }
       case "having":
+        {
+          const laterAliases = new Set<string>();
+          const index = stages.findIndex((candidate) => candidate === stage);
+          for (const later of stages.slice(index + 1)) {
+            if (later.kind === "select" && !later.star) {
+              for (const item of later.items) laterAliases.add(selectName(item));
+            }
+          }
+          for (const name of identifiers(stage.condition)) {
+            if (!scope.known(name) && laterAliases.has(name)) {
+              throw semanticError(stage,
+                `having runs before select, so SELECT alias '${name}' is not available; `
+                + "repeat the aggregate expression or define the name before having");
+            }
+          }
+        }
         checkRefs(stage.condition, scope, stage, "having condition");
         break;
       case "window": {
@@ -291,7 +340,20 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
         break;
       }
       case "select": {
-        if (!stage.star) {
+        if (stage.star) {
+          const fresh = new Scope();
+          for (const name of scope.bareNames()) fresh.set(name, scope.family(name));
+          for (const item of stage.items) {
+            checkRefs(item.expr, scope, stage, "select");
+            const output = selectName(item);
+            if (fresh.known(output)) {
+              throw semanticError(stage,
+                `select output '${output}' duplicates a live column from '*'; choose a different alias`);
+            }
+            fresh.set(output, infer(item.expr, scope));
+          }
+          scope = fresh;
+        } else if (!stage.star) {
           const fresh = new Scope();
           for (const item of stage.items) {
             checkRefs(item.expr, scope, stage, "select");

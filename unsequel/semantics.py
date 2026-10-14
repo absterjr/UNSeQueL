@@ -145,6 +145,10 @@ def _fail(stage: Stage, index: int, message: str) -> SemanticError:
 
 def _check_refs(expr: Expr, scope: _Scope, stage: Stage, index: int, role: str) -> None:
     for name in _identifiers(expr):
+        if "." not in name and len(scope.sources.get(name, set())) > 1:
+            raise _fail(
+                stage, index,
+                f"{role} references ambiguous column '{name}'; qualify it with a table alias")
         if not scope.known(name):
             raise _fail(stage, index, f"{role} references unknown column '{name}'")
 

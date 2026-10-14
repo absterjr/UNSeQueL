@@ -10,7 +10,7 @@
 > engine cannot execute in stage order instead of returning wrong rows.
 >
 > The production TypeScript compiler (`plq/`) implements an evolved grammar
-> ([plq/docs/grammar.md](../plq/docs/grammar.md), v1.1); this document remains
+> ([plq/docs/grammar.md](../plq/docs/grammar.md), v1.2); this document remains
 > the reference for the Python prototype's pipeline surface.
 
 This is the authoritative grammar and lowering spec for the pipeline surface of
@@ -287,7 +287,7 @@ Until it ships, `sql "..."` covers window functions (see q21).
 
 ```text
 from orders
-join products on product_id = products.product_id
+join products on orders.product_id = products.product_id
 derive line_total = quantity * unit_price
 group category (orders = COUNT(*), revenue = SUM(line_total))
 where revenue > 100

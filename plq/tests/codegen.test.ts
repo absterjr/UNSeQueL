@@ -65,7 +65,7 @@ describe("codegen: golden files", () => {
       const sql = emitSql(program, SCHEMA);
       const units = loweringUnits(program);
       expect(sql.match(/ AS \(\n/g)?.length ?? 0, name).toBe(units.length);
-      expect(sql.trimEnd().endsWith(`SELECT * FROM stage_${units.length};`), name).toBe(true);
+      expect(sql, name).toContain(`FROM stage_${units.length}`);
     }
   });
 
@@ -84,6 +84,27 @@ describe("codegen: golden files", () => {
     expect(atDerive).not.toContain("GROUP BY");
     const onlyFrom = emitSql(program, SCHEMA, { stopAt: 1 });
     expect(onlyFrom.trimEnd().endsWith("SELECT * FROM stage_1;")).toBe(true);
+  });
+
+  it("quotes reserved, spaced, and digit-leading column identifiers", () => {
+    const schema = parseSchema({
+      tables: {
+        order: { columns: { "Order Date": "text", "2024_sales": "number", order: "text" } },
+      },
+    });
+    const program = parseProgram(
+      "from `order`\nselect `Order Date`, `2024_sales`, `order`");
+    const sql = emitSql(program, schema);
+    expect(sql).toContain('FROM "order"');
+    expect(sql).toContain('"Order Date"');
+    expect(sql).toContain('"2024_sales"');
+  });
+
+  it("supports star plus a named select expression", () => {
+    const program = parseProgram(
+      "from orders\nselect *, line_total = quantity * unit_price");
+    const sql = emitSql(program, SCHEMA);
+    expect(sql).toContain("SELECT *, (quantity * unit_price) AS line_total FROM stage_1");
   });
 });
 
@@ -188,5 +209,79 @@ describe("codegen: DuckDB execution parity", () => {
     const reader = await connection.runAndReadAll(emitSql(program, SCHEMA));
     const result = reader.getRowObjectsJS() as Array<Record<string, unknown>>;
     expect(result).toEqual([{ order_id: 5001n, a: 20n, b: 21n }]);
+  });
+
+  it("executes select star with an added named expression", async () => {
+    const program = parseProgram(
+      "from orders\nselect *, line_total = quantity * unit_price\ntake 1");
+    const reader = await connection.runAndReadAll(emitSql(program, SCHEMA));
+    const result = reader.getRowObjectsJS() as Array<Record<string, unknown>>;
+    expect(result[0]?.["line_total"]).toBe(45);
+    expect(Object.keys(result[0] ?? {})).toContain("order_id");
+  });
+
+  it("supports grand-total windows and native date functions", async () => {
+    const share = parseProgram(
+      "from orders\nderive line_total = quantity * unit_price\n"
+      + "window total = SUM(line_total) over ()\n"
+      + "derive share = line_total / total\nselect order_id, share\ntake 1");
+    const shareRows = await rows(connection, emitSql(share, SCHEMA));
+    expect(shareRows).toHaveLength(1);
+
+    const monthly = parseProgram(
+      "from orders\nderive month = strftime(order_date, '%Y-%m')\n"
+      + "group by month\naggregate orders = COUNT(*)\nsort month");
+    const months = await rows(connection, emitSql(monthly, SCHEMA));
+    expect(months).toHaveLength(6);
+  });
+
+  it("supports a second aggregate and enrichment after aggregation", async () => {
+    const secondAggregate = parseProgram(
+      "from orders\ngroup by customer\n"
+      + "aggregate customer_revenue = SUM(quantity * unit_price)\n"
+      + "group by band = CASE WHEN customer_revenue > 150 THEN 'large' ELSE 'small' END\n"
+      + "aggregate customers = COUNT(*), average_revenue = AVG(customer_revenue)\n"
+      + "select band, customers, average_revenue\nsort band");
+    const aggregateRows = await rows(connection, emitSql(secondAggregate, SCHEMA));
+    expect(aggregateRows.length).toBeGreaterThan(0);
+
+    const enrichAfterGroup = parseProgram(
+      "from orders\ngroup by customer\n"
+      + "aggregate revenue = SUM(quantity * unit_price)\n"
+      + "join customers as c on orders.customer = c.customer\n"
+      + "filter revenue > 100\nselect customer = orders.customer, c.segment, revenue\nsort customer");
+    const enriched = await rows(connection, emitSql(enrichAfterGroup, SCHEMA));
+    expect(enriched).toHaveLength(3);
+  });
+
+  it("keeps sort order through top-N and enrichment stages", async () => {
+    const program = parseProgram(
+      "from orders\nsort -quantity, order_id\ntake 3\n"
+      + "join products as p on orders.product_id = p.product_id\n"
+      + "select order_id, p.product_name, quantity");
+    const reader = await connection.runAndReadAll(emitSql(program, SCHEMA));
+    const result = reader.getRowObjectsJS() as Array<Record<string, unknown>>;
+    expect(result).toHaveLength(3);
+    expect(result.map((row) => Number(row["quantity"]))).toEqual([10, 8, 7]);
+    expect(result.some((row) => Object.keys(row).some((key) => key.startsWith("__unsequel"))))
+      .toBe(false);
+  });
+
+  it("executes right, full, and cross joins", async () => {
+    const right = parseProgram(
+      "from orders as o\nright join members as m on o.customer = m.customer\n"
+      + "select m.customer, o.order_id");
+    const rightRows = await rows(connection, emitSql(right, SCHEMA));
+    expect(rightRows.length).toBeGreaterThan(0);
+
+    const full = parseProgram(
+      "from orders as o\nfull join members as m on o.customer = m.customer\n"
+      + "select m.customer, o.order_id");
+    const fullRows = await rows(connection, emitSql(full, SCHEMA));
+    expect(fullRows.length).toBeGreaterThanOrEqual(rightRows.length);
+
+    const cross = parseProgram(
+      "from orders\ncross join members\nselect order_id, members.customer\ntake 1");
+    expect(await rows(connection, emitSql(cross, SCHEMA))).toHaveLength(1);
   });
 });

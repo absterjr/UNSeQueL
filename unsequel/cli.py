@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -29,13 +30,46 @@ def _data_spec(value: str) -> tuple[str, str]:
     return path.stem, value
 
 
+def _column_type_spec(value: str) -> tuple[str, str, str]:
+    try:
+        target, type_name = value.rsplit("=", 1)
+        table, column = target.split(".", 1)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "column type must look like table.column=type") from exc
+    if not table or not column or not type_name:
+        raise argparse.ArgumentTypeError("column type must look like table.column=type")
+    if column.startswith('"') and column.endswith('"'):
+        column = column[1:-1].replace('""', '"')
+    return table, column, type_name
+
+
+def _delimiter_arg(value: str) -> str:
+    if len(value) != 1 or value in {'"', "\r", "\n"}:
+        raise argparse.ArgumentTypeError("delimiter must be exactly one non-quote character")
+    return value
+
+
+def _column_types_for(args, table_name: str) -> dict[str, str]:
+    return {column: type_name for table, column, type_name in args.column_type
+            if table.casefold() == table_name.casefold()}
+
+
 def _table_output(rows: list[dict], columns: list[str]) -> str:
     if not columns:
         return "(0 columns)"
-    widths = {column: max(len(column), *(len(str(row.get(column, ""))) for row in rows)) for column in columns}
+    def display(value):
+        return "NULL" if value is None else str(value)
+
+    widths = {
+        column: max([len(column), *(len(display(row.get(column, ""))) for row in rows)])
+        for column in columns
+    }
     lines = ["  ".join(column.ljust(widths[column]) for column in columns)]
     lines.append("  ".join("-" * widths[column] for column in columns))
-    lines.extend("  ".join(str(row.get(column, "")).ljust(widths[column]) for column in columns) for row in rows)
+    lines.extend(
+        "  ".join(display(row.get(column, "")).ljust(widths[column]) for column in columns)
+        for row in rows)
     return "\n".join(lines)
 
 
@@ -61,8 +95,19 @@ def _load_tables(args):
     if bool(args.data) == bool(args.sqlite):
         raise UnsequelError("this command needs exactly one of --data or --sqlite")
     if args.sqlite:
+        if args.delimiter is not None or args.column_type:
+            raise UnsequelError("--delimiter and --column-type apply only to --data CSV/JSON inputs")
         return load_sqlite_tables(args.sqlite)
-    return {name: load_table(name, path) for name, path in args.data}
+    supplied_names = {name.casefold() for name, _path in args.data}
+    unknown = sorted({table for table, _column, _type in args.column_type
+                      if table.casefold() not in supplied_names})
+    if unknown:
+        raise UnsequelError(f"--column-type refers to table {unknown[0]!r}, not supplied by --data")
+    return {
+        name: load_table(name, path, delimiter=args.delimiter,
+                         column_types=_column_types_for(args, name))
+        for name, path in args.data
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,6 +131,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="memory: built-in engine (default); duckdb: run generated SQL")
     run.add_argument("--data", action="append", default=[], type=_data_spec,
                      metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
+    run.add_argument("--delimiter", type=_delimiter_arg,
+                     help="one-character CSV delimiter (default: comma)")
+    run.add_argument("--column-type", action="append", default=[], type=_column_type_spec,
+                     metavar="TABLE.COLUMN=TYPE",
+                     help="override inferred type: text, integer, number, or boolean; repeatable")
     run.add_argument("--sqlite", metavar="PATH",
                      help="SQLite database input; all tables and views become sources")
     run.add_argument("--format", choices=("table", "csv", "json"), default="table")
@@ -109,6 +159,11 @@ def build_parser() -> argparse.ArgumentParser:
                          help="sample rows to show (default 10)")
     preview.add_argument("--data", action="append", default=[], type=_data_spec,
                          metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
+    preview.add_argument("--delimiter", type=_delimiter_arg,
+                         help="one-character CSV delimiter (default: comma)")
+    preview.add_argument("--column-type", action="append", default=[], type=_column_type_spec,
+                         metavar="TABLE.COLUMN=TYPE",
+                         help="override inferred type: text, integer, number, or boolean; repeatable")
     preview.add_argument("--format", choices=("table", "csv", "json"), default="table")
 
     fmt = commands.add_parser("fmt", help="print a pipeline query in canonical form")
@@ -137,6 +192,17 @@ def _parse_ordered_with_hint(text: str):
     try:
         return parse_query(text)
     except ParseError as exc:
+        pipeline_stages = {"derive", "group", "aggregate", "filter", "sort",
+                           "take", "skip", "distinct", "window"}
+        looks_like_pipeline = any(
+            (match := re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)\b", part))
+            and match.group(1).lower() in pipeline_stages
+            for line in text.splitlines()
+            for part in line.split("|")
+            if part.strip() and not part.lstrip().startswith(("#", "--"))
+        )
+        if not looks_like_pipeline:
+            raise
         raise ParseError(
             f"{exc}\n  hint: pipeline queries need --pipeline (or use a .pusql file)"
         ) from None
@@ -168,7 +234,8 @@ def _cmd_preview(args) -> None:
     inner = emit_sql(stages, Schema.load(args.schema), stop_at=args.stage).rstrip().rstrip(";")
     sql = f"SELECT * FROM (\n{inner}\n) AS _preview LIMIT {args.limit}"
     data = {name: path for name, path in args.data}
-    result = run_sql(sql, data)
+    column_types = {name: _column_types_for(args, name) for name in data}
+    result = run_sql(sql, data, delimiter=args.delimiter, column_types=column_types)
     print(f"stage {args.stage}/{total}  ({stages[args.stage - 1].keyword})")
     _print_result(result, args.format)
 
@@ -199,7 +266,9 @@ def _cmd_run(args) -> None:
             raise UnsequelError("--engine duckdb reads --data sources, not --sqlite")
         stages = _pipeline_stages(text, args.schema)
         sql = emit_sql(stages, Schema.load(args.schema))
-        result = run_sql(sql, {name: path for name, path in args.data})
+        data = {name: path for name, path in args.data}
+        column_types = {name: _column_types_for(args, name) for name in data}
+        result = run_sql(sql, data, delimiter=args.delimiter, column_types=column_types)
     else:
         if _wants_pipeline(args):
             stages = _pipeline_stages(text, args.schema)

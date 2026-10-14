@@ -109,6 +109,14 @@ describe("lexer: tokens", () => {
     ]);
   });
 
+  it("tokenizes backtick-quoted identifiers including reserved and spaced names", () => {
+    const tokens = tokenize("select `Order Date`, `2024_sales`, `order`");
+    expect(tokens.filter((token) => token.type === "quoted_identifier")
+      .map((token) => token.value)).toEqual(["Order Date", "2024_sales", "order"]);
+    expect(tokenize("select `name``with``ticks`")[1])
+      .toMatchObject({ type: "quoted_identifier", value: "name`with`ticks" });
+  });
+
   it("unescapes strings and accepts doubled quotes", () => {
     expect(tokenize("filter a = 'it''s'")[3]).toMatchObject({ type: "string", value: "it's" });
     expect(tokenize('filter a = "say \\"hi\\""')[3]).toMatchObject({ value: 'say "hi"' });
@@ -277,7 +285,7 @@ describe("lexer: lexical edge cases", () => {
 describe("lexer: keyword contract", () => {
   it("matches the reserved word table from grammar §2.1", () => {
     const specWords = [
-      "from", "join", "left", "filter", "derive", "group", "by", "aggregate",
+      "from", "join", "left", "right", "full", "cross", "filter", "derive", "group", "by", "aggregate",
       "having", "window", "select", "sort", "skip", "take", "distinct", "sql",
       "on", "as", "over", "partition", "order", "asc", "desc",
       "and", "or", "not", "in", "like", "between", "is", "null",

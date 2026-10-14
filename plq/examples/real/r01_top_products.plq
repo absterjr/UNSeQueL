@@ -1,8 +1,8 @@
-# source orders: ../../../examples/spec/orders.csv
-# source products: ../../../examples/spec/products.csv
+# source orders: ../spec/orders.csv
+# source products: ../spec/products.csv
 # Real query: top products by revenue (join + group + top-N)
 from orders
-join products on product_id = products.product_id
+join products on orders.product_id = products.product_id
 derive line_total = quantity * unit_price
 group by product_name
 aggregate revenue = SUM(line_total), units = SUM(quantity)

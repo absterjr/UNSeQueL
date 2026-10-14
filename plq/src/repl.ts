@@ -9,7 +9,10 @@
  */
 
 import { emitSql } from "./codegen.js";
-import { connect, introspectSchema, loadTableSource, runSql, type DuckDBConnection } from "./duckdb.js";
+import {
+  connect, introspectSchema, loadTableSource, runSql,
+  type DuckDBConnection, type SourceOptions,
+} from "./duckdb.js";
 import { PlqError } from "./errors.js";
 import { OUTPUT_FORMATS, formatResult } from "./output.js";
 import { parseProgram } from "./parser.js";
@@ -18,6 +21,7 @@ import { analyze } from "./semantics.js";
 
 export interface ReplOptions {
   sources?: ReadonlyMap<string, string>;
+  sourceOptions?: SourceOptions;
   schemaPath?: string | null;
   format?: string;
 }
@@ -48,6 +52,7 @@ function stripPromptPrefixes(line: string): string {
 
 export class ReplSession {
   private readonly sources = new Map<string, string>();
+  private readonly sourceOptions: SourceOptions;
   private connection: DuckDBConnection | null = null;
   private schema: Schema | null = null;
   private explicitSchema: string | null;
@@ -57,6 +62,7 @@ export class ReplSession {
 
   constructor(options: ReplOptions = {}) {
     for (const [name, path] of options.sources ?? []) this.sources.set(name, path);
+    this.sourceOptions = options.sourceOptions ?? {};
     this.explicitSchema = options.schemaPath ?? null;
     if (this.explicitSchema !== null) this.schema = loadSchema(this.explicitSchema);
     this.format = options.format ?? "table";
@@ -161,7 +167,7 @@ export class ReplSession {
         const path = argument.slice(equals + 1).trim();
         try {
           if (this.connection !== null) {
-            await loadTableSource(this.connection, table, path);
+            await loadTableSource(this.connection, table, path, this.sourceOptions);
             this.sources.set(table, path);
             await this.refreshIntrospectedSchema();
           } else {
@@ -181,9 +187,9 @@ export class ReplSession {
 
   private async ensureReady(): Promise<DuckDBConnection> {
     if (this.connection === null) {
-      this.connection = await connect(new Map());
+      this.connection = await connect(new Map(), this.sourceOptions);
       for (const [table, path] of this.sources) {
-        await loadTableSource(this.connection, table, path);
+        await loadTableSource(this.connection, table, path, this.sourceOptions);
       }
       await this.refreshIntrospectedSchema();
     }

@@ -92,13 +92,20 @@ function stageError(stage: Stage, message: string): CodegenError {
 class Cols {
   readonly lookup: Map<string, string>;
   readonly opaque: boolean;
+  readonly ambiguous: ReadonlySet<string>;
 
-  constructor(lookup: Map<string, string> = new Map(), opaque = false) {
+  constructor(lookup: Map<string, string> = new Map(), opaque = false,
+              ambiguous: ReadonlySet<string> = new Set()) {
     this.lookup = lookup;
     this.opaque = opaque;
+    this.ambiguous = ambiguous;
   }
 
   resolve(name: string): string {
+    if (!name.includes(".") && this.ambiguous.has(name.toLowerCase())) {
+      throw new CodegenError(
+        `column '${name}' is ambiguous after a join; qualify it with a source label`);
+    }
     const direct = this.lookup.get(name);
     if (direct !== undefined) return direct;
     if (this.opaque) {
@@ -317,6 +324,7 @@ function joinStage(stage: JoinStage, schema: Schema, prevCte: string,
   // ON runs in the join's own scope: bare names resolve to the previous CTE,
   // qualified names to whichever side owns them (left labels included).
   const onLookup = new Map<string, string>();
+  const onAmbiguous = new Set(prev.ambiguous);
   for (const name of live) {
     onLookup.set(name, `${prevCte}.${ident(name)}`);
     onLookup.set(`${prevCte}.${name}`, `${prevCte}.${ident(name)}`);
@@ -326,33 +334,47 @@ function joinStage(stage: JoinStage, schema: Schema, prevCte: string,
   }
   for (const column of table.columns.keys()) {
     onLookup.set(`${label}.${column}`, `${ident(label)}.${ident(column)}`);
+    if (live.some((name) => name.toLowerCase() === column.toLowerCase())) {
+      onAmbiguous.add(column.toLowerCase());
+    }
   }
-  const onSql = render(stage.on, new Cols(onLookup));
+  const onSql = stage.joinKind === "cross"
+    ? ""
+    : render(stage.on, new Cols(onLookup, false, onAmbiguous));
 
-  const taken = new Set(live);
+  const taken = new Set(live.map((name) => name.toLowerCase()));
+  const ambiguous = new Set(prev.ambiguous);
   const projected: string[] = [`${prevCte}.*`];
   const lookup = new Map(prev.lookup);
   const newLive = [...live];
   for (const column of table.columns.keys()) {
-    const exposed = taken.has(column) ? `${label}_${column}` : column;
-    if (taken.has(exposed)) {
+    const collision = taken.has(column.toLowerCase());
+    if (collision) ambiguous.add(column.toLowerCase());
+    const exposed = collision ? `${label}_${column}` : column;
+    if (taken.has(exposed.toLowerCase())) {
       throw stageError(stage,
         `join exposes duplicate column '${exposed}'; alias one of the joins`);
     }
     projected.push(exposed === column
       ? `${ident(label)}.${ident(column)}`
       : `${ident(label)}.${ident(column)} AS ${ident(exposed)}`);
-    taken.add(exposed);
+    taken.add(exposed.toLowerCase());
     newLive.push(exposed);
     if (!lookup.has(column)) lookup.set(column, ident(exposed));
     lookup.set(`${label}.${column}`, ident(exposed));
   }
 
-  const keyword = stage.joinKind === "left" ? "LEFT JOIN" : "JOIN";
+  const keyword = {
+    inner: "JOIN",
+    left: "LEFT JOIN",
+    right: "RIGHT JOIN",
+    full: "FULL OUTER JOIN",
+    cross: "CROSS JOIN",
+  }[stage.joinKind];
   return {
     sql: `SELECT ${projected.join(", ")} FROM ${prevCte} ${keyword} `
-      + `${sourceSql(stage.source)} ON ${onSql}`,
-    cols: new Cols(lookup),
+      + `${sourceSql(stage.source)}${stage.joinKind === "cross" ? "" : ` ON ${onSql}`}`,
+    cols: new Cols(lookup, false, ambiguous),
     live: newLive,
   };
 }
@@ -370,7 +392,7 @@ function deriveStage(stage: DeriveStage, prevCte: string, cols: Cols,
   const scope = new Map(cols.lookup);
   const additions: string[] = [];
   for (const item of stage.items) {
-    const rendered = render(item.expr, new Cols(scope, cols.opaque));
+    const rendered = render(item.expr, new Cols(scope, cols.opaque, cols.ambiguous));
     additions.push(aliased(rendered, item.name));
     // Rendered binary/case expressions already come parenthesized.
     scope.set(item.name, rendered);
@@ -379,15 +401,17 @@ function deriveStage(stage: DeriveStage, prevCte: string, cols: Cols,
   for (const item of stage.items) lookup.set(item.name, ident(item.name));
   return {
     sql: `SELECT *, ${additions.join(", ")} FROM ${prevCte}`,
-    cols: new Cols(lookup, cols.opaque),
+    cols: new Cols(lookup, cols.opaque, cols.ambiguous),
     live: [...live, ...stage.items.map((item) => item.name)],
   };
 }
 
 function groupUnitSql(group: GroupByStage, aggregate: AggregateStage,
                       prevCte: string, cols: Cols): StageResult {
-  const keys = group.keys.map((key) => aliased(render(key.expr, cols), key.name));
-  const groupBy = group.keys.map((key) => render(key.expr, cols)).join(", ");
+  const renderedKeys = group.keys.map((key) => render(key.expr, cols));
+  const keys = group.keys.map((key, index) =>
+    aliased(renderedKeys[index] as string, key.name));
+  const groupBy = renderedKeys.join(", ");
   const aggregates = aggregate.items
     .map((item) => aliased(render(item.call, cols), item.name))
     .join(", ");
@@ -395,15 +419,25 @@ function groupUnitSql(group: GroupByStage, aggregate: AggregateStage,
     ...group.keys.map((key) => key.name),
     ...aggregate.items.map((item) => item.name),
   ];
+  const lookup = Cols.flat(names).lookup;
+  for (let index = 0; index < group.keys.length; index += 1) {
+    const key = group.keys[index] as GroupByStage["keys"][number];
+    const rendered = renderedKeys[index];
+    for (const [inputName, sqlName] of cols.lookup) {
+      if (inputName.includes(".") && sqlName === rendered) {
+        lookup.set(inputName, ident(key.name));
+      }
+    }
+  }
   return {
     sql: `SELECT ${[...keys, aggregates].join(", ")} FROM ${prevCte} GROUP BY ${groupBy}`,
-    cols: Cols.flat(names),
+    cols: new Cols(lookup),
     live: names,
   };
 }
 
 function singleStageSql(stage: Stage, prevCte: string, cols: Cols,
-                        live: readonly string[]): StageResult {
+                        live: readonly string[], orderColumn: string | null): StageResult {
   switch (stage.kind) {
     case "filter":
     case "having":
@@ -417,41 +451,116 @@ function singleStageSql(stage: Stage, prevCte: string, cols: Cols,
       lookup.set(stage.name, ident(stage.name));
       return {
         sql: `SELECT *, ${renderWindow(stage.call, cols)} AS ${ident(stage.name)} FROM ${prevCte}`,
-        cols: new Cols(lookup, cols.opaque),
+        cols: new Cols(lookup, cols.opaque, cols.ambiguous),
         live: [...live, stage.name],
       };
     }
     case "select": {
-      if (stage.star) return { sql: `SELECT * FROM ${prevCte}`, cols, live };
-      const names = stage.items.map((item) => item.alias ?? expressionName(item.expr));
+      if (stage.star && stage.items.length === 0) {
+        return { sql: `SELECT * FROM ${prevCte}`, cols: Cols.flat(live), live };
+      }
+      const itemNames = stage.items.map((item) => item.alias ?? expressionName(item.expr));
+      if (stage.star) {
+        const liveNames = new Set(live.map((name) => name.toLowerCase()));
+        const duplicate = itemNames.find((name) => liveNames.has(name.toLowerCase()));
+        if (duplicate !== undefined) {
+          throw stageError(stage,
+            `select output '${duplicate}' duplicates a live column from '*'; choose a different alias`);
+        }
+      }
+      const names = stage.star ? [...live, ...itemNames] : itemNames;
       const rendered = stage.items
-        .map((item, i) => aliased(render(item.expr, cols), names[i] as string))
-        .join(", ");
-      return { sql: `SELECT ${rendered} FROM ${prevCte}`, cols: Cols.flat(names), live: names };
-    }
-    case "sort": {
-      const keys = stage.keys.map((key) => renderSortKey(key, cols)).join(", ");
-      return { sql: `SELECT * FROM ${prevCte} ORDER BY ${keys}`, cols, live };
+        .map((item, i) => aliased(render(item.expr, cols), itemNames[i] as string));
+      if (stage.star) rendered.unshift("*");
+      if (orderColumn !== null && !stage.star) {
+        rendered.push(`${prevCte}.${ident(orderColumn)} AS ${ident(orderColumn)}`);
+      }
+      return { sql: `SELECT ${rendered.join(", ")} FROM ${prevCte}`,
+        cols: Cols.flat(names), live: names };
     }
     case "skip": {
       const skip = stage as SkipStage;
-      return { sql: `SELECT * FROM ${prevCte} OFFSET ${skip.count}`, cols, live };
+      const order = orderColumn === null ? "" : ` ORDER BY ${ident(orderColumn)}`;
+      return { sql: `SELECT * FROM ${prevCte}${order} OFFSET ${skip.count}`, cols, live };
     }
     case "take": {
       const take = stage as TakeStage;
-      return { sql: `SELECT * FROM ${prevCte} LIMIT ${take.count}`, cols, live };
+      const order = orderColumn === null ? "" : ` ORDER BY ${ident(orderColumn)}`;
+      return { sql: `SELECT * FROM ${prevCte}${order} LIMIT ${take.count}`, cols, live };
     }
-    case "distinct":
-      return { sql: `SELECT DISTINCT * FROM ${prevCte}`, cols, live };
+    case "distinct": {
+      const exclusion = orderColumn === null ? "" : ` EXCLUDE (${ident(orderColumn)})`;
+      return { sql: `SELECT DISTINCT *${exclusion} FROM ${prevCte}`, cols, live };
+    }
     case "sql": {
       const raw = stage as RawSqlStage;
-      const text = substituteInput(raw.text, prevCte);
+      const input = orderColumn === null
+        ? prevCte
+        : `(SELECT * EXCLUDE (${ident(orderColumn)}) FROM ${prevCte})`;
+      const text = substituteInput(raw.text, input);
       const indented = text.split("\n").join("\n  ");
       return { sql: indented, cols: new Cols(new Map(), true), live: [] };
     }
     default:
       throw stageError(stage, `cannot lower stage '${stage.keyword}'`);
   }
+}
+
+function sortStageSql(stage: SortStage, prevCte: string, cols: Cols,
+                      orderColumn: string | null, nextOrderColumn: string): string {
+  let keys: string;
+  try {
+    const rendered = stage.keys.map((key) => renderSortKey(key, cols));
+    if (orderColumn !== null) rendered.push(`${ident(orderColumn)} ASC`);
+    keys = rendered.join(", ");
+  } catch (error) {
+    if (error instanceof CodegenError) {
+      throw stageError(stage,
+        `sort key is no longer available after an earlier projection; sort again after select`);
+    }
+    throw error;
+  }
+  const input = orderColumn === null
+    ? "*"
+    : `* EXCLUDE (${ident(orderColumn)})`;
+  return `SELECT ${input}, ROW_NUMBER() OVER (ORDER BY ${keys}) AS `
+    + `${ident(nextOrderColumn)} FROM ${prevCte}`;
+}
+
+function internalOrderNames(program: Program, schema: Schema): Set<string> {
+  const names = new Set<string>();
+  for (const table of schema.tables.values()) {
+    for (const column of table.columns.keys()) names.add(column.toLowerCase());
+  }
+  for (const stage of program) {
+    switch (stage.kind) {
+      case "from":
+      case "join":
+        if (stage.source.alias !== null) names.add(stage.source.alias.toLowerCase());
+        break;
+      case "derive":
+        for (const item of stage.items) names.add(item.name.toLowerCase());
+        break;
+      case "group by":
+        for (const item of stage.keys) names.add(item.name.toLowerCase());
+        break;
+      case "aggregate":
+        for (const item of stage.items) names.add(item.name.toLowerCase());
+        break;
+      case "window":
+        names.add(stage.name.toLowerCase());
+        break;
+      case "select":
+        for (const item of stage.items) {
+          names.add((item.alias ?? expressionName(item.expr)).toLowerCase());
+        }
+        break;
+      case "sql":
+        names.add(stage.text.toLowerCase());
+        break;
+    }
+  }
+  return names;
 }
 
 // --------------------------------------------------------------------------- //
@@ -482,6 +591,21 @@ export function emitSql(program: Program, schema: Schema, options: EmitOptions =
   const ctes: Array<{ name: string; sql: string }> = [];
   let cols = new Cols();
   let live: readonly string[] = [];
+  let orderColumn: string | null = null;
+  let orderOrdinal = 0;
+  const reservedNames = internalOrderNames(program, schema);
+  const rawSqlTexts = program.filter((stage): stage is RawSqlStage => stage.kind === "sql")
+    .map((stage) => stage.text.toLowerCase());
+  const nextOrderName = (): string => {
+    let candidate: string;
+    do {
+      orderOrdinal += 1;
+      candidate = `__unsequel_internal_order_${orderOrdinal}`;
+    } while (reservedNames.has(candidate.toLowerCase())
+      || rawSqlTexts.some((text) => text.includes(candidate.toLowerCase())));
+    reservedNames.add(candidate.toLowerCase());
+    return candidate;
+  };
   let position = 0;
   let ordinal = 0;
 
@@ -503,14 +627,34 @@ export function emitSql(program: Program, schema: Schema, options: EmitOptions =
           throw stageError(stage, "group by must be immediately followed by aggregate");
         }
         result = groupUnitSql(stage, aggregate, prevCte, cols);
+        orderColumn = null;
         position += 1;
         break;
       }
+      case "sort": {
+        const sort = stage as SortStage;
+        const nextOrder = nextOrderName();
+        result = {
+          sql: sortStageSql(sort, prevCte, cols, orderColumn, nextOrder),
+          cols,
+          live,
+        };
+        orderColumn = nextOrder;
+        break;
+      }
+      case "distinct":
+        result = singleStageSql(stage, prevCte, cols, live, orderColumn);
+        orderColumn = null;
+        break;
+      case "sql":
+        result = singleStageSql(stage, prevCte, cols, live, orderColumn);
+        orderColumn = null;
+        break;
       case "derive":
         result = deriveStage(stage, prevCte, cols, live);
         break;
       default:
-        result = singleStageSql(stage, prevCte, cols, live);
+        result = singleStageSql(stage, prevCte, cols, live, orderColumn);
         break;
     }
     ctes.push({ name: `stage_${ordinal}`, sql: result.sql });
@@ -520,5 +664,9 @@ export function emitSql(program: Program, schema: Schema, options: EmitOptions =
   }
 
   const body = ctes.map((cte) => `${cte.name} AS (\n  ${cte.sql}\n)`).join(",\n");
-  return `WITH ${body}\nSELECT * FROM stage_${ctes.length};`;
+  const finalOrder = orderColumn === null
+    ? `SELECT * FROM stage_${ctes.length};`
+    : `SELECT * EXCLUDE (${ident(orderColumn)}) FROM stage_${ctes.length} `
+      + `ORDER BY ${ident(orderColumn)};`;
+  return `WITH ${body}\n${finalOrder}`;
 }

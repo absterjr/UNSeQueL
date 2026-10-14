@@ -1,13 +1,14 @@
 /**
- * PLQ lexer (plan step 3; aligned to grammar v1.1 in audit batch B2).
+ * PLQ lexer (plan step 3; aligned to grammar v1.2).
  *
  * Turns raw `.plq` text into a flat token stream for the recursive-descent
  * parser (step 4). Follows docs/grammar.md §2:
  *
  * - stage and expression keywords are case-insensitive; tokens carry the
  *   canonical lowercase value
- * - identifiers: [A-Za-z_][A-Za-z0-9_]* (qualified names remain two
- *   identifiers separated by a `.` token; the parser assembles them)
+ * - identifiers: [A-Za-z_][A-Za-z0-9_]*; backticks quote otherwise-unusable
+ *   names (`Order Date`, `2024_sales`, `order`). Qualified names remain
+ *   components separated by a `.` token.
  * - numbers: 007 or 12.5; no leading sign, no leading/trailing dot
  * - strings: single- or double-quoted, single line, escapes \\ \' \" \n,
  *   doubled quotes also escape
@@ -23,6 +24,7 @@ export { LexError };
 export type TokenType =
   | "keyword"
   | "identifier"
+  | "quoted_identifier"
   | "number"
   | "string"
   | "operator"
@@ -46,7 +48,7 @@ export interface Token {
 
 export const KEYWORDS: ReadonlySet<string> = new Set([
   // stages
-  "from", "join", "left", "filter", "derive", "group", "by", "aggregate",
+  "from", "join", "left", "right", "full", "cross", "filter", "derive", "group", "by", "aggregate",
   "having", "window", "select", "sort", "skip", "take", "distinct", "sql",
   // clauses and modifiers
   "on", "as", "over", "partition", "order", "asc", "desc",
@@ -117,6 +119,15 @@ export function tokenize(source: string): Token[] {
       column += result.end - index;
       index = result.end;
       emit("string", result.value, startLine, startColumn);
+      continue;
+    }
+    if (current === "`") {
+      const startLine = line;
+      const startColumn = column;
+      const result = readQuotedIdentifier(source, index, line, column);
+      column += result.end - index;
+      index = result.end;
+      emit("quoted_identifier", result.value, startLine, startColumn);
       continue;
     }
     if (isDigit(current)) {
@@ -239,4 +250,37 @@ function readString(
     i += 1;
   }
   throw new LexError("unterminated string", line, column);
+}
+
+function readQuotedIdentifier(
+  source: string,
+  start: number,
+  line: number,
+  column: number,
+): { value: string; end: number } {
+  let i = start + 1;
+  let value = "";
+  while (i < source.length) {
+    const current = source[i] ?? "";
+    if (current === "\n" || current === "\r") {
+      throw new LexError("quoted identifiers are single-line", line, column);
+    }
+    if (current === "`") {
+      if (source[i + 1] === "`") {
+        value += "`";
+        i += 2;
+        continue;
+      }
+      if (value === "") {
+        throw new LexError("quoted identifier cannot be empty", line, column);
+      }
+      if (value.includes(".")) {
+        throw new LexError("quoted identifier cannot contain '.'; quote each qualified part", line, column);
+      }
+      return { value, end: i + 1 };
+    }
+    value += current;
+    i += 1;
+  }
+  throw new LexError("unterminated quoted identifier", line, column);
 }

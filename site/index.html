@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="description" content="UNSeQueL is a FROM-first query language for writing SQL-like queries in execution order, with composable stages, DuckDB execution, a REPL, and a VS Code extension.">
+  <meta name="keywords" content="write SQL in execution order, FROM-first SQL, SQL pipeline language, SQL alternative, DuckDB, query language">
+  <meta name="theme-color" content="#101827">
+  <link rel="canonical" href="https://absterjr.github.io/UNSeQueL/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="UNSeQueL — Write queries in execution order">
+  <meta property="og:description" content="UNSeQueL is a FROM-first, stage-by-stage query language compiled to DuckDB SQL.">
+  <meta property="og:url" content="https://absterjr.github.io/UNSeQueL/">
+  <meta property="og:image" content="https://absterjr.github.io/UNSeQueL/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>UNSeQueL — Write SQL-like queries in execution order</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23101827'/%3E%3Cpath d='M22 26v30a18 18 0 0 0 36 0V26M66 74V26l24 48V26' fill='none' stroke='%235eead4' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <style>
+    :root { color-scheme: dark; --bg:#101827; --panel:#172235; --text:#edf4ff; --muted:#a9b8cc; --teal:#5eead4; --lime:#bef264; --line:#2b3a50; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:radial-gradient(ellipse at 80% 0%,#17374a 0,transparent 42%),var(--bg); color:var(--text); font:17px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    main { width:min(1060px,calc(100% - 36px)); margin:auto; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:22px 0; border-bottom:1px solid var(--line); }
+    .brand { color:var(--text); font-weight:800; letter-spacing:.04em; text-decoration:none; font-size:1.1rem; }
+    nav { display:flex; gap:20px; flex-wrap:wrap; } nav a { color:var(--muted); text-decoration:none; font-size:.92rem; }
+    a { color:var(--teal); }
+    .hero { padding:76px 0 46px; max-width:850px; }
+    .eyebrow { color:var(--lime); font-size:.82rem; text-transform:uppercase; letter-spacing:.16em; font-weight:700; }
+    h1 { font-size:clamp(2.6rem,7vw,5.3rem); line-height:1.03; letter-spacing:-.055em; margin:.3em 0 .25em; }
+    h2 { font-size:clamp(1.6rem,4vw,2.25rem); letter-spacing:-.03em; line-height:1.2; margin:0 0 14px; }
+    p { color:var(--muted); margin:0 0 18px; }
+    .hero p { font-size:1.2rem; max-width:760px; }
+    .actions { display:flex; gap:12px; flex-wrap:wrap; margin-top:26px; }
+    .button { display:inline-block; padding:11px 17px; border-radius:10px; background:var(--teal); color:#07212a; text-decoration:none; font-weight:750; }
+    .button.secondary { background:transparent; border:1px solid #5eead4; color:var(--teal); }
+    section { padding:40px 0; border-top:1px solid var(--line); }
+    .compare { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:20px 0; }
+    .card { background:rgba(23,34,53,.92); border:1px solid var(--line); border-radius:14px; padding:18px; min-width:0; }
+    .card h3 { margin:0 0 12px; font-size:.93rem; color:var(--muted); }
+    pre { margin:0; overflow-x:auto; font:14px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace; color:#e1ebf8; }
+    code { font: .91em ui-monospace,SFMono-Regular,Consolas,monospace; color:var(--lime); }
+    .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+    .steps .card { padding:18px; }
+    .steps b { color:var(--teal); display:block; margin-bottom:6px; }
+    .note { font-size:.93rem; border-left:3px solid var(--lime); padding:8px 0 8px 14px; }
+    footer { padding:28px 0 40px; color:var(--muted); font-size:.9rem; }
+    @media(max-width:700px) { header { align-items:flex-start; gap:14px; flex-direction:column; } .compare,.steps { grid-template-columns:1fr; } .hero { padding:54px 0 36px; } }
+  </style>
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"SoftwareSourceCode",
+    "name":"UNSeQueL",
+    "codeRepository":"https://github.com/absterjr/UNSeQueL",
+    "programmingLanguage":["TypeScript","Python"],
+    "runtimePlatform":"DuckDB",
+    "license":"https://opensource.org/license/mit/",
+    "description":"A FROM-first query language for writing SQL-like transformations in execution order."
+  }
+  </script>
+</head>
+<body>
+<main>
+  <header>
+    <a class="brand" href="./">UNSeQueL</a>
+    <nav aria-label="Main navigation">
+      <a href="https://github.com/absterjr/UNSeQueL">GitHub</a>
+      <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>
+      <a href="https://github.com/absterjr/UNSeQueL/blob/main/plq/docs/semantics.md">Semantics</a>
+      <a href="https://github.com/absterjr/UNSeQueL/blob/main/plq/editors/vscode/README.md">VS Code</a>
+    </nav>
+  </header>
+
+  <section class="hero" style="border:0">
+    <div class="eyebrow">FROM-first · stage-by-stage · DuckDB</div>
+    <h1>Write queries in the order they run.</h1>
+    <p>UNSeQueL is a small query language for reading transformations top to bottom: start with data, filter, group, project, then sort and take. Run `.plq` files directly against local CSV, JSON, or Parquet data.</p>
+    <div class="actions">
+      <a class="button" href="https://github.com/absterjr/UNSeQueL/tree/main/plq">Try PLQ</a>
+      <a class="button secondary" href="https://github.com/absterjr/UNSeQueL/discussions">Ask or discuss</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>FROM-first SQL, made explicit</h2>
+    <p>Instead of naming output columns before explaining the input and row/group operations, put each supported relation step where it happens. Familiar relational operations, a visible pipeline.</p>
+    <div class="compare">
+      <div class="card"><h3>SQL</h3><pre>SELECT country, SUM(quantity * unit_price) AS revenue
+FROM orders
+WHERE quantity &gt; 0
+GROUP BY country
+HAVING COUNT(*) &gt; 1
+ORDER BY revenue DESC
+LIMIT 10;</pre></div>
+      <div class="card"><h3>UNSeQueL ordered surface</h3><pre>FROM orders
+WHERE quantity &gt; 0
+GROUP BY country
+HAVING COUNT(*) &gt; 1
+SELECT country, SUM(quantity * unit_price) AS revenue
+ORDER BY revenue DESC
+LIMIT 10</pre></div>
+    </div>
+    <p class="note">This is not a replacement for SQL. You will still need SQL for real databases and warehouses; UNSeQueL is intended to make the supported stages easier to inspect. That learning benefit has not yet been measured.</p>
+  </section>
+
+  <section>
+    <h2>Run it like a query, not a program</h2>
+    <div class="steps">
+      <div class="card"><b>1 · Declare sources</b><p>Put `# source orders: path/to/orders.csv` at the top of a `.plq` file. Paths are relative to the file.</p></div>
+      <div class="card"><b>2 · Run a query or selection</b><p>Use `plq run query.plq` or run selected lines with `--lines A:B`. File sources remain available to the selection.</p></div>
+      <div class="card"><b>3 · Use your editor</b><p>The VS Code extension highlights `.plq` and adds Run Selection, Run File, and Open REPL commands.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Honest about the alternatives</h2>
+    <p>UNSeQueL is not the first ordered query language. <a href="https://duckdb.org/docs/current/sql/query_syntax/from">DuckDB</a> already has FROM-first SQL; <a href="https://prql-lang.org/">PRQL</a> compiles pipelines to multiple SQL dialects; <a href="https://docs.malloydata.dev/documentation/language/query.html">Malloy</a> adds semantic modeling; <a href="https://learn.microsoft.com/en-us/kusto/query/queries?view=microsoft-fabric">Kusto</a> is built for analytics/log queries; and <a href="https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/pipe-syntax">BigQuery GoogleSQL</a>, <a href="https://spark.apache.org/docs/latest/sql-pipe-syntax.html">Spark SQL</a>, and <a href="https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-qry-pipeline">Databricks SQL</a> now have composable pipe syntax.</p>
+    <p>The current UNSeQueL distinction is a compact stage model, local-file execution, stage preview, selection runs, and an editor workflow. PLQ currently targets DuckDB and still lacks CTE syntax, set operators, and subquery sources. See the <a href="https://github.com/absterjr/UNSeQueL/blob/main/README.md#how-unsequel-fits-among-query-languages">comparison and scope</a>.</p>
+  </section>
+
+  <section>
+    <h2>Start here</h2>
+    <div class="card"><pre>git clone https://github.com/absterjr/UNSeQueL.git
+cd UNSeQueL/plq
+npm install -g .
+plq run examples/real/r01_top_products.plq</pre></div>
+    <p style="margin-top:16px">The npm package will be published as <code>unsequel-plq</code>; until then, the source install above works. For the Python prototypes, source semantics, grammar, issues, and the 20-minute first task, visit the <a href="https://github.com/absterjr/UNSeQueL">repository README</a> and <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>.</p>
+  </section>
+
+  <footer>UNSeQueL is open source under MIT. Syntax and behavior are evolving; feedback and counterexamples are welcome.</footer>
+</main>
+</body>
+</html>

@@ -347,6 +347,12 @@ class RunCliTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("--pipeline", text)
 
+    def test_plain_ordered_typo_does_not_get_pipeline_hint(self):
+        with _temp_file("FROM orders\nWHER quantity > 1\nSELECT order_id\n", suffix=".usql") as path:
+            text, code = run_cli("check", path)
+            self.assertEqual(code, 1)
+            self.assertNotIn("hint: pipeline queries need", text)
+
     def test_run_memory_engine_executes_the_hatch(self):
         text, code = run_cli("run", str(SPEC / "q21_sql_hatch.pusql"), "--pipeline",
                              "--format", "json",

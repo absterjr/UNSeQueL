@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import json
+import math
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -10,23 +12,164 @@ from .errors import ExecutionError
 from .model import Table
 
 
-def _coerce(value: str) -> Any:
-    """Infer simple CSV scalar types without third-party dependencies."""
-    value = value.strip()
-    if value == "" or value.lower() in {"null", "none", "nan"}:
+_LEADING_ZERO_INTEGER = re.compile(r"^[+-]?0\d+$")
+_TYPE_ALIASES = {
+    "text": "text", "string": "text", "varchar": "text", "char": "text",
+    "int": "integer", "integer": "integer",
+    "number": "number", "numeric": "number", "float": "number",
+    "real": "number", "double": "number", "decimal": "number",
+    "bool": "boolean", "boolean": "boolean",
+}
+
+
+def _delimiter(value: str | None) -> str:
+    delimiter = "," if value is None else value
+    if len(delimiter) != 1 or delimiter in {'"', "\r", "\n"}:
+        raise ExecutionError("CSV delimiter must be exactly one non-quote character")
+    return delimiter
+
+
+def _normalise_column_types(column_types: dict[str, str] | None) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for column, raw_type in (column_types or {}).items():
+        type_name = _TYPE_ALIASES.get(raw_type.strip().lower())
+        if type_name is None:
+            supported = ", ".join(sorted(_TYPE_ALIASES))
+            raise ExecutionError(
+                f"unsupported type {raw_type!r} for column {column!r}; choose {supported}")
+        result[column.casefold()] = type_name
+    return result
+
+
+def _blank_to_null(value: str) -> str | None:
+    # CSV has no universal NULL spelling. Preserve literal "null", "none", and
+    # "nan"; only an empty/whitespace-only cell is treated as missing.
+    return None if value.strip() == "" else value
+
+
+def _numeric_value(value: str) -> int | float | None:
+    stripped = value.strip()
+    if _LEADING_ZERO_INTEGER.fullmatch(stripped):
         return None
     try:
-        return int(value)
+        return int(stripped)
     except ValueError:
-        pass
+        try:
+            number = float(stripped)
+        except ValueError:
+            return None
+        return number if math.isfinite(number) else None
+
+
+def _infer_column(values: list[str | None]) -> list[Any]:
+    """Infer one type for a whole CSV column, preserving identifiers as text."""
+    non_null = [value for value in values if value is not None]
+    if not non_null:
+        return [None] * len(values)
+
+    parsed = [_numeric_value(value) for value in non_null]
+    if all(value is not None for value in parsed):
+        integer_column = all(type(value) is int for value in parsed)
+        iterator = iter(parsed)
+        output: list[Any] = []
+        for value in values:
+            if value is None:
+                output.append(None)
+            else:
+                number = next(iterator)
+                output.append(int(number) if integer_column else number)
+        return output
+
+    # Mixed or dirty columns are consistently text, never int/str mixtures.
+    return values
+
+
+def _convert_override(value: str | None, type_name: str, column: str,
+                      row_number: int) -> Any:
+    if value is None:
+        return None
+    stripped = value.strip()
     try:
-        number = float(value)
-        return int(number) if number.is_integer() else number
-    except ValueError:
-        return value
+        if type_name == "text":
+            return value
+        if type_name == "integer":
+            return int(stripped)
+        if type_name == "number":
+            number = float(stripped)
+            if not math.isfinite(number):
+                raise ValueError("not finite")
+            return int(number) if number.is_integer() else number
+        lowered = stripped.lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+        raise ValueError("expected true/false, 1/0, yes/no, or on/off")
+    except ValueError as exc:
+        raise ExecutionError(
+            f"cannot convert {value!r} in column {column!r} at CSV row {row_number} "
+            f"to {type_name}") from exc
 
 
-def load_table(name: str, path: str | Path) -> Table:
+def _read_csv(path: Path, delimiter: str) -> tuple[list[str], list[list[str]]]:
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.reader(handle, delimiter=delimiter)
+            columns = next(reader, [])
+            if not columns:
+                raise ExecutionError(f"CSV file has no header: {path}")
+            if any(column.strip() == "" for column in columns):
+                raise ExecutionError(f"CSV file has an empty column name: {path}")
+            normalized = [column.casefold() for column in columns]
+            duplicates = sorted({column for column in normalized if normalized.count(column) > 1})
+            if duplicates:
+                original = next(column for column in columns if column.casefold() == duplicates[0])
+                raise ExecutionError(
+                    f"CSV file has duplicate column name {original!r}: {path}")
+            rows: list[list[str]] = []
+            for row_number, values in enumerate(reader, start=2):
+                if len(values) != len(columns):
+                    raise ExecutionError(
+                        f"CSV row {row_number} has {len(values)} fields; "
+                        f"expected {len(columns)} in {path}")
+                rows.append(values)
+            return columns, rows
+    except csv.Error as exc:
+        raise ExecutionError(f"Invalid CSV in {path}: {exc}") from exc
+
+
+def infer_csv_types(path: str | Path, delimiter: str | None = None,
+                    column_types: dict[str, str] | None = None) -> dict[str, str]:
+    """Infer DuckDB type names with the same whole-column rules as `load_table`."""
+    path = Path(path)
+    columns, rows = _read_csv(path, _delimiter(delimiter))
+    overrides = _normalise_column_types(column_types)
+    unknown = set(overrides) - {column.casefold() for column in columns}
+    if unknown:
+        raise ExecutionError(
+            f"column type override refers to unknown column {sorted(unknown)[0]!r}")
+    types: dict[str, str] = {}
+    for index, column in enumerate(columns):
+        override = overrides.get(column.casefold())
+        if override is not None:
+            types[column] = {
+                "text": "VARCHAR", "integer": "BIGINT", "number": "DOUBLE",
+                "boolean": "BOOLEAN",
+            }[override]
+            continue
+        inferred = _infer_column([_blank_to_null(row[index]) for row in rows])
+        non_null = [value for value in inferred if value is not None]
+        if non_null and all(type(value) is int for value in non_null):
+            types[column] = "BIGINT"
+        elif non_null and all(type(value) in {int, float} for value in non_null):
+            types[column] = "DOUBLE"
+        else:
+            types[column] = "VARCHAR"
+    return types
+
+
+def load_table(name: str, path: str | Path, *, delimiter: str | None = None,
+               column_types: dict[str, str] | None = None) -> Table:
     """Load one CSV or JSON array into a Table."""
     path = Path(path)
     if not path.exists():
@@ -40,16 +183,52 @@ def load_table(name: str, path: str | Path) -> Table:
         if not isinstance(payload, list) or any(not isinstance(row, dict) for row in payload):
             raise ExecutionError("JSON input must be an array of objects")
         columns = list(dict.fromkeys(key for row in payload for key in row))
-        rows = [{column: row.get(column) for column in columns} for row in payload]
+        overrides = _normalise_column_types(column_types)
+        unknown = set(overrides) - {column.casefold() for column in columns}
+        if unknown:
+            raise ExecutionError(
+                f"column type override refers to unknown column {sorted(unknown)[0]!r} "
+                f"in table {name!r}")
+        rows = []
+        for row_number, row in enumerate(payload, start=1):
+            converted = {}
+            for column in columns:
+                value = row.get(column)
+                override = overrides.get(column.casefold())
+                if override is not None and value is not None:
+                    value = _convert_override(str(value), override, column, row_number)
+                converted[column] = value
+            rows.append(converted)
         return Table(name, columns, rows)
     if suffix != ".csv":
         raise ExecutionError(f"Unsupported data format {suffix!r}; use .csv or .json")
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        columns = list(reader.fieldnames or [])
-        if not columns:
-            raise ExecutionError(f"CSV file has no header: {path}")
-        rows = [{key: _coerce(value) for key, value in row.items()} for row in reader]
+    csv_delimiter = _delimiter(delimiter)
+    columns, raw_rows = _read_csv(path, csv_delimiter)
+    overrides = _normalise_column_types(column_types)
+    column_names = {column.casefold() for column in columns}
+    unknown = set(overrides) - column_names
+    if unknown:
+        raise ExecutionError(
+            f"column type override refers to unknown column {sorted(unknown)[0]!r} "
+            f"in table {name!r}")
+
+    converted_columns: list[list[Any]] = []
+    for index, column in enumerate(columns):
+        values = [_blank_to_null(row[index]) for row in raw_rows]
+        override = overrides.get(column.casefold())
+        if override is None:
+            converted = _infer_column(values)
+        else:
+            converted = [
+                _convert_override(value, override, column, row_number)
+                for row_number, value in enumerate(values, start=2)
+            ]
+        converted_columns.append(converted)
+    rows = [
+        {column: converted_columns[index][row_index]
+         for index, column in enumerate(columns)}
+        for row_index in range(len(raw_rows))
+    ]
     return Table(name, columns, rows)
 
 

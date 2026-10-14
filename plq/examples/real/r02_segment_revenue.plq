@@ -1,8 +1,8 @@
-# source orders: ../../../examples/spec/orders.csv
-# source customers: ../../../examples/spec/customers.csv
+# source orders: ../spec/orders.csv
+# source customers: ../spec/customers.csv
 # Real query: revenue by customer segment with average order value
 from orders
-join customers on customer = customers.customer
+join customers on orders.customer = customers.customer
 group by segment
 aggregate orders = COUNT(*), revenue = SUM(quantity * unit_price)
 derive avg_order = revenue / orders

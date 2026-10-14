@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DuckDBInstance } from "@duckdb/node-api";
@@ -11,15 +11,17 @@ import { analyze } from "../src/semantics.js";
 
 /**
  * Plan step 9: dogfooding. The five queries in examples/real/ are real analyst
- * tasks migrated through the CLI; two of them needed the sql hatch, which is
- * recorded in docs/backlog.md. Each file declares its sources with `# source`
- * directives so it runs flagless (`plq run examples/real/r01_top_products.plq`).
- * This suite parses, validates, formats, and executes each one against the
- * sample dataset.
+ * tasks migrated through the CLI. The date and grand-total window examples
+ * originally needed the sql hatch; they now exercise native `strftime` and
+ * `over ()`. Each file declares its sources with `# source` directives so it
+ * runs flagless. This suite parses, validates, formats, and executes each one
+ * against the sample dataset.
  */
 
 const ROOT = join(__dirname, "..", "..");
 const REAL = join(__dirname, "..", "examples", "real");
+const PLQ_SPEC = join(__dirname, "..", "examples", "spec");
+const SHARED_SPEC = join(ROOT, "examples", "spec");
 const SCHEMA = loadSchema(join(ROOT, "examples", "spec", "schema.json"));
 
 const EXPECTED_ROWS: Record<string, number> = {
@@ -36,6 +38,20 @@ describe("dogfood: real queries", () => {
   it("ships the five migrated queries", () => {
     expect(files).toHaveLength(5);
     expect(files.map((f) => f.replace(/\.plq$/, ""))).toEqual(Object.keys(EXPECTED_ROWS));
+  });
+
+  it("keeps packaged data copies in sync and resolves every source directive", () => {
+    for (const file of ["orders.csv", "products.csv", "customers.csv", "members.csv", "schema.json"]) {
+      const packaged = readFileSync(join(PLQ_SPEC, file), "utf8").replace(/\r\n/g, "\n");
+      const shared = readFileSync(join(SHARED_SPEC, file), "utf8").replace(/\r\n/g, "\n");
+      expect(packaged, file).toBe(shared);
+    }
+    for (const file of files) {
+      const source = readFileSync(join(REAL, file), "utf8");
+      for (const relative of splitDirectives(source).sources.values()) {
+        expect(existsSync(join(REAL, relative)), `${file}: ${relative}`).toBe(true);
+      }
+    }
   });
 
   it("parses, validates, and stays formatter-idempotent", () => {

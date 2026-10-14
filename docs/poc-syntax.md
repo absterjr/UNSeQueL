@@ -3,7 +3,7 @@
 > Superseded for current work: see [pipeline-spec.md](pipeline-spec.md)
 > (Python pipeline, v0.3.1) and
 > [../plq/docs/grammar.md](../plq/docs/grammar.md) (production compiler,
-> v1.1). This file stays as the frozen v0.1 history and prior-art credits.
+> v1.2). This file stays as the frozen v0.1 history and prior-art credits.
 
 This is the proof-of-concept syntax for pipeline-style UNSeQueL queries. The
 grammar below is frozen for the POC: changes require a new syntax version, not
@@ -116,8 +116,8 @@ ORDER BY revenue DESC;
 
 ```text
 from orders
-join customers on customer = customers.customer
-group customer (revenue = SUM(quantity * unit_price))
+join customers on orders.customer = customers.customer
+group customer = orders.customer (revenue = SUM(quantity * unit_price))
 sort -revenue
 take 2
 ```
@@ -141,9 +141,9 @@ from its position in the pipeline.
 
 ```text
 from orders
-left join members on customer = members.customer
+left join members on orders.customer = members.customer
 where members.customer IS NULL
-select order_id, customer
+select order_id, customer = orders.customer
 ```
 
 ### 5. Deduplication — `examples/pipeline/countries.pusql`

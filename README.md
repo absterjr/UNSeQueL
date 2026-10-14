@@ -4,8 +4,12 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Discussions](https://img.shields.io/badge/community-discussions-blueviolet)](https://github.com/absterjr/UNSeQueL/discussions)
 
-UNSeQueL is a small, open-source query language that lets you write a query
-in the order SQL logically executes it.
+[Project site](https://absterjr.github.io/UNSeQueL/) ·
+[Discussions](https://github.com/absterjr/UNSeQueL/discussions)
+
+UNSeQueL is an open-source, FROM-first query language for writing SQL-like
+transformations in execution order — a stage-by-stage way to explore relational
+queries. Its learning benefit is a hypothesis, not an established result.
 
 Instead of writing:
 
@@ -14,7 +18,7 @@ SELECT country, SUM(quantity * unit_price) AS revenue
 FROM orders
 WHERE quantity > 0
 GROUP BY country
-HAVING SUM(quantity * unit_price) > 1000
+HAVING COUNT(*) > 1
 ORDER BY revenue DESC
 LIMIT 10;
 ```
@@ -25,14 +29,21 @@ you write:
 FROM orders
 WHERE quantity > 0
 GROUP BY country
-HAVING SUM(quantity * unit_price) > 1000
+HAVING COUNT(*) > 1
 SELECT country, SUM(quantity * unit_price) AS revenue
 ORDER BY revenue DESC
 LIMIT 10
 ```
 
-The point is not to replace SQL. The point is to make the logical execution
-pipeline visible and learnable.
+This example shows the relation stages in scope, not every SQL evaluation
+phase. SQL window functions execute after grouping/HAVING and before final
+projection: the Python `.usql` prototype has no native window stage, while PLQ
+provides an explicit `window` stage.
+
+The point is not to replace SQL: learners still need to read and write SQL.
+The design goal is to make the supported relational stages visible while you
+read top-to-bottom. We have not yet tested whether this improves learning or
+transfer; see [the validation plan](docs/learning-validation.md).
 
 Questions, ideas, and query showcases are welcome in
 [Discussions](https://github.com/absterjr/UNSeQueL/discussions); bugs and
@@ -40,30 +51,37 @@ feature requests have issue templates.
 
 ## Repository map
 
-Three surfaces live here. They share the ordered-pipeline idea but are
-different dialects — check this table before copying an example between tools.
+There are three code surfaces, but they are not three choices for a new user.
+Start with the production `.plq` surface below. `.usql` and `.pusql` are Python
+prototype dialects retained for comparison; their grammars differ from PLQ.
 
 | Surface | Extension | Tool | Dialect |
 | --- | --- | --- | --- |
-| Ordered core | `.usql` | `python -m unsequel` | SQL-like order: `SELECT ... FROM ... WHERE ...` (Python prototype) |
+| Ordered prototype | `.usql` | `python -m unsequel` | `FROM ... WHERE ... GROUP BY ... HAVING ... SELECT ... ORDER BY ...` |
 | Pipeline (prototype) | `.pusql` | `python -m unsequel ... --pipeline` (inferred for `.pusql`) | one stage per line; `where` is position-sensitive (row vs group); `group keys (aggregates)` |
-| Pipeline (production) | `.plq` | `plq` CLI in [plq/](plq/README.md) | evolved grammar: `filter`/`having` instead of positional `where`, split `group by` + `aggregate`, implemented `window` — see [plq/docs/grammar.md](plq/docs/grammar.md) §2 for the exact deltas |
+| Pipeline (recommended) | `.plq` | `plq` CLI and [VS Code extension](plq/editors/vscode/README.md) | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows and backtick identifiers; DuckDB target — [grammar v1.2](plq/docs/grammar.md) |
 
-`.plq` files can also declare their own connection (`# source orders: path`)
-and run like SQL: `plq run query.plq`, `--lines A:B` selections, stdin, and an
-interactive `plq repl` — see "Run it like SQL" in the compiler README. A VS
-Code extension (syntax highlighting, Run Selection/File/REPL) ships in
+New here? Run one self-contained query — no schema or data flags required:
+
+```bash
+cd plq
+npm install -g .
+plq run examples/real/r01_top_products.plq
+```
+
+`.plq` files can declare their own sources, run a line selection, read from
+stdin, or open an interactive `plq repl`. A VS Code extension (syntax
+highlighting, Run Selection/File/REPL) is in
 [plq/editors/vscode](plq/editors/vscode/README.md).
 
 ## Status
 
-UNSeQueL 0.5 is a complete query-language core. It includes a real lexer,
-ordered grammar, semantic stage checks, an in-memory relational executor, CTEs,
-nested sources, set operations, four join types plus cross joins, and a SQLite
-input adapter. The implementation is deliberately dependency-free so the
-language can be learned and extended without a framework.
+The Python 0.6.0 prototype implements an ordered SQL-like subset with a lexer,
+semantic checks, an in-memory relational executor, CTEs, nested sources, set
+operations, five join types, and a SQLite adapter. The separate production
+compiler is described below; neither surface claims full SQL compatibility.
 
-## Install
+## Install the Python prototype
 
 Requires Python 3.10 or newer.
 
@@ -86,7 +104,7 @@ The `unsequel` command is installed in a virtual environment or pipx
 environment. `python -m unsequel` is the portable fallback when a user-level
 Python `Scripts` directory is not on `PATH`.
 
-## Run your first query
+## Run a Python prototype query
 
 The repository includes a small example dataset:
 
@@ -149,8 +167,9 @@ INTERSECT [ALL] query
 EXCEPT [ALL] query
 ```
 
-`FROM` is required. The other stages are optional, but they must appear in
-the order above. Multiple `JOIN` clauses are allowed directly after `FROM`.
+`FROM` and `SELECT` are required. Other stages are optional, but they must
+appear in the order above. Multiple `JOIN` clauses are allowed directly after
+`FROM`.
 
 ## Pipeline syntax
 
@@ -236,17 +255,17 @@ Expressions support:
   `COALESCE`, `NULLIF`, `LOWER`, `UPPER`, `ABS`, `ROUND`, `LENGTH`, `TRIM`,
   and `CONCAT`
 
-See the [language reference](docs/language-reference.md) for the complete
-core syntax and execution model.
+See the [language reference](docs/language-reference.md) for the ordered
+prototype syntax and [semantics/conformance notes](docs/semantics.md).
 
 ## Production compiler (TypeScript)
 
-The production compiler in [plq/](plq/README.md) is complete: TypeScript/Node
-targeting DuckDB, hand-written recursive descent, one CTE per pipeline unit
-(`group by` + `aggregate` share one). It ships the frozen grammar
-([plq/docs/grammar.md](plq/docs/grammar.md), v1.1), lexer, parser with
-stage-located errors, schema-aware validation, and codegen verified by golden
-files and DuckDB execution parity.
+The production compiler in [plq/](plq/README.md) is a growing DuckDB-targeted
+implementation in TypeScript/Node. It uses a hand-written recursive-descent
+parser, one CTE per lowering unit, schema-aware validation, and golden plus
+DuckDB execution tests. Its current frozen specification is
+[PLQ grammar v1.2](plq/docs/grammar.md); CTEs, set operators, subquery sources,
+and non-DuckDB targets remain outside its implemented subset.
 
 `.plq` files run like SQL — they declare their own sources, and a query can be
 run whole, selected by line range, piped through stdin, or explored in an
@@ -265,36 +284,57 @@ in [plq/editors/vscode](plq/editors/vscode/README.md). See
 [plq/docs/first-task.md](plq/docs/first-task.md) for a guided exercise and
 [plq/docs/backlog.md](plq/docs/backlog.md) for what comes next.
 
+## How UNSeQueL fits among query languages
+
+Ordered/pipeline syntax already exists in mature tools. DuckDB supports
+[FROM-first SQL](https://duckdb.org/docs/current/sql/query_syntax/from#from-first-syntax);
+[PRQL](https://prql-lang.org/) compiles pipelines to multiple SQL dialects;
+[Malloy](https://docs.malloydata.dev/documentation/language/query.html) adds
+semantic modeling and composable queries; and
+[Kusto](https://learn.microsoft.com/en-us/kusto/query/queries?view=microsoft-fabric)
+is a pipe-oriented language focused on analytics and logs. Pipe syntax is now
+also part of
+[GoogleSQL/BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/pipe-syntax),
+[Apache Spark SQL](https://spark.apache.org/docs/latest/sql-pipe-syntax.html),
+and [Databricks SQL/Runtime](https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-qry-pipeline).
+
+UNSeQueL does not claim to beat those tools on composability, portability, or
+feature coverage. Its current distinction is a small, inspectable stage model
+with file-level sources, stage previews, line-selection runs, and an editor
+extension. The intended benefit is easier reasoning about the supported
+relational pipeline; whether it improves learning or transfer to SQL remains
+untested. See [semantics and scope](docs/semantics.md) and the
+[learning-validation plan](docs/learning-validation.md).
+
 ## Design principles
 
-- **Logical order first.** The syntax teaches the difference between row
-  filtering and group filtering.
+- **Logical order first.** The syntax is designed to show the supported
+  relation stages in sequence; its learning effect is still untested.
 - **Small standard-library core.** The language has no runtime dependencies.
 - **Readable internals.** The lexer, parser, evaluator, and I/O layers are
   separate so contributors can learn one part at a time.
 - **SQL-compatible concepts, not SQL-compatible syntax.** UNSeQueL makes the
-  execution pipeline explicit while preserving familiar relational ideas.
+  supported pipeline explicit while keeping familiar relational ideas; it
+  does not remove the need to learn standard SQL.
 
 ## Boundaries and roadmap
 
-The core is a complete read/query language, not a SQL clone. It does not
-yet include table-changing statements (`CREATE`, `INSERT`, `UPDATE`, `DELETE`),
-recursive CTEs, scalar subqueries inside expressions, user-defined functions,
-or a streaming/native query planner. Those are separate language and storage
-designs, not hidden partial features.
+The Python core and PLQ compiler implement different read/query subsets; neither
+is a full SQL implementation. DDL/DML (`CREATE`, `INSERT`, `UPDATE`, `DELETE`),
+recursive queries, scalar subqueries inside expressions, user-defined
+functions, and a streaming/native query planner are not implemented. CTEs,
+set operators, subquery sources, and additional SQL targets are also not yet
+implemented by PLQ, even though the Python ordered prototype supports several
+of those features.
 
-Planned next steps are transactional storage adapters, recursive queries,
-streaming execution, better source highlights, native window syntax, and an
-interactive learning mode; the prioritised lists are
-[docs/backlog.md](docs/backlog.md) (prototype) and
-[plq/docs/backlog.md](plq/docs/backlog.md) (compiler), tracked in the
-[milestones](https://github.com/absterjr/UNSeQueL/milestones).
+The prioritised lists are [docs/backlog.md](docs/backlog.md) (Python
+prototype) and [plq/docs/backlog.md](plq/docs/backlog.md) (compiler), tracked
+in the [milestones](https://github.com/absterjr/UNSeQueL/milestones).
 
-Known engine differences: different execution engines can order and render
-results slightly differently. Ties in `ORDER BY` are engine-defined;
-division by zero yields `NULL` in the in-memory engine and infinity in DuckDB;
-JSON output renders floats differently (`192.0` vs `177`). Treat the engines
-as semantically equivalent, not byte-for-byte identical.
+Known engine differences include tie ordering, division by zero (`NULL` in the
+memory engine versus infinity in DuckDB), and float rendering. These engines
+are not claimed to be interchangeable for every expression or CSV dialect;
+the [semantics page](docs/semantics.md) lists the current contract and tests.
 
 ## Contributing
 

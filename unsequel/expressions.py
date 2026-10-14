@@ -299,15 +299,42 @@ def _resolve(row: dict, name: str) -> Any:
 
 
 def _truth(value: Any) -> bool:
-    return value is not None and bool(value)
+    if value is None:
+        return False
+    if type(value) is not bool:
+        raise ExecutionError(
+            f"logical operators require boolean operands, got {type(value).__name__}")
+    return value
 
 
 def _like(value: Any, pattern: Any) -> bool | None:
     if value is None or pattern is None:
         return None
+    if not isinstance(value, str) or not isinstance(pattern, str):
+        raise ExecutionError("LIKE requires text operands; CAST values to TEXT explicitly")
     expression = "".join(".*" if char == "%" else "." if char == "_" else re.escape(char)
                           for char in str(pattern))
-    return re.fullmatch(expression, str(value), flags=re.IGNORECASE) is not None
+    return re.fullmatch(expression, value) is not None
+
+
+def _numeric(value: Any, operator: str) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ExecutionError(
+            f"operator {operator} requires numeric operands, got {type(value).__name__}; "
+            "CAST the value explicitly")
+    return value
+
+
+def _check_comparable(left: Any, right: Any, operator: str) -> None:
+    if isinstance(left, bool) or isinstance(right, bool):
+        if type(left) is not type(right):
+            raise ExecutionError(f"operator {operator} cannot compare {type(left).__name__} and "
+                                 f"{type(right).__name__}")
+    elif isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return
+    elif type(left) is not type(right):
+        raise ExecutionError(f"operator {operator} cannot compare {type(left).__name__} and "
+                             f"{type(right).__name__}")
 
 
 def evaluate(expr: Expr, row: dict, rows: list[dict] | None = None,
@@ -328,7 +355,8 @@ def evaluate(expr: Expr, row: dict, rows: list[dict] | None = None,
             return None if value is None else not _truth(value)
         if value is None:
             return None
-        return +value if expr.op == "+" else -value
+        numeric = _numeric(value, expr.op)
+        return +numeric if expr.op == "+" else -numeric
     if isinstance(expr, InList):
         value = evaluate(expr.value, row, rows, aliases)
         if value is None:
@@ -349,11 +377,19 @@ def evaluate(expr: Expr, row: dict, rows: list[dict] | None = None,
         upper = evaluate(expr.upper, row, rows, aliases)
         if value is None or lower is None or upper is None:
             return None
-        result = lower <= value <= upper
+        _check_comparable(lower, value, "BETWEEN")
+        _check_comparable(value, upper, "BETWEEN")
+        try:
+            result = lower <= value <= upper
+        except TypeError as exc:
+            raise ExecutionError("BETWEEN values are not comparable") from exc
         return not result if expr.negated else result
     if isinstance(expr, Case):
         for condition, result in expr.branches:
-            if evaluate(condition, row, rows, aliases) is True:
+            condition_value = evaluate(condition, row, rows, aliases)
+            if condition_value is not None and type(condition_value) is not bool:
+                raise ExecutionError("CASE WHEN condition must be boolean")
+            if condition_value is True:
                 return evaluate(result, row, rows, aliases)
         return evaluate(expr.else_expr, row, rows, aliases)
     if isinstance(expr, Cast):
@@ -380,12 +416,20 @@ def evaluate(expr: Expr, row: dict, rows: list[dict] | None = None,
         right = evaluate(expr.right, row, rows, aliases)
         op = expr.op
         if op == "AND":
+            if left is not None:
+                _truth(left)
+            if right is not None:
+                _truth(right)
             if left is False or right is False:
                 return False
             if left is None or right is None:
                 return None
             return _truth(left) and _truth(right)
         if op == "OR":
+            if left is not None:
+                _truth(left)
+            if right is not None:
+                _truth(right)
             if _truth(left) or _truth(right):
                 return True
             if left is None or right is None:
@@ -402,29 +446,51 @@ def evaluate(expr: Expr, row: dict, rows: list[dict] | None = None,
         if left is None or right is None:
             return None
         if op == "+":
-            return left + right
+            return _numeric(left, op) + _numeric(right, op)
         if op == "-":
-            return left - right
+            return _numeric(left, op) - _numeric(right, op)
         if op == "*":
-            return left * right
+            return _numeric(left, op) * _numeric(right, op)
         if op == "/":
+            left = _numeric(left, op)
+            right = _numeric(right, op)
             return None if right == 0 else left / right
         if op == "%":
+            left = _numeric(left, op)
+            right = _numeric(right, op)
             return None if right == 0 else left % right
         if op == "||":
             return str(left) + str(right)
         if op in ("=", "=="):
+            _check_comparable(left, right, op)
             return left == right
         if op in ("!=", "<>"):
+            _check_comparable(left, right, op)
             return left != right
         if op == "<":
-            return left < right
+            _check_comparable(left, right, op)
+            try:
+                return left < right
+            except TypeError as exc:
+                raise ExecutionError("comparison operands are not comparable") from exc
         if op == "<=":
-            return left <= right
+            _check_comparable(left, right, op)
+            try:
+                return left <= right
+            except TypeError as exc:
+                raise ExecutionError("comparison operands are not comparable") from exc
         if op == ">":
-            return left > right
+            _check_comparable(left, right, op)
+            try:
+                return left > right
+            except TypeError as exc:
+                raise ExecutionError("comparison operands are not comparable") from exc
         if op == ">=":
-            return left >= right
+            _check_comparable(left, right, op)
+            try:
+                return left >= right
+            except TypeError as exc:
+                raise ExecutionError("comparison operands are not comparable") from exc
         raise ExecutionError(f"Unsupported operator {op!r}")
     if isinstance(expr, Call):
         name = expr.name.upper()
@@ -447,12 +513,20 @@ def evaluate(expr: Expr, row: dict, rows: list[dict] | None = None,
             if not values:
                 return None
             if name == "SUM":
-                return sum(values)
+                return sum(_numeric(value, "SUM") for value in values)
             if name == "AVG":
-                return sum(values) / len(values)
+                return sum(_numeric(value, "AVG") for value in values) / len(values)
+            for value in values[1:]:
+                _check_comparable(values[0], value, name)
             if name == "MIN":
-                return min(values)
-            return max(values)
+                try:
+                    return min(values)
+                except TypeError as exc:
+                    raise ExecutionError("MIN values are not comparable") from exc
+            try:
+                return max(values)
+            except TypeError as exc:
+                raise ExecutionError("MAX values are not comparable") from exc
         if expr.distinct:
             raise ExecutionError(f"DISTINCT is only supported by aggregate functions, not {name}()")
         values = [evaluate(arg, row, rows, aliases) for arg in expr.args]
@@ -461,26 +535,38 @@ def evaluate(expr: Expr, row: dict, rows: list[dict] | None = None,
         if name == "LOWER":
             if len(values) != 1:
                 raise ExecutionError("LOWER() requires one argument")
-            return None if values[0] is None else str(values[0]).lower()
+            if values[0] is None:
+                return None
+            if not isinstance(values[0], str):
+                raise ExecutionError("LOWER() requires text")
+            return values[0].lower()
         if name == "UPPER":
             if len(values) != 1:
                 raise ExecutionError("UPPER() requires one argument")
-            return None if values[0] is None else str(values[0]).upper()
+            if values[0] is None:
+                return None
+            if not isinstance(values[0], str):
+                raise ExecutionError("UPPER() requires text")
+            return values[0].upper()
         if name == "ABS":
             if len(values) != 1:
                 raise ExecutionError("ABS() requires one argument")
-            return None if values[0] is None else abs(values[0])
+            return None if values[0] is None else abs(_numeric(values[0], "ABS"))
         if name == "LENGTH":
             if len(values) != 1:
                 raise ExecutionError("LENGTH() requires one argument")
-            return None if values[0] is None else len(str(values[0]))
+            if values[0] is None:
+                return None
+            if not isinstance(values[0], str):
+                raise ExecutionError("LENGTH() requires text")
+            return len(values[0])
         if name == "ROUND":
             if not values or len(values) > 2:
                 raise ExecutionError("ROUND() requires one or two arguments")
             if values[0] is None:
                 return None
             digits = int(values[1]) if len(values) > 1 else 0
-            return round(values[0], digits)
+            return round(_numeric(values[0], "ROUND"), digits)
         if name == "NULLIF":
             if len(values) != 2:
                 raise ExecutionError("NULLIF() requires two arguments")
@@ -488,7 +574,11 @@ def evaluate(expr: Expr, row: dict, rows: list[dict] | None = None,
         if name == "TRIM":
             if len(values) != 1:
                 raise ExecutionError("TRIM() requires one argument")
-            return None if values[0] is None else str(values[0]).strip()
+            if values[0] is None:
+                return None
+            if not isinstance(values[0], str):
+                raise ExecutionError("TRIM() requires text")
+            return values[0].strip()
         if name == "CONCAT":
             return "".join(str(value) for value in values if value is not None)
         raise ExecutionError(f"Unsupported function {expr.name!r}")

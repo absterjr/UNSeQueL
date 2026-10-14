@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.6.0 (Python) / plq 0.2.0 — 2026-10-14
+
+- External-audit hardening: the Python engine now rejects non-grouped columns,
+  ambiguous bare join references, mixed-type numeric operations/sorts, and
+  duplicate CSV headers; `ORDER BY` ordinals, empty results, NULL rendering,
+  case-sensitive LIKE, column-wide CSV inference, leading-zero preservation,
+  `--delimiter`, and `--column-type` are covered by regressions. The CLI test
+  that reads stdin no longer blocks. Added Python memory/DuckDB conformance
+  probes and `docs/semantics.md`.
+- PLQ grammar v1.2: stages compose after projection/group/pagination; repeated
+  group/aggregate units, right/full/cross joins, backtick identifiers,
+  `select *, expression = ...`, `SUM(x) over ()`, and native `strftime` /
+  `date_trunc` are implemented. Sort order now survives later row-preserving
+  stages and top-N. CSV loading scans columns before DuckDB inference, with
+  delimiter/type overrides and duplicate-header checks. PLQ test suite: 199.
+- Release metadata: Python package `unsequel` is 0.6.0; npm package
+  `unsequel-plq` is 0.2.0 (the executable remains `plq`). The Python suite has
+  165 passing tests.
+- Positioning/discovery: README now names the prototype as a prototype, makes
+  the learning claim explicitly untested, documents the tradeoffs against
+  DuckDB FROM-first, PRQL, Malloy, Kusto, BigQuery, Spark, and Databricks, and
+  clarifies the window phase. Added a static Pages landing site, sitemap,
+  robots.txt, social-preview artwork/source, a Pages workflow, a blog draft,
+  and a Search Console/Bing/inbound-link checklist. Repo description/topics
+  updated; npm package name changed to `unsequel-plq` because `plq` is already
+  owned by another publisher (the executable remains `plq`).
 - Documentation pass: every doc now describes the installed-`plq` workflow —
   the root README compiler section leads with flagless `plq run`/`--lines`/
   `repl`; `plq/docs/first-task.md` is a flagless exercise (with the `# source`

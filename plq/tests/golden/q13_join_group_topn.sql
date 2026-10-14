@@ -11,9 +11,9 @@ stage_4 AS (
   SELECT category, SUM(line_total) AS revenue FROM stage_3 GROUP BY category
 ),
 stage_5 AS (
-  SELECT * FROM stage_4 ORDER BY revenue DESC
+  SELECT *, ROW_NUMBER() OVER (ORDER BY revenue DESC) AS __unsequel_internal_order_1 FROM stage_4
 ),
 stage_6 AS (
-  SELECT * FROM stage_5 LIMIT 2
+  SELECT * FROM stage_5 ORDER BY __unsequel_internal_order_1 LIMIT 2
 )
-SELECT * FROM stage_6;
+SELECT * EXCLUDE (__unsequel_internal_order_1) FROM stage_6 ORDER BY __unsequel_internal_order_1;

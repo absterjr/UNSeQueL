@@ -2,7 +2,7 @@
  * PLQ parser (plan step 4, audit batch B6).
  *
  * Hand-written recursive descent over the token stream from `tokenize`,
- * implementing docs/grammar.md v1.1: the stage grammar (§3), the ordering
+ * implementing docs/grammar.md v1.2: the stage grammar (§3), the ordering
  * rules (§4), and the expression grammar with its binding rules (§5).
  *
  * Errors are located: syntax errors inside a stage are re-wrapped as a
@@ -54,7 +54,7 @@ import { ParseError, PipelineError, PlqError } from "./errors.js";
 import { tokenize, type Token } from "./lexer.js";
 
 const STAGE_STARTS = new Set([
-  "from", "join", "left", "filter", "derive", "group", "aggregate", "having",
+  "from", "join", "left", "right", "full", "cross", "filter", "derive", "group", "aggregate", "having",
   "window", "select", "sort", "skip", "take", "distinct", "sql",
 ]);
 
@@ -62,6 +62,7 @@ const AGGREGATES = new Set(["count", "sum", "avg", "min", "max"]);
 
 const SCALAR_FUNCTIONS = new Set([
   "coalesce", "nullif", "lower", "upper", "abs", "round", "length", "trim", "concat",
+  "strftime", "date_trunc",
 ]);
 
 const WINDOW_FUNCTIONS = new Set([
@@ -71,10 +72,6 @@ const WINDOW_FUNCTIONS = new Set([
 const COMPARISONS = new Set(["=", "==", "!=", "<>", "<", "<=", ">", ">="]);
 
 const NEGATABLE_TAILS = new Set(["in", "like", "between"]);
-
-const SINGLETONS = new Set([
-  "group by", "aggregate", "having", "select", "skip", "take", "distinct",
-]);
 
 export function parseProgram(source: string): Program {
   const tokens = tokenize(source);
@@ -90,12 +87,10 @@ export function parseProgram(source: string): Program {
   }));
 
   const stages: Stage[] = [];
-  const seen = new Map<string, number>();
+  let sawFrom = false;
   let grouped = false;
   let aggregated = false;
-  let projected = false;
-  let tailStarted = false;
-  let sortSeen = false;
+  let groupPending = false;
   let afterHatch = false;
 
   for (let position = 0; position < entries.length; position += 1) {
@@ -116,41 +111,16 @@ export function parseProgram(source: string): Program {
     if (index === 1 && keyword !== "from") {
       throw fail("a pipeline must start with 'from'");
     }
-    if (keyword === "from" && seen.has("from")) {
+    if (keyword === "from" && sawFrom) {
       throw fail("'from' may appear only once in a pipeline");
-    }
-    if (SINGLETONS.has(keyword) && seen.has(keyword)) {
-      throw fail(`'${keyword}' may appear only once (already at stage ${seen.get(keyword)})`);
-    }
-    if (keyword === "sort" && sortSeen) {
-      throw fail("'sort' may appear only once; use multiple keys: sort a, -b");
-    }
-    if (projected && !["sort", "skip", "take", "distinct"].includes(keyword)) {
-      throw fail(`${keyword} cannot appear after select`);
-    }
-    if (tailStarted && ["join", "left join", "filter", "derive", "group by",
-                        "aggregate", "having", "select", "distinct"].includes(keyword)) {
-      throw fail(`${keyword} cannot appear after sort/skip/take; move it earlier`);
-    }
-    if (keyword === "sort" && (seen.has("skip") || seen.has("take"))) {
-      throw fail("sort must appear before skip/take");
-    }
-    if (keyword === "skip" && seen.has("take")) {
-      throw fail("skip must appear before take");
-    }
-    if ((keyword === "join" || keyword === "left join") && grouped) {
-      throw fail("join cannot appear after group by");
     }
     if ((keyword === "join" || keyword === "left join") && afterHatch) {
       throw fail("join cannot appear after a sql stage; the hatch output columns are opaque");
     }
-    if (keyword === "filter" && grouped) {
-      throw fail("filter cannot appear after group by; use having");
-    }
     if (keyword === "group by" && nextKeyword !== "aggregate") {
       throw fail("group by must be immediately followed by aggregate");
     }
-    if (keyword === "aggregate" && !grouped) {
+    if (keyword === "aggregate" && !groupPending) {
       throw fail("aggregate requires a preceding group by (they form one unit)");
     }
     if (keyword === "having" && !aggregated) {
@@ -175,24 +145,18 @@ export function parseProgram(source: string): Program {
     }
     stages.push(stage);
 
-    if (keyword === "from" || SINGLETONS.has(keyword) || keyword === "sort") {
-      seen.set(keyword, index);
+    if (keyword === "from") sawFrom = true;
+    if (keyword === "group by") groupPending = true;
+    if (keyword === "aggregate") {
+      groupPending = false;
+      grouped = true;
+      aggregated = true;
     }
-    if (keyword === "group by") grouped = true;
-    if (keyword === "aggregate") aggregated = true;
-    if (keyword === "select") projected = true;
-    if (keyword === "sort") sortSeen = true;
-    if (keyword === "sort" || keyword === "skip" || keyword === "take") tailStarted = true;
     if (keyword === "sql") {
       grouped = false;
       aggregated = false;
-      projected = false;
-      tailStarted = false;
-      sortSeen = false;
+      groupPending = false;
       afterHatch = true;
-      for (const key of [...seen.keys()]) {
-        if (key !== "from") seen.delete(key);
-      }
     }
   }
 
@@ -236,25 +200,19 @@ function splitStages(tokens: readonly Token[]): Token[][] {
 function stageHeader(tokens: readonly Token[]): { keyword: string; rest: Token[] } {
   const first = tokens[0] as Token;
   if (first.type !== "keyword" || !STAGE_STARTS.has(first.value)) {
-    if (first.type === "identifier") {
-      const lowered = first.value.toLowerCase();
-      if (["right", "full", "cross"].includes(lowered)) {
-        throw new ParseError(
-          `'${lowered} join' is not available in the pipeline grammar yet; use 'join' or 'left join'`,
-          first.line, first.column);
-      }
+    if (first.type === "identifier" || first.type === "quoted_identifier") {
       throw new ParseError(`expected a stage keyword; found identifier '${first.value}'`,
                            first.line, first.column);
     }
     throw new ParseError(`expected a stage keyword; found ${describe(first)}`,
                          first.line, first.column);
   }
-  if (first.value === "left") {
+  if (["left", "right", "full", "cross"].includes(first.value)) {
     const second = tokens[1];
     if (!second || second.type !== "keyword" || second.value !== "join") {
-      throw new ParseError("'left' must be followed by 'join'", first.line, first.column);
+      throw new ParseError(`'${first.value}' must be followed by 'join'`, first.line, first.column);
     }
-    return { keyword: "left join", rest: tokens.slice(2) };
+    return { keyword: `${first.value} join`, rest: tokens.slice(2) };
   }
   if (first.value === "group") {
     const second = tokens[1];
@@ -356,7 +314,7 @@ class TokenReader {
 
   expectIdentifier(what = "expected an identifier"): Token {
     const token = this.peek();
-    if (!token || token.type !== "identifier") this.fail(what, token);
+    if (!token || !isIdentifierToken(token)) this.fail(what, token);
     return this.advance();
   }
 
@@ -381,6 +339,8 @@ function describe(token: Token): string {
       return `keyword '${token.value}'`;
     case "identifier":
       return `identifier '${token.value}'`;
+    case "quoted_identifier":
+      return `quoted identifier \`${token.value}\``;
     case "string":
       return "string literal";
     case "number":
@@ -391,6 +351,13 @@ function describe(token: Token): string {
     default:
       return token.type;
   }
+}
+
+function isIdentifierToken(
+  token: Token | null | undefined,
+): token is Token & { type: "identifier" | "quoted_identifier" } {
+  return token !== null && token !== undefined
+    && (token.type === "identifier" || token.type === "quoted_identifier");
 }
 
 function spanFrom(reader: TokenReader, start: Token): Span {
@@ -420,14 +387,27 @@ function parseStageBody(
       return { ...base(index, keyword, span), kind: "from", source } satisfies FromStage;
     }
     case "join":
-    case "left join": {
+    case "left join":
+    case "right join":
+    case "full join":
+    case "cross join": {
       const source = parseSource(reader, "join source");
-      reader.expectKeyword("on", "after the joined table");
-      const on = parseExpression(reader, context);
-      reader.expectEnd();
+      let on: Expr;
+      if (keyword === "cross join") {
+        reader.expectEnd();
+        on = { kind: "literal", value: true, span: source.span };
+      } else {
+        reader.expectKeyword("on", "after the joined table");
+        on = parseExpression(reader, context);
+        reader.expectEnd();
+      }
       return {
         ...base(index, keyword, span), kind: "join",
-        joinKind: keyword === "left join" ? "left" : "inner", source, on,
+        joinKind: keyword === "left join" ? "left"
+          : keyword === "right join" ? "right"
+            : keyword === "full join" ? "full"
+              : keyword === "cross join" ? "cross" : "inner",
+        source, on,
       } satisfies JoinStage;
     }
     case "filter": {
@@ -495,29 +475,25 @@ function parseStageBody(
         reader.expectKeyword("by", "after 'order'");
         orderBy = parseCommaList(reader, parseSortKey);
       }
-      if (partitionBy.length === 0 && orderBy.length === 0) {
-        reader.fail("over requires at least one of 'partition by' or 'order by'");
-      }
       reader.expectPunct(")", "to close the over clause");
       reader.expectEnd();
       const call: WindowCall = { func, args, star, partitionBy, orderBy };
       return { ...base(index, keyword, span), kind: "window", name: nameToken.value, call } satisfies WindowStage;
     }
     case "select": {
-      if (reader.atOperator("*")) {
-        const starToken = reader.advance();
-        if (!reader.done) {
-          reader.fail("'*' must be the only select item", starToken);
-        }
-        return { ...base(index, keyword, span), kind: "select", star: true, items: [] } satisfies SelectStage;
+      const star = reader.matchOperator("*");
+      let items: SelectItemNode[] = [];
+      if (star) {
+        if (reader.matchPunct(",")) items = parseCommaList(reader, parseSelectItem);
+      } else {
+        items = parseCommaList(reader, parseSelectItem);
       }
-      const items = parseCommaList(reader, parseSelectItem);
       reader.expectEnd();
       rejectDuplicateNames(
         items.map((item) => item.alias ?? expressionName(item.expr)),
         (name) => reader.fail(
           `select projects '${name}' more than once; add an alias to one of them`));
-      return { ...base(index, keyword, span), kind: "select", star: false, items } satisfies SelectStage;
+      return { ...base(index, keyword, span), kind: "select", star, items } satisfies SelectStage;
     }
     case "sort": {
       const keys = parseCommaList(reader, parseSortKey);
@@ -569,7 +545,7 @@ function parseSource(reader: TokenReader, what: string): SourceRef {
   if (start.type === "punctuation" && start.value === "(") {
     reader.fail(`a ${what} cannot be a subquery; the pipeline grammar reads tables`, start);
   }
-  if (start.type !== "identifier") {
+  if (!isIdentifierToken(start)) {
     reader.fail(`expected a table name for the ${what}`, start);
   }
   reader.advance();
@@ -637,7 +613,7 @@ function parseNamedExpr(reader: TokenReader, what: string): NamedExpr {
 function parseGroupKey(reader: TokenReader): NamedExpr {
   if (reader.done) reader.fail("group by requires at least one key");
   const start = reader.peek() as Token;
-  if (start.type === "identifier") {
+  if (isIdentifierToken(start)) {
     const next = reader.peek(1);
     if (next && next.type === "operator" && next.value === "=") {
       const name = reader.advance().value;
@@ -664,7 +640,7 @@ function parseAggregateItem(reader: TokenReader): NamedAggregate {
   let name: string | null = null;
   const first = reader.peek();
   const second = reader.peek(1);
-  if (first && first.type === "identifier"
+  if (isIdentifierToken(first)
       && second && second.type === "operator" && second.value === "=") {
     name = reader.advance().value;
     reader.advance();
@@ -698,7 +674,7 @@ function parseSelectItem(reader: TokenReader): SelectItemNode {
   }
   const first = reader.peek();
   const second = reader.peek(1);
-  if (first && first.type === "identifier"
+  if (isIdentifierToken(first)
       && second && second.type === "operator" && second.value === "=") {
     const alias = reader.advance().value;
     reader.advance();
@@ -922,7 +898,7 @@ function parsePrimary(reader: TokenReader, context: ExprContext): Expr {
         reader.fail(`unexpected keyword '${token.value}' in expression`, token);
     }
   }
-  if (token.type === "identifier") {
+  if (isIdentifierToken(token)) {
     return parseNameOrCall(reader, context);
   }
   if (token.type === "punctuation" && token.value === "(") {

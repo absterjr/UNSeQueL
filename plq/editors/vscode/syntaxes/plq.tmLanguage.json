@@ -5,6 +5,7 @@
   "patterns": [
     { "include": "#directives" },
     { "include": "#comments" },
+    { "include": "#quoted-identifiers" },
     { "include": "#strings" },
     { "include": "#keywords" },
     { "include": "#functions" },
@@ -35,6 +36,14 @@
         }
       ]
     },
+    "quoted-identifiers": {
+      "patterns": [
+        {
+          "match": "`(?:``|[^`])+`",
+          "name": "variable.other.quoted.plq"
+        }
+      ]
+    },
     "strings": {
       "patterns": [
         {
@@ -50,7 +59,7 @@
     "keywords": {
       "patterns": [
         {
-          "match": "\\b(?:from|join|left|filter|derive|group|by|aggregate|having|window|select|sort|skip|take|distinct|sql|union|except|intersect|each)\\b",
+          "match": "\\b(?:from|join|left|right|full|cross|filter|derive|group|by|aggregate|having|window|select|sort|skip|take|distinct|sql|union|except|intersect|each)\\b",
           "name": "keyword.control.stage.plq"
         },
         {
@@ -62,7 +71,7 @@
     "functions": {
       "patterns": [
         {
-          "match": "(?i)\\b(?:count|sum|avg|min|max|coalesce|nullif|lower|upper|abs|round|length|trim|concat|row_number|rank|dense_rank|lag|lead)\\b(?=\\s*\\()",
+          "match": "(?i)\\b(?:count|sum|avg|min|max|coalesce|nullif|lower|upper|abs|round|length|trim|concat|strftime|date_trunc|row_number|rank|dense_rank|lag|lead)\\b(?=\\s*\\()",
           "name": "support.function.plq"
         }
       ]

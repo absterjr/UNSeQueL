@@ -41,6 +41,7 @@ import {
   type WindowStage,
 } from "./ast.js";
 import { splitDirectives } from "./directives.js";
+import { KEYWORDS } from "./lexer.js";
 import { parseProgram } from "./parser.js";
 
 export function formatProgram(source: string): string {
@@ -108,6 +109,17 @@ function renderLiteral(value: string | number | boolean | null): string {
   return renderString(value);
 }
 
+const SIMPLE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function renderIdentifierPart(name: string): string {
+  if (SIMPLE_IDENTIFIER.test(name) && !KEYWORDS.has(name.toLowerCase())) return name;
+  return `\`${name.replace(/`/g, "``")}\``;
+}
+
+function renderIdentifier(name: string): string {
+  return name.split(".").map(renderIdentifierPart).join(".");
+}
+
 function render(expr: Expr, minimum = 0): string {
   const text = renderInner(expr);
   return precedence(expr) < minimum ? `(${text})` : text;
@@ -118,7 +130,7 @@ function renderInner(expr: Expr): string {
     case "literal":
       return renderLiteral(expr.value);
     case "name":
-      return expr.name;
+      return renderIdentifier(expr.name);
     case "unary": {
       const unary = expr as UnaryExpr;
       if (unary.op === "not") {
@@ -192,7 +204,8 @@ function renderInner(expr: Expr): string {
 // --------------------------------------------------------------------------- //
 
 function renderSource(source: { name: string; alias: string | null }): string {
-  return source.alias === null ? source.name : `${source.name} as ${source.alias}`;
+  const name = renderIdentifier(source.name);
+  return source.alias === null ? name : `${name} as ${renderIdentifierPart(source.alias)}`;
 }
 
 function renderSortKey(key: SortKey): string {
@@ -204,7 +217,8 @@ function renderSortKey(key: SortKey): string {
 
 function named(name: string, expr: Expr): string {
   const rendered = render(expr);
-  return rendered === name ? name : `${name} = ${rendered}`;
+  const outputName = renderIdentifierPart(name);
+  return rendered === outputName ? outputName : `${outputName} = ${rendered}`;
 }
 
 function quoteSql(text: string): string {
@@ -228,7 +242,8 @@ function formatStage(stage: Stage): string {
       return `filter ${render((stage as FilterStage).condition)}`;
     case "derive": {
       const derive = stage as DeriveStage;
-      const items = derive.items.map((item) => `${item.name} = ${render(item.expr)}`);
+      const items = derive.items.map((item) =>
+        `${renderIdentifierPart(item.name)} = ${render(item.expr)}`);
       return `derive ${items.join(", ")}`;
     }
     case "group by": {
@@ -239,7 +254,7 @@ function formatStage(stage: Stage): string {
     case "aggregate": {
       const aggregate = stage as AggregateStage;
       const items = aggregate.items
-        .map((item) => `${item.name} = ${render(item.call)}`);
+        .map((item) => `${renderIdentifierPart(item.name)} = ${render(item.call)}`);
       return `aggregate ${items.join(", ")}`;
     }
     case "having":
@@ -255,17 +270,18 @@ function formatStage(stage: Stage): string {
       if (call.orderBy.length > 0) {
         parts.push(`order by ${call.orderBy.map(renderSortKey).join(", ")}`);
       }
-      return `window ${window.name} = ${call.func.toUpperCase()}(${args}) `
+      return `window ${renderIdentifierPart(window.name)} = ${call.func.toUpperCase()}(${args}) `
         + `over (${parts.join(" ")})`;
     }
     case "select": {
       const select = stage as SelectStage;
-      if (select.star) return "select *";
       const items = select.items.map((item: SelectItemNode) => {
         const rendered = render(item.expr);
         if (item.alias === null) return rendered;
-        return rendered === item.alias ? rendered : `${item.alias} = ${rendered}`;
+        const alias = renderIdentifierPart(item.alias);
+        return rendered === alias ? rendered : `${alias} = ${rendered}`;
       });
+      if (select.star) return items.length === 0 ? "select *" : `select *, ${items.join(", ")}`;
       return `select ${items.join(", ")}`;
     }
     case "sort": {

@@ -210,6 +210,16 @@ describe("parser: expressions", () => {
     expect(filterCondition("a == b")).toMatchObject({ kind: "binary", op: "==" });
   });
 
+  it("parses quoted table and column names that are reserved or not bare identifiers", () => {
+    const program = parse("from `order`\nselect `Order Date`, `2024_sales`, `group`");
+    expect(program[0]).toMatchObject({
+      kind: "from", source: { name: "order" },
+    });
+    const select = program[1] as SelectStage;
+    expect(select.items.map((item) => (item.expr as NameExpr).name))
+      .toEqual(["Order Date", "2024_sales", "group"]);
+  });
+
   it("rejects chained comparisons with a located error", () => {
     const error = expectPipelineError("from orders\nfilter a < b < c");
     expect(error.stageIndex).toBe(2);
@@ -244,54 +254,46 @@ describe("parser: ordering rules", () => {
     expect(error.message).toContain("requires a preceding aggregate");
   });
 
-  it("rejects filter after group by", () => {
-    const error = expectPipelineError(
-      "from orders\ngroup by country\naggregate n = COUNT(*)\nfilter quantity > 1");
-    expect(error.stageIndex).toBe(4);
-    expect(error.message).toContain("after group by; use having");
+  it("allows joins, filters, derives, and projections after aggregation", () => {
+    const program = parse(
+      "from orders\ngroup by customer\naggregate n = COUNT(*)\n"
+      + "join customers as c on customer = c.customer\n"
+      + "filter n > 1\nderive doubled = n * 2\nselect customer, c.segment, doubled");
+    expect(program.map((stage) => stage.kind)).toEqual([
+      "from", "group by", "aggregate", "join", "filter", "derive", "select",
+    ]);
   });
 
-  it("rejects join after group by", () => {
-    const error = expectPipelineError(
-      "from orders\ngroup by country\naggregate n = COUNT(*)\njoin members on a = members.customer");
-    expect(error.stageKeyword).toBe("join");
-    expect(error.message).toContain("after group by");
+  it("allows repeated group/aggregate units and projections", () => {
+    const program = parse(
+      "from orders\ngroup by customer\naggregate total = SUM(unit_price)\n"
+      + "group by band = CASE WHEN total > 100 THEN 'high' ELSE 'low' END\n"
+      + "aggregate avg_total = AVG(total)\nselect band, avg_total\n"
+      + "select band, avg_total");
+    expect(program.map((stage) => stage.kind)).toEqual([
+      "from", "group by", "aggregate", "group by", "aggregate", "select", "select",
+    ]);
   });
 
-  it("rejects stages after the sort/skip/take tail", () => {
-    const cases: Array<[string, string, number]> = [
-      ["from orders\ntake 5\nfilter quantity > 1", "filter", 3],
-      ["from orders\nsort order_id\ntake 2\nsort -quantity", "sort", 4],
-      ["from orders\nselect country\nsort country\ndistinct", "distinct", 4],
-    ];
-    for (const [source, keyword, index] of cases) {
-      const error = expectPipelineError(source);
-      expect(error.stageIndex, source).toBe(index);
-      expect(error.stageKeyword, source).toBe(keyword);
-    }
+  it("allows relational stages after sort, skip, take, and select", () => {
+    const program = parse(
+      "from orders\nsort order_id\ntake 5\nfilter order_id > 1\n"
+      + "join products as p on product_id = p.product_id\n"
+      + "derive label = p.product_name\nselect order_id, label\n"
+      + "skip 1\nsort -order_id");
+    expect(program.map((stage) => stage.kind)).toEqual([
+      "from", "sort", "take", "filter", "join", "derive", "select", "skip", "sort",
+    ]);
   });
 
-  it("rejects sort after skip and skip after take", () => {
-    expect(expectPipelineError("from orders\nskip 2\nsort order_id").message)
-      .toContain("before skip/take");
-    expect(expectPipelineError("from orders\ntake 2\nskip 1").message)
-      .toContain("before take");
-  });
-
-  it("rejects filter after select", () => {
-    const error = expectPipelineError("from orders\nselect country\nfilter quantity > 1");
-    expect(error.stageIndex).toBe(3);
-    expect(error.message).toContain("after select");
-  });
-
-  it("applies the same ordering rules to left join", () => {
-    expect(expectPipelineError(
-      "from orders\ngroup by country\naggregate n = COUNT(*)\n"
-      + "left join members on a = members.customer",
-    ).message).toContain("after group by");
-    expect(expectPipelineError(
-      "from orders\ntake 2\nleft join members on a = members.customer",
-    ).message).toContain("after sort/skip/take");
+  it("allows left joins after aggregation and pagination", () => {
+    const afterGroup = parse(
+      "from orders\ngroup by customer\naggregate n = COUNT(*)\n"
+      + "left join members on customer = members.customer");
+    expect(afterGroup.at(-1)?.kind).toBe("join");
+    const afterTake = parse(
+      "from orders\ntake 2\nleft join members on customer = members.customer");
+    expect(afterTake.at(-1)?.kind).toBe("join");
   });
 
   it("locates empty stage bodies at the stage line", () => {
@@ -306,13 +308,16 @@ describe("parser: ordering rules", () => {
     }
   });
 
-  it("rejects right join with a directed message", () => {
-    try {
-      parse("from orders\nright join members on a = members.customer");
-      throw new Error("expected an error");
-    } catch (error) {
-      expect(error).toBeInstanceOf(ParseError);
-      expect((error as ParseError).message).toContain("not available in the pipeline grammar");
+  it("parses inner, outer, and cross joins", () => {
+    for (const [source, kind] of [
+      ["join members on orders.customer = members.customer", "inner"],
+      ["left join members on orders.customer = members.customer", "left"],
+      ["right join members on orders.customer = members.customer", "right"],
+      ["full join members on orders.customer = members.customer", "full"],
+      ["cross join members", "cross"],
+    ] as const) {
+      const program = parse(`from orders\n${source}`);
+      expect(program[1]).toMatchObject({ kind: "join", joinKind: kind });
     }
   });
 
@@ -399,8 +404,8 @@ describe("parser: aggregates and the escape hatch", () => {
       .toContain("start it with SELECT or WITH");
     expect(expectPipelineError('from orders\nsql "SELECT 1; SELECT 2"').message)
       .toContain("';' is not allowed");
-    expect(expectPipelineError('from orders\nselect country\nsql "SELECT 1"').message)
-      .toContain("after select");
+    const afterProjection = parse('from orders\nselect country\nsql "SELECT 1"');
+    expect(afterProjection.at(-1)?.kind).toBe("sql");
   });
 
   it("accepts WITH queries in the hatch", () => {
@@ -417,11 +422,11 @@ describe("parser: window stage", () => {
     expect(error.message).toContain("not a window function");
   });
 
-  it("requires an over clause with at least one sub-clause", () => {
+  it("requires an over clause and permits a whole-relation window", () => {
     expect(expectPipelineError("from orders\nwindow rn = ROW_NUMBER()").message)
       .toContain("expected 'over'");
-    expect(expectPipelineError("from orders\nwindow rn = ROW_NUMBER() over ()").message)
-      .toContain("at least one of");
+    const wholeRelation = parse("from orders\nwindow total = SUM(quantity) over ()");
+    expect(wholeRelation[1]).toMatchObject({ kind: "window", name: "total" });
   });
 
   it("rejects window functions outside a window stage", () => {
@@ -432,9 +437,9 @@ describe("parser: window stage", () => {
 });
 
 describe("parser: select star and integers", () => {
-  it("rejects '*' combined with other items", () => {
-    expect(expectPipelineError("from orders\nselect *, order_id").message)
-      .toContain("must be the only select item");
+  it("allows star with additional named expressions", () => {
+    const program = parse("from orders\nselect *, total = quantity * unit_price");
+    expect(program[1]).toMatchObject({ kind: "select", star: true, items: [{ alias: "total" }] });
   });
 
   it("requires integer counts for skip/take", () => {

@@ -79,10 +79,16 @@ class InvalidQueryTests(unittest.TestCase):
         self.assertEqual((err.index, err.keyword), (2, "join"))
         self.assertIn("widget_id", str(err))
 
+    def test_ambiguous_unqualified_join_column_is_rejected(self):
+        err = self._error(
+            "from orders\njoin products on product_id = products.product_id")
+        self.assertEqual((err.index, err.keyword), (2, "join"))
+        self.assertIn("ambiguous column 'product_id'", str(err))
+
     def test_qualified_column_must_belong_to_its_table(self):
         err = self._error(
             "from orders\n"
-            "join members on customer = members.customer AND orders.plan = members.plan"
+            "join members on orders.customer = members.customer AND orders.plan = members.plan"
         )
         self.assertEqual((err.index, err.keyword), (2, "join"))
         self.assertIn("orders.plan", str(err))

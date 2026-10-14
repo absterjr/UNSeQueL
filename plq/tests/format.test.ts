@@ -33,6 +33,12 @@ describe("formatter: corpus", () => {
     expect(formatProgram(crlf)).toBe(lf);
   });
 
+  it("preserves quoted identifiers and their canonical quoting", () => {
+    const source = "from `order`\nselect `Order Date`, `2024_sales`, `group`\n";
+    expect(formatProgram(source)).toBe(source);
+    expect(formatProgram(formatProgram(source))).toBe(source);
+  });
+
   it("is idempotent and re-parseable on the coverage corpus", () => {
     expect(coverageFiles).toHaveLength(13);
     for (const file of coverageFiles) {

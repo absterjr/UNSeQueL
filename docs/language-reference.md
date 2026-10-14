@@ -1,5 +1,10 @@
 # UNSeQueL Language Reference
 
+This reference documents the **Python ordered `.usql` prototype**. New users
+should start with the production `.plq` compiler and its
+[grammar](../plq/docs/grammar.md); the `.pusql` prototype has a third, older
+pipeline dialect.
+
 UNSeQueL is line-oriented on purpose: each stage is easy to see while reading
 the query. A clause may wrap across lines, but clause keywords must remain
 unambiguous. `WITH` declarations and set operations surround a normal ordered
@@ -42,6 +47,11 @@ UNSeQueL evaluates a query in this order:
 6. `SELECT` calculates output expressions and aliases.
 7. `ORDER BY` sorts the output.
 8. `LIMIT` keeps the first N output rows.
+
+This is the ordered prototype's supported relation sequence, not a complete
+description of SQL's evaluation phases. In ordinary SQL, window functions run
+after HAVING and before final projection; `.usql` has no native window stage.
+PLQ exposes windows as a separate stage.
 
 That is why this is valid:
 
@@ -125,8 +135,12 @@ ROUND(value, digits)             LENGTH(value)
 NULLIF(a, b)     TRIM(value)    CONCAT(a, b, ...)
 ```
 
-CSV values are inferred as integers, floats, `NULL`, or strings. JSON values
-keep their native JSON types.
+CSV types are inferred per column: a clean numeric column becomes integer or
+number; a leading-zero identifier or a mixed/dirty column remains text. Empty
+cells become NULL, while literal `null`, `none`, and `nan` remain text. Use
+`--delimiter` and repeatable `--column-type table.column=type` when inference
+needs help. JSON values keep their native JSON types. See
+[semantics.md](semantics.md) for the complete inference and NULL contract.
 
 ## Output formats
 
@@ -152,6 +166,8 @@ which keeps execution semantics identical to CSV and JSON input.
 
 ## Current boundaries
 
-The 0.5 release is a complete read/query core and intentionally does not
-include table-changing statements, recursive CTEs, scalar subqueries inside
-expressions, user-defined functions, or streaming/native query planning.
+The Python prototype is a read/query subset, not a full SQL implementation. It
+does not include table-changing statements, recursive CTEs, scalar subqueries
+inside expressions, user-defined functions, or streaming/native query
+planning. The production compiler has a different, documented subset; see
+[PLQ's backlog](../plq/docs/backlog.md).

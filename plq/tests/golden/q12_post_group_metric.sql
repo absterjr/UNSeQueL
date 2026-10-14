@@ -11,6 +11,6 @@ stage_4 AS (
   SELECT *, (revenue / orders) AS avg_order FROM stage_3
 ),
 stage_5 AS (
-  SELECT * FROM stage_4 ORDER BY avg_order DESC
+  SELECT *, ROW_NUMBER() OVER (ORDER BY avg_order DESC) AS __unsequel_internal_order_1 FROM stage_4
 )
-SELECT * FROM stage_5;
+SELECT * EXCLUDE (__unsequel_internal_order_1) FROM stage_5 ORDER BY __unsequel_internal_order_1;

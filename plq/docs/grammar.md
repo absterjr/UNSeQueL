@@ -1,6 +1,6 @@
-# PLQ Language Specification v1.1 (Step 2)
+# PLQ Language Specification v1.2
 
-Status: **frozen**. Changes require a version bump and re-validation of the
+Status: **frozen for v1.2**. Changes require a version bump and re-validation of the
 reference queries in [`examples/reference/`](../examples/reference/).
 
 - **v1.0** — initial frozen grammar; 21 reference queries hand-validated.
@@ -10,6 +10,12 @@ reference queries in [`examples/reference/`](../examples/reference/).
   naming/DISTINCT rules, the complete reserved-word table, number and
   separator semantics, and alias defaults. No reference query changes; the
   corpus re-validates unchanged against v1.1.
+- **v1.2** — makes stages composable across projections, filters, joins,
+  multiple group/aggregate units, and pagination; adds right/full/cross joins,
+  backtick-quoted identifiers, `select *, name = expression`, whole-relation
+  windows (`OVER ()`), and native `strftime`/`date_trunc`; rejects ambiguous
+  unqualified references after joins. Golden SQL now carries an internal row
+  ordinal so sort order remains well-defined through later stages.
 
 Stack decisions are locked: TypeScript/Node compiler, DuckDB first target,
 hand-written recursive descent parser, one CTE per pipeline stage.
@@ -61,6 +67,7 @@ Worked map for the program above (7 grammar stages, 6 units):
 | --- | --- |
 | keyword | one of the reserved words in §2.1; case-insensitive |
 | identifier | `[A-Za-z_][A-Za-z0-9_]*`; qualified names are `identifier.identifier` |
+| quoted identifier | backtick-quoted single-line name; double backticks escape a backtick; quote each qualified part separately, e.g. `` `Order Date` `` or `` `order`.`Order Date` `` |
 | integer | `digit , { digit }`; leading zeros allowed (`007`) |
 | number | `integer` or `integer "." digit { digit }`; no leading sign, no leading/trailing dot (`12.` is not a number; the parser reports it) |
 | string | single- or double-quoted, **single line**; escapes `\\` `\'` `\"` `\n`; doubled quotes (`''`, `""`) also escape; canonical output uses single quotes |
@@ -74,38 +81,38 @@ grammatical role.
 
 ### 2.1 Reserved words (complete)
 
-Reserved words cannot be used as identifiers, and v1.1 has no quoting
-mechanism. The dataset avoids collisions (`order_id` is a distinct identifier
-from the keyword `order`).
+Reserved words cannot be used as **unquoted** identifiers. Use backticks to
+quote a reserved, spaced, or digit-leading name; the dataset usually avoids
+collisions (`order_id` is a distinct identifier from the keyword `order`).
 
 | Group | Words |
 | --- | --- |
-| stages | `from` `join` `left` `filter` `derive` `group` `by` `aggregate` `having` `window` `select` `sort` `skip` `take` `distinct` `sql` |
+| stages | `from` `join` `left` `right` `full` `cross` `filter` `derive` `group` `by` `aggregate` `having` `window` `select` `sort` `skip` `take` `distinct` `sql` |
 | clauses / modifiers | `on` `as` `over` `partition` `order` `asc` `desc` |
 | expressions | `and` `or` `not` `in` `like` `between` `is` `null` `case` `when` `then` `else` `end` `cast` `true` `false` |
 
-`group by` and `left join` are two-word phrases made of the keywords `group`
-+ `by` and `left` + `join`.
+`group by`, `left join`, `right join`, `full join`, and `cross join` are
+two-word phrases made from their listed keywords.
 
 Function and aggregate names are **not** reserved and are case-insensitive:
 `count`, `sum`, `avg`, `min`, `max`, `coalesce`, `nullif`, `lower`, `upper`,
 `abs`, `round`, `length`, `trim`, `concat`, `row_number`, `rank`,
-`dense_rank`, `lag`, `lead`.
+`dense_rank`, `lag`, `lead`, `strftime`, `date_trunc`.
 
-Deliberate v1.1 lexical consequences:
+Deliberate v1.2 lexical consequences:
 
-- A column named like any reserved word is not addressable in v1.1 (no
-  quoting); the analyzer reports the keyword where an identifier was expected.
+- Unquoted identifiers cannot use reserved words or spaces; quote such names
+  with backticks (e.g. `` `order` ``, `` `Order Date` ``).
 - `--` starts a comment even when written as adjacent subtraction
   (`a--b` is `a` + comment; write `a - -b` for double negation). This matches
   SQL.
 
-Deliberate v1.1 changes from the Python prototype (recorded for
+Deliberate dialect changes from the Python prototype (recorded for
 cross-implementation awareness):
 
 | Prototype | PLQ v1.x | Why |
 | --- | --- | --- |
-| `where` position-sensitive | `filter` (row only) + `having` (group only) | explicit stages give precise errors; matches the agreed stage list |
+| `where` position-sensitive | `filter` (current relation) + `having` (group-oriented spelling) | explicit stage names clarify the pipeline position |
 | `group keys (aggs)` combined | `group by` + `aggregate` stages (one lowering unit) | one concept per stage; maps 1:1 to SQL while keeping one CTE per unit |
 | subquery sources accepted | not part of v1.x | no silent data loss; subqueries are a future feature |
 | `window` reserved | `window` implemented | ranking queries work natively; the prototype uses the `sql` hatch |
@@ -136,15 +143,19 @@ source     = qualified_name , [ "as" , identifier ] ;
 ### 3.2 `join` / `left join`
 
 ```ebnf
-join_stage = [ "left" ] , "join" , source , "on" , expr ;
+join_stage = [ "left" | "right" | "full" ] , "join" , source , "on" , expr
+           | "cross" , "join" , source ;
 ```
 
-- Row phase only: before `group by`; any number of joins, in source order.
+- Joins may occur anywhere the current relation has the join keys, including
+  after grouping and pagination; any number of joins, in source order.
 - The ON expression may not contain aggregate calls (§4, rule 12).
+- References in `ON` that exist on both sides must be qualified; use the
+  incoming and right-side source labels. Other bare names may resolve against
+  the incoming relation, but qualification is recommended.
 - Right-table labels default as in §3.1. A right column whose name collides
-  with a live column is exposed as `<label>_<column>`; otherwise the bare
-  column name is used.
-- **IR:** `JoinStage { kind: "inner" | "left", source, on }`
+  with a live column is exposed as `<label>_<column>` for `select *` output.
+- **IR:** `JoinStage { kind: "inner" | "left" | "right" | "full" | "cross", source, on }`
 - **SQL:** `stage_u AS (SELECT <prev>.*, <right cols> FROM stage_{u-1} [LEFT] JOIN <source> ON <expr>)`
 
 ### 3.3 `filter`
@@ -153,9 +164,10 @@ join_stage = [ "left" ] , "join" , source , "on" , expr ;
 filter_stage = "filter" , expr ;
 ```
 
-- Row phase only, before `group by`. Group filtering is `having` (§3.7).
-- Multiple `filter` stages combine as an ordered sequence (equivalent to one
-  `AND` chain).
+- Filters the current relation, including a relation that has already been
+  grouped or projected. `having` is available as a familiar post-aggregate
+  spelling, but both are relation filters at their position in the pipeline.
+- Multiple `filter` stages apply in order (equivalent to successive WHEREs).
 - **IR:** `FilterStage { condition }`
 - **SQL:** `stage_u AS (SELECT * FROM stage_{u-1} WHERE <expr>)`
 
@@ -184,7 +196,7 @@ group_stage = "group" , "by" , key , { "," , key } ;
 key         = identifier | named_expr ;
 ```
 
-- At most once, and it **must be immediately followed by `aggregate`**
+- Repeatable, and each `group by` **must be immediately followed by `aggregate`**
   (no stage may appear between them). A `group by` without a following
   `aggregate` is a parse error.
 - Keys are bare column names or named expressions; keys may not contain
@@ -204,7 +216,8 @@ agg_call        = ( "COUNT" , "(" , "*" , ")" )
                   "(" , [ "DISTINCT" ] , expr , ")" ;
 ```
 
-- At most once, immediately after `group by`.
+- Required immediately after each `group by`; groups may be aggregated again
+  later in the same pipeline.
 - Every item must be named `name = AGG(expr)`; a bare `COUNT(*)` is
   auto-named `count`.
 - `DISTINCT` is valid only for `COUNT`; `*` is valid only for `COUNT` and
@@ -220,7 +233,7 @@ agg_call        = ( "COUNT" , "(" , "*" , ")" )
 having_stage = "having" , expr ;
 ```
 
-- At most once, after `aggregate`.
+- Repeatable after an `aggregate` stage; it filters the current grouped relation.
 - May reference group keys, aggregate names, and group-phase derives defined
   **before** it. Aggregate calls are not allowed here — reference the
   aggregate name (§3.6).
@@ -244,19 +257,17 @@ window_func   = "ROW_NUMBER" | "RANK" | "DENSE_RANK"
 ```
 
 - Adds one named column. Repeatable.
-- May appear anywhere after `from` and before `select`.
-- `over` requires at least one of `partition by` / `order by`; `over ()` is
-  a parse error.
+- May appear anywhere after `from`, including after grouping or projection.
+- Empty `over ()` is valid for whole-relation windows such as `SUM(x) over ()`.
 - `COUNT(*) OVER (...)` is the only wildcard form; `COUNT(DISTINCT ...)`
   inside a window is not part of v1.x.
 - Disambiguation: a window function is recognized as `identifier "(" … ")"`
   immediately followed by the keyword `over`; otherwise the same shape is a
   scalar/aggregate call.
 - No frame clauses (`rows between ...`) in v1.x.
-- A window stage may follow the tail (`sort`/`skip`/`take`); it adds its
-  column over the current relation, and rule 11's forbidden list does not
-  include `window`.
-- Syntax is frozen in v1.1; parsing and DuckDB lowering (step 6) are
+- A window stage may follow `sort`/`skip`/`take`; it adds its column over the
+  current relation and preserves the established order.
+- Syntax is frozen in v1.2; parsing and DuckDB lowering are
   implemented.
 - **IR:** `WindowStage { name, func, args, partitionBy, orderBy }`
 - **SQL:** `stage_u AS (SELECT *, <FUNC>(<args>) OVER (<spec>) AS <name> FROM stage_{u-1})`
@@ -268,13 +279,14 @@ select_stage = "select" , item , { "," , item } ;
 item         = "*" | named_expr | expr ;
 ```
 
-- At most once. After `select`, only `sort` / `skip` / `take` / `distinct`
-  may follow (§4, rules 9-11).
+- Repeatable. The projection changes the current relation; subsequent stages
+  see the projected columns.
 - **Binding rule:** a select item that begins with a single identifier
   followed by `=` is a **named item** (alias); otherwise it is an
   expression. `select x = y` therefore means "output column x from
   expression y", never a boolean comparison.
-- `*` must be the only item when used.
+- `*` may be combined with named expressions (`select *, total = price * qty`).
+  An added name may not duplicate a live column.
 - Aggregate calls are rejected here (they belong to `aggregate`).
 - Default output names: explicit alias; else a bare identifier's name; else
   the lowercase function name for calls; else `expression`.
@@ -288,10 +300,12 @@ sort_stage = "sort" , sort_key , { "," , sort_key } ;
 sort_key   = [ "-" ] , expr , [ "asc" | "desc" ] ;
 ```
 
-- At most once (§4, rule 10). Leading `-` or trailing `desc` means
-  descending; the formatter canonicalizes to `-`.
+- Repeatable. Leading `-` or trailing `desc` means descending; the formatter
+  canonicalizes to `-`. The compiler carries sort order through subsequent
+  row-preserving stages with a hidden ordinal and removes it from visible output.
 - **IR:** `SortStage { keys: [{ expr, descending }] }`
-- **SQL:** `stage_u AS (SELECT * FROM stage_{u-1} ORDER BY <keys>)`
+- **SQL:** the stage assigns a hidden `ROW_NUMBER() OVER (ORDER BY <keys>)`;
+  the final query orders by and then removes that internal ordinal.
 
 ### 3.11 `skip` / `take`
 
@@ -300,7 +314,9 @@ skip_stage = "skip" , integer ;
 take_stage = "take" , integer ;
 ```
 
-- At most one of each; `skip` must precede `take`. Each is its own CTE.
+- Repeatable and composable in any order; each is its own CTE. If an earlier
+  `sort` exists, pagination uses that order. Without a sort, row choice is
+  engine-dependent.
 - Only non-negative integers; reals and negative signs are parse errors.
 - **IR:** `SkipStage { count }` / `TakeStage { count }`
 - **SQL:** `SELECT * FROM stage_{u-1} OFFSET <n>` / `... LIMIT <n>`
@@ -311,7 +327,8 @@ take_stage = "take" , integer ;
 distinct_stage = "distinct" ;
 ```
 
-- At most once; may not appear after `sort`/`skip`/`take` (§4, rule 11).
+- Repeatable. `distinct` resets any prior sort order; sort again afterward if
+  ordered output is required.
 - Deduplicates the current relation's visible columns.
 - **IR:** `DistinctStage`
 - **SQL:** `stage_u AS (SELECT DISTINCT * FROM stage_{u-1})`
@@ -329,39 +346,42 @@ sql_stage = "sql" , string ;
   so the compiler cannot qualify or rename them safely. Join before the hatch
   or express the join in SQL.
 - The previous relation is the table `__input__`; named tables stay visible.
-- A `sql` stage starts a fresh relation: phase, tail state, and the
-  once-per-segment stages (`group by`, `aggregate`, `having`, `skip`,
-  `take`, `distinct`, `filter`, `sort`) reset. `sql` may not be first and
-  may not follow `select`.
+- A `sql` stage starts a fresh, opaque relation and clears prior sort-order
+  tracking. `from` remains program-global; other stages can follow the hatch
+  subject to the normal relation/schema rules.
 - Column tracking stops at the hatch (semantics treat everything after it as
   opaque).
 - **IR:** `RawSqlStage { text }`
 - **SQL:** the text becomes its own CTE with `__input__` rewritten to
   `stage_{u-1}` (substitution never touches string literals).
 
-## 4. Ordering rules (frozen)
+## 4. Ordering and composition rules (v1.2)
 
-1. `from` first, exactly once.
-2. `join` / `left join` only in the row phase, before `group by`; any number,
-   in order.
-3. `filter` only in the row phase. Group filtering is `having`.
-4. `derive` is allowed in both phases (row before `group by`, group after
-   `aggregate`/`having`).
-5. `group by` at most once, immediately followed by `aggregate`.
-6. `aggregate` at most once, immediately after `group by`.
-7. `having` at most once, after `aggregate`.
-8. `window` repeatable, anywhere after `from` and before `select`.
-9. `select` at most once; after it only `sort` / `skip` / `take` / `distinct`.
-10. Tail: `sort` at most once; `skip` at most once and before `take`;
-    `take` at most once. `sort` may not follow `skip`/`take`.
-11. `distinct` at most once and not after `sort`/`skip`/`take`. Once the tail
-    (`sort`/`skip`/`take`) starts, no `join`, `filter`, `derive`, `group by`,
-    `aggregate`, `having`, `select`, or `distinct` may appear — those
-    interleavings cannot be preserved by a single flattening, so they are
-    rejected rather than reordered.
-12. Aggregate *calls* are valid only inside `aggregate`. Every other stage
-    references aggregates by name. Aggregate arguments may not contain
-    aggregate calls; `DISTINCT` and `*` are COUNT-only (`COUNT(*)`).
+1. `from` is first and appears exactly once.
+2. Any join kind may follow the current relation, including after grouping,
+   projection, or pagination. A join after `sql` is rejected because the hatch
+   output schema is opaque. Ambiguous bare references after a join are errors;
+   qualify them with a source label.
+3. Every `group by` must be immediately followed by `aggregate`. The pair may
+   repeat: a later group can aggregate the earlier aggregate's output.
+4. `filter`, `having`, `derive`, `window`, and `select` operate on the relation
+   produced at their position and can be repeated/interleaved. Aggregate calls
+   themselves remain confined to `aggregate`; later expressions refer to their
+   named outputs.
+5. `select *` can be extended by named expressions. If an added output name
+   would duplicate a live column, the compiler reports it instead of silently
+   overwriting it.
+6. `sort`, `skip`, and `take` can occur at any point and can be repeated. A
+   hidden row ordinal preserves sort order through row-preserving stages and
+   pagination; `group by`, `distinct`, and `sql` establish a new ordering
+   boundary. A projection may drop the visible sort keys while the ordinal
+   preserves the established order.
+7. `distinct` can occur anywhere; it resets previous sort order. Add a new
+   `sort` when output order matters.
+8. Aggregate calls are valid only inside `aggregate`. Aggregate arguments may
+   not contain aggregate calls; `DISTINCT` and `*` are COUNT-only (`COUNT(*)`).
+9. Backtick-quoted identifiers can name reserved, spaced, and digit-leading
+   columns; dots separate qualified components and must be quoted separately.
 
 ## 5. Expression grammar
 
@@ -411,16 +431,16 @@ Precedence, lowest to highest: `OR` → `AND` → `NOT` → comparison
 `IS [NOT] NULL`) → `+`, `-`, `||` → `*`, `/`, `%` → unary `+`, `-`.
 
 Scalar functions: `COALESCE`, `NULLIF`, `LOWER`, `UPPER`, `ABS`, `ROUND`,
-`LENGTH`, `TRIM`, `CONCAT`. Aggregates: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
+`LENGTH`, `TRIM`, `CONCAT`, `STRFTIME`, `DATE_TRUNC`. Aggregates: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
 (valid only in `aggregate`). Window functions per §3.8.
 
 ## 6. Reference query validation
 
 All 21 reference programs in [`examples/reference/`](../examples/reference/)
-were hand-parsed against this grammar under v1.0 and re-validated under v1.1
-with no changes required (the v1.1 resolutions codify behavior the corpus
-already used). Two mechanical translations from the Python prototype apply
-(`where` → `filter`/`having`; split `group`), recorded per query below.
+are parsed, schema-checked, compiled, and executed in CI. v1.2 qualifies
+duplicated join keys and aliases the selected left-side column; the original
+two dialect translations remain (`where` → `filter`/`having`, and combined
+`group` → `group by` + `aggregate`).
 
 | # | File | Stages | Translation from prototype |
 | --- | --- | --- | --- |
@@ -430,20 +450,20 @@ already used). Two mechanical translations from the Python prototype apply
 | 4 | q04_filter_and_sort | from, filter, sort | where → filter (row) |
 | 5 | q05_derive_column | from, derive, select | — |
 | 6 | q06_derive_rank_take | from, derive, select, sort, take | — |
-| 7 | q07_inner_join | from, join, select | — |
-| 8 | q08_left_join_antijoin | from, left join, filter, select | where → filter (row, after join) |
+| 7 | q07_inner_join | from, join, select | qualify repeated `product_id` |
+| 8 | q08_left_join_antijoin | from, left join, filter, select | qualify `orders.customer`; where → filter |
 | 9 | q09_group_count | from, group by, aggregate, sort | split group → group by + aggregate |
 | 10 | q10_group_sum_rank | from, derive, group by, aggregate, sort | split group |
 | 11 | q11_group_having | from, derive, group by, aggregate, having, sort | split group; where → having |
 | 12 | q12_post_group_metric | from, derive, group by, aggregate, derive(group), sort | split group |
-| 13 | q13_join_group_topn | from, join, derive, group by, aggregate, sort, take | split group |
+| 13 | q13_join_group_topn | from, join, derive, group by, aggregate, sort, take | split group; qualify join key |
 | 14 | q14_distinct | from, select, distinct, sort | — |
 | 15 | q15_pagination | from, select, sort, skip, take | — |
 | 16 | q16_in_list | from, filter, select, sort | where → filter (row) |
 | 17 | q17_between | from, filter, select, sort | where → filter (row) |
 | 18 | q18_case_bucket | from, derive, select, sort | — |
 | 19 | q19_multi_key_group | from, derive, group by, aggregate, sort | split group |
-| 20 | q20_full_pipeline | from, join, derive, group by, aggregate, having, derive(group), sort, take | split group; where → having |
+| 20 | q20_full_pipeline | from, join, derive, group by, aggregate, having, derive(group), sort, take | split group; qualify join key; where → having |
 | 21 | q21_sql_hatch | from, sql, filter, select, sort | where → filter (row, after sql segment reset) |
 
 ### Ambiguity checks
@@ -460,7 +480,8 @@ already used). Two mechanical translations from the Python prototype apply
 - **Newlines**: every stage is one line; newlines at parenthesis depth zero
   separate stages and a newline inside parentheses is a parse error (§2).
 
-Result: **21/21 queries parse unambiguously on paper** under v1.1.
+Result: **21/21 queries parse and execute** under v1.2; golden SQL and
+handwritten DuckDB parity suites are CI gates.
 
 ## 7. Formatter
 

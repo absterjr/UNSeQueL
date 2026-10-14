@@ -1,8 +1,8 @@
 {
   "name": "plq-vscode",
-  "displayName": "PLQ",
-  "description": "Syntax highlighting and run commands for .plq pipeline query files (from, filter, derive, select, ... -> DuckDB).",
-  "version": "0.1.0",
+  "displayName": "UNSeQueL PLQ",
+  "description": "UNSeQueL PLQ syntax highlighting and run commands for .plq pipeline query files, powered by DuckDB.",
+  "version": "0.2.0",
   "publisher": "unsequel",
   "license": "MIT",
   "repository": {
