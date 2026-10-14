@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="description" content="Five worked UNSeQueL queries with results: joins, segment revenue, group filters, monthly trends with strftime, and share-of-total windows.">
+  <meta name="theme-color" content="#101827">
+  <link rel="canonical" href="https://absterjr.github.io/UNSeQueL/docs/examples.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Worked examples — UNSeQueL">
+  <meta property="og:description" content="The five analyst queries that ship with the repository, with results.">
+  <meta property="og:url" content="https://absterjr.github.io/UNSeQueL/docs/examples.html">
+  <title>Worked examples — UNSeQueL</title>
+  <link rel="stylesheet" href="../style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23101827'/%3E%3Cpath d='M22 26v30a18 18 0 0 0 36 0V26M66 74V26l24 48V26' fill='none' stroke='%235eead4' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<main>
+  <header class="site">
+    <a class="brand" href="../index.html">UNSeQueL</a>
+    <nav class="site" aria-label="Main navigation">
+      <a href="./index.html" aria-current="page">Docs</a>
+      <a href="https://github.com/absterjr/UNSeQueL">GitHub</a>
+      <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>
+      <a href="https://github.com/absterjr/UNSeQueL/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+  </header>
+
+  <div class="crumb"><a href="../index.html">Home</a> / <a href="./index.html">Documentation</a> / Worked examples</div>
+
+  <h1>Worked examples</h1>
+  <p class="lead">These five queries ship in <code>examples/real/</code> with <code># source</code> directives, so each one runs with no flags. The commands below assume the repository root is the working directory after installing the compiler.</p>
+
+  <section>
+    <h2>1. Top products by revenue</h2>
+    <p>A join, a derived column, a grouped aggregate, and top-N — the everyday shape.</p>
+    <pre># source orders: ../spec/orders.csv
+# source products: ../spec/products.csv
+from orders
+join products on orders.product_id = products.product_id
+derive line_total = quantity * unit_price
+group by product_name
+aggregate revenue = SUM(line_total), units = SUM(quantity)
+sort -revenue
+take 5</pre>
+    <pre>unsequel run examples/real/r01_top_products.unsequel</pre>
+    <pre>product_name  revenue  units
+------------  -------  -----
+Desk Lamp     168      7
+Coffee Beans  132      11
+Water Bottle  117      13
+Notebook      94.5     21
+Pen Set       82.5     11
+
+5 row(s)</pre>
+  </section>
+
+  <section>
+    <h2>2. Revenue by customer segment</h2>
+    <p>Joining a dimension table after the fact and deriving a metric from two aggregates.</p>
+    <pre># source orders: ../spec/orders.csv
+# source customers: ../spec/customers.csv
+from orders
+join customers on orders.customer = customers.customer
+group by segment
+aggregate orders = COUNT(*), revenue = SUM(quantity * unit_price)
+derive avg_order = revenue / orders
+sort -revenue</pre>
+    <pre>unsequel run examples/real/r02_segment_revenue.unsequel</pre>
+    <pre>segment         orders  revenue  avg_order
+--------------  ------  -------  ---------
+wholesale       7       339      48.4286
+enterprise      5       175.5    35.1
+small-business  3       79.5     26.5
+
+3 row(s)</pre>
+  </section>
+
+  <section>
+    <h2>3. Repeat customers</h2>
+    <p>A group filter: <code>having</code> runs on the grouped relation.</p>
+    <pre># source orders: ../spec/orders.csv
+from orders
+group by customer
+aggregate orders = COUNT(*), revenue = SUM(quantity * unit_price)
+having orders &gt; 1
+sort -orders, customer</pre>
+    <pre>unsequel run examples/real/r03_repeat_customers.unsequel</pre>
+    <pre>customer   orders  revenue
+---------  ------  -------
+Ada        4       162
+Grace      4       151.5
+Alan       3       79.5
+Katherine  3       177
+
+4 row(s)</pre>
+  </section>
+
+  <section>
+    <h2>4. Monthly revenue trend</h2>
+    <p>Native date functions replace what the original draft did with the SQL hatch.</p>
+    <pre># source orders: ../spec/orders.csv
+from orders
+derive month = strftime(order_date, '%Y-%m')
+group by month
+aggregate revenue = SUM(quantity * unit_price), orders = COUNT(*)
+sort month</pre>
+    <pre>unsequel run examples/real/r04_monthly_revenue.unsequel</pre>
+    <pre>month     revenue  orders
+--------  -------  ------
+2024-01   93       2
+2024-02   82.5     3
+2024-03   165      3
+2024-04   121.5    3
+2024-05   84       3
+2024-06   48       1
+
+6 row(s)</pre>
+  </section>
+
+  <section>
+    <h2>5. Share of total revenue</h2>
+    <p>A whole-relation window (<code>over ()</code>) computes the grand total once per row.</p>
+    <pre># source orders: ../spec/orders.csv
+from orders
+derive line_total = quantity * unit_price
+window total_revenue = SUM(line_total) over ()
+derive share = line_total / total_revenue
+select order_id, line_total, share
+sort -share
+take 3</pre>
+    <pre>unsequel run examples/real/r05_share_of_total.unsequel --format json</pre>
+    <pre>[
+  { "order_id": 5006, "line_total": 96, "share": 0.16161616161616163 },
+  { "order_id": 5009, "line_total": 63, "share": 0.10606060606060606 },
+  { "order_id": 5003, "line_total": 60, "share": 0.10101010101010101 }
+]</pre>
+  </section>
+
+  <section>
+    <h2>More things to try</h2>
+    <pre># canonical form of any file (and a diff-friendly check)
+unsequel fmt examples/real/r01_top_products.unsequel --check
+
+# step through stage 4 of the full reference pipeline
+unsequel preview examples/reference/q20_full_pipeline.unsequel --stage 4 \
+  --data orders=examples/spec/orders.csv \
+  --data products=examples/spec/products.csv
+
+# read the generated SQL with one CTE per unit
+unsequel compile examples/real/r03_repeat_customers.unsequel</pre>
+    <p>The reference corpus under <code>examples/reference/</code> covers every stage, and <code>examples/coverage/</code> adds fixtures for aliases, windows, set operators, CTEs, and subquery sources.</p>
+  </section>
+
+  <div class="pager">
+    <a href="semantics.html">&larr; Semantics and data rules</a>
+    <a href="vscode.html">VS Code &rarr;</a>
+  </div>
+
+  <footer class="site">UNSeQueL is open source under MIT. Compiler 0.4.0; decimal outputs shortened for display.</footer>
+</main>
+</body>
+</html>

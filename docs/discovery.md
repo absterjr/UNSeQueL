@@ -10,6 +10,9 @@ owner's setup.
 - Site source: [`site/`](../site/)
 - Deploy workflow: [`.github/workflows/pages.yml`](../.github/workflows/pages.yml)
 - Canonical URL (deployed): <https://absterjr.github.io/UNSeQueL/>
+- Documentation pages: <https://absterjr.github.io/UNSeQueL/docs/> (getting
+  started, language, expressions, CLI, semantics, examples, VS Code,
+  prototype, comparison, roadmap)
 - Sitemap: <https://absterjr.github.io/UNSeQueL/sitemap.xml>
 - Robots file: <https://absterjr.github.io/UNSeQueL/robots.txt>
 

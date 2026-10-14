@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="description" content="UNSeQueL semantics: NULL handling, CSV type inference and overrides, sort-order preservation, column naming and ambiguity, set operators, and DuckDB engine boundaries.">
+  <meta name="theme-color" content="#101827">
+  <link rel="canonical" href="https://absterjr.github.io/UNSeQueL/docs/semantics.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Semantics and data rules — UNSeQueL">
+  <meta property="og:description" content="NULLs, CSV inference, ordering, naming, and engine boundaries.">
+  <meta property="og:url" content="https://absterjr.github.io/UNSeQueL/docs/semantics.html">
+  <title>Semantics and data rules — UNSeQueL</title>
+  <link rel="stylesheet" href="../style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23101827'/%3E%3Cpath d='M22 26v30a18 18 0 0 0 36 0V26M66 74V26l24 48V26' fill='none' stroke='%235eead4' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<main>
+  <header class="site">
+    <a class="brand" href="../index.html">UNSeQueL</a>
+    <nav class="site" aria-label="Main navigation">
+      <a href="./index.html" aria-current="page">Docs</a>
+      <a href="https://github.com/absterjr/UNSeQueL">GitHub</a>
+      <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>
+      <a href="https://github.com/absterjr/UNSeQueL/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+  </header>
+
+  <div class="crumb"><a href="../index.html">Home</a> / <a href="./index.html">Documentation</a> / Semantics and data rules</div>
+
+  <h1>Semantics and data rules</h1>
+  <p class="lead">The compiler lowers each program to DuckDB SQL and executes it in an in-memory DuckDB. These are the behaviors the tests pin down.</p>
+
+  <section>
+    <h2>NULLs and logic</h2>
+    <ul>
+      <li><code>filter</code>, <code>having</code>, and join conditions keep only rows where the condition is <code>TRUE</code>; <code>FALSE</code> and <code>NULL</code> drop the row. Use <code>is null</code> rather than <code>= null</code>.</li>
+      <li><code>and</code>/<code>or</code> follow SQL three-valued logic (<code>null and false</code> is <code>false</code>, <code>null or true</code> is <code>true</code>).</li>
+      <li><code>COUNT(*)</code> counts rows; <code>COUNT(expr)</code> counts non-NULL values. <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, and <code>MAX</code> ignore NULL inputs and return NULL for an empty aggregate input.</li>
+      <li>Sorting NULLs follows DuckDB: they order as the largest values (last when ascending, first when descending).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>CSV loading and type inference</h2>
+    <p>Before loading a CSV, the compiler scans the header and all rows itself, then tells DuckDB the inferred types. Inference is per column, not per cell:</p>
+    <ul>
+      <li>a column whose non-empty values are all integers becomes <code>BIGINT</code>; all numeric (including decimals) becomes <code>DOUBLE</code>;</li>
+      <li>a leading-zero integer such as <code>02134</code> or <code>00501</code>, a mixed/dirty value, or any non-numeric text keeps the whole column <code>VARCHAR</code>;</li>
+      <li>ISO <code>YYYY-MM-DD</code> and timestamp columns infer as <code>DATE</code>/<code>TIMESTAMP</code>;</li>
+      <li>empty/whitespace-only cells become NULL; literal <code>null</code>, <code>none</code>, and <code>nan</code> strings stay text;</li>
+      <li>duplicate (case-insensitive) headers and rows with the wrong field count are rejected with an error naming the file.</li>
+    </ul>
+    <p>Override inference when needed:</p>
+    <pre>unsequel run query.unsequel --delimiter ';' --column-type orders.postal_code=text</pre>
+    <p>Types accepted for <code>--column-type</code>: <code>text</code>, <code>integer</code>, <code>number</code>, <code>boolean</code>, <code>date</code>, <code>time</code>, <code>timestamp</code>, and DuckDB <code>decimal(p,s)</code>. Parquet input does not accept overrides, and the delimiter option applies to every CSV loaded in that command.</p>
+  </section>
+
+  <section>
+    <h2>Column naming and ambiguity</h2>
+    <ul>
+      <li>Qualified names use the source label: the alias if given, otherwise the last segment of the table name.</li>
+      <li>After a join, a bare name that exists on both sides is an <strong>error</strong> — qualify it. <code>select *</code> exposes a colliding right column as <code>&lt;label&gt;_&lt;column&gt;</code>.</li>
+      <li><code>select *, name = expression</code> is allowed, but the added name must not duplicate a live column.</li>
+      <li>Projections replace the addressable scope: after <code>select order_id</code>, a later stage addresses <code>order_id</code>, not <code>orders.order_id</code>.</li>
+      <li>A <code>group by</code> key can be a bare column or <code>name = expression</code>; qualified group keys are written as named expressions.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Sort order and pagination</h2>
+    <ul>
+      <li><code>sort</code> records an internal row ordinal. Filters, derives, windows, joins, projections, and pagination preserve it; the final query orders by that ordinal, then removes it from visible output.</li>
+      <li><code>group by</code>, <code>distinct</code>, set operators, and <code>sql</code> reset the ordering boundary. Add a final <code>sort</code> when output order matters.</li>
+      <li>Pagination applies against the established order; without a sort, which rows <code>take</code> returns is engine-defined.</li>
+      <li><code>ORDER BY</code> ordinals are not part of the language; sort by a name or expression listed at that point.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Set operators and nested programs</h2>
+    <ul>
+      <li><code>union</code> deduplicates, <code>union all</code> keeps duplicates; <code>intersect</code> and <code>except</code> follow SQL. Both sides must have the same column count (checked unless a side is <code>sql</code>-opaque); names and order follow the left side.</li>
+      <li><code>with</code> definitions are program-scoped, may reference earlier definitions, and are resolved before schema tables in <code>from</code>/<code>join</code>.</li>
+      <li>Subquery sources must be aliased; the analyzer computes the alias's column families, so type checks behave like a table.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>The <code>sql</code> hatch</h2>
+    <ul>
+      <li>One query per stage, starting with <code>SELECT</code> or <code>WITH</code>; <code>;</code> outside strings/comments is rejected.</li>
+      <li>The previous relation is <code>__input__</code>; named tables remain visible. Substitution never touches string literals or comments.</li>
+      <li>Its output columns are opaque: later stages are not schema-checked, and <code>join</code> after a hatch is rejected.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Engine boundaries</h2>
+    <p>The production compiler targets DuckDB only. Type errors, unsupported expressions, and runtime data problems surface as clean <code>error:</code> lines. Known boundaries relative to standard SQL and to the Python prototype:</p>
+    <ul>
+      <li>DuckDB is the execution engine, so function and type behavior is DuckDB's, not a portable ANSI subset.</li>
+      <li>Floating-point division by zero can yield infinity in DuckDB while the Python memory engine returns NULL; JSON numbers are rendered differently (for example <code>192.0</code> vs <code>192</code>).</li>
+      <li>Ties in <code>ORDER BY</code> are engine-defined; add a unique tie-breaker key when deterministic output matters.</li>
+      <li><code>LIKE</code> is case-sensitive in DuckDB and in the Python engine; the two engines are intended to agree on the shared subset, with conformance probes in the repository.</li>
+    </ul>
+  </section>
+
+  <div class="pager">
+    <a href="cli.html">&larr; CLI reference</a>
+    <a href="examples.html">Worked examples &rarr;</a>
+  </div>
+
+  <footer class="site">UNSeQueL is open source under MIT. Compiler 0.4.0, DuckDB 1.x target.</footer>
+</main>
+</body>
+</html>

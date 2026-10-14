@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="description" content="UNSeQueL CLI reference: check, compile, preview, run, fmt, and repl, with directives, data flags, delimiters, column-type overrides, and exit codes.">
+  <meta name="theme-color" content="#101827">
+  <link rel="canonical" href="https://absterjr.github.io/UNSeQueL/docs/cli.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="CLI reference — UNSeQueL">
+  <meta property="og:description" content="Every unsequel command and flag, with examples.">
+  <meta property="og:url" content="https://absterjr.github.io/UNSeQueL/docs/cli.html">
+  <title>CLI reference — UNSeQueL</title>
+  <link rel="stylesheet" href="../style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23101827'/%3E%3Cpath d='M22 26v30a18 18 0 0 0 36 0V26M66 74V26l24 48V26' fill='none' stroke='%235eead4' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<main>
+  <header class="site">
+    <a class="brand" href="../index.html">UNSeQueL</a>
+    <nav class="site" aria-label="Main navigation">
+      <a href="./index.html" aria-current="page">Docs</a>
+      <a href="https://github.com/absterjr/UNSeQueL">GitHub</a>
+      <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>
+      <a href="https://github.com/absterjr/UNSeQueL/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+  </header>
+
+  <div class="crumb"><a href="../index.html">Home</a> / <a href="./index.html">Documentation</a> / CLI reference</div>
+
+  <h1>CLI reference</h1>
+  <p class="lead">All commands take a query file, or <code>-</code> to read the query from stdin. Exit code <code>0</code> means success, <code>1</code> a query/data error (or a failed <code>fmt --check</code>), and <code>2</code> a usage error.</p>
+
+  <section>
+    <h2>Commands</h2>
+    <table>
+      <tr><th>Command</th><th>What it does</th></tr>
+      <tr><td><code>unsequel run &lt;file | -&gt;</code></td><td>Execute the whole program and print the result.</td></tr>
+      <tr><td><code>unsequel check &lt;file&gt;</code></td><td>Parse the program; with a schema, validate column/type usage too.</td></tr>
+      <tr><td><code>unsequel compile &lt;file&gt;</code></td><td>Print the generated DuckDB SQL (one CTE per lowering unit).</td></tr>
+      <tr><td><code>unsequel preview &lt;file&gt; --stage N</code></td><td>Run the program truncated at grammar stage N and show sample rows with the stage label.</td></tr>
+      <tr><td><code>unsequel fmt &lt;file&gt;</code></td><td>Print the canonical form; <code>--write</code> rewrites, <code>--check</code> exits 1 if not canonical.</td></tr>
+      <tr><td><code>unsequel repl</code></td><td>Interactive session; a query runs on a blank line, a lone <code>;</code>, or <code>.run</code>.</td></tr>
+    </table>
+    <p>A bare <code>unsequel</code> on a terminal also opens the REPL. <code>unsequel --version</code> and <code>unsequel --help</code> are always available.</p>
+  </section>
+
+  <section>
+    <h2>File directives</h2>
+    <pre># source orders: ../data/orders.csv
+# source products: ../data/products.csv
+# schema: ../data/schema.json
+from orders
+join products on orders.product_id = products.product_id
+select order_id, product_name</pre>
+    <p>Directives must be the first lines of the file (no blank line or ordinary comment before them) and paths are resolved relative to the query file. <code>--data</code> overrides a directive with the same name; <code>--schema</code> overrides <code># schema:</code>. Without any schema, tables loaded from the sources are introspected automatically, so <code>run</code>, <code>compile</code>, and <code>preview</code> work without a schema file. The formatter preserves directives.</p>
+  </section>
+
+  <section>
+    <h2>Flags</h2>
+    <table>
+      <tr><th>Flag</th><th>Used by</th><th>Meaning</th></tr>
+      <tr><td><code>--data name=path</code></td><td>run, compile, preview, repl</td><td>Load a CSV/JSON/Parquet file as a table; repeatable. Without <code>name=</code>, the table name is derived from the file name.</td></tr>
+      <tr><td><code>--schema path</code></td><td>run, check, compile, preview, repl</td><td>JSON schema for pre-execution validation; overrides <code># schema:</code>.</td></tr>
+      <tr><td><code>--lines A:B</code></td><td>all query commands</td><td>Run only the 1-based line range (the file's directives still apply).</td></tr>
+      <tr><td><code>--stage N</code></td><td>compile, preview</td><td>Truncate at grammar stage N. Required for <code>preview</code>; counts stages, not CTEs.</td></tr>
+      <tr><td><code>--limit K</code></td><td>preview</td><td>Sample rows to show (default 10).</td></tr>
+      <tr><td><code>--format table|json|csv</code></td><td>run, preview, repl</td><td>Output format (default <code>table</code>).</td></tr>
+      <tr><td><code>--delimiter C</code></td><td>run, compile, preview, repl</td><td>One-character CSV delimiter (default comma). Applies to all loaded CSVs.</td></tr>
+      <tr><td><code>--column-type table.column=type</code></td><td>run, compile, preview, repl</td><td>Override CSV/JSON column inference; repeatable. Types: <code>text</code>, <code>integer</code>, <code>number</code>, <code>boolean</code>, <code>date</code>, <code>time</code>, <code>timestamp</code>, <code>decimal(p,s)</code>.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Examples</h2>
+    <pre># run a self-contained file
+unsequel run examples/real/r01_top_products.unsequel
+
+# run just the selected lines of a multi-query file
+unsequel run queries.unsequel --lines 12:20
+
+# query from stdin (needs --data because stdin has no directives)
+echo "from orders | take 1" | unsequel run - --data orders=examples/spec/orders.csv
+
+# step through a pipeline: show the relation after stage 4
+unsequel preview query.unsequel --stage 4 --limit 5
+
+# inspect the generated SQL
+unsequel compile query.unsequel --stage 4
+
+# non-comma CSV with an explicit type override
+unsequel run query.unsequel --delimiter ';' --column-type orders.postal_code=text
+
+# JSON output
+unsequel run query.unsequel --format json</pre>
+  </section>
+
+  <section>
+    <h2>REPL commands</h2>
+    <table>
+      <tr><th>Command</th><th>Meaning</th></tr>
+      <tr><td><code>.run</code></td><td>Execute the query being typed now.</td></tr>
+      <tr><td><code>.load name=path</code></td><td>Load a CSV/JSON/Parquet file as a table.</td></tr>
+      <tr><td><code>.sources</code></td><td>List loaded sources.</td></tr>
+      <tr><td><code>.schema [path]</code></td><td>Show or set an explicit schema file.</td></tr>
+      <tr><td><code>.format table|json|csv</code></td><td>Change the output format.</td></tr>
+      <tr><td><code>.clear</code></td><td>Discard the query being typed.</td></tr>
+      <tr><td><code>.quit</code></td><td>Exit (warns if lines are pending).</td></tr>
+    </table>
+  </section>
+
+  <div class="pager">
+    <a href="expressions.html">&larr; Expressions and functions</a>
+    <a href="semantics.html">Semantics and data rules &rarr;</a>
+  </div>
+
+  <footer class="site">UNSeQueL is open source under MIT. Compiler 0.4.0.</footer>
+</main>
+</body>
+</html>

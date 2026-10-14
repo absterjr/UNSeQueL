@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="description" content="UNSeQueL expression syntax: operators and precedence, literals, quoted identifiers, CASE, CAST, aggregates, window functions, and scalar functions.">
+  <meta name="theme-color" content="#101827">
+  <link rel="canonical" href="https://absterjr.github.io/UNSeQueL/docs/expressions.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Expressions and functions — UNSeQueL">
+  <meta property="og:description" content="Operators, literals, CASE, CAST, aggregates, window functions, and scalar functions.">
+  <meta property="og:url" content="https://absterjr.github.io/UNSeQueL/docs/expressions.html">
+  <title>Expressions and functions — UNSeQueL</title>
+  <link rel="stylesheet" href="../style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23101827'/%3E%3Cpath d='M22 26v30a18 18 0 0 0 36 0V26M66 74V26l24 48V26' fill='none' stroke='%235eead4' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<main>
+  <header class="site">
+    <a class="brand" href="../index.html">UNSeQueL</a>
+    <nav class="site" aria-label="Main navigation">
+      <a href="./index.html" aria-current="page">Docs</a>
+      <a href="https://github.com/absterjr/UNSeQueL">GitHub</a>
+      <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>
+      <a href="https://github.com/absterjr/UNSeQueL/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+  </header>
+
+  <div class="crumb"><a href="../index.html">Home</a> / <a href="./index.html">Documentation</a> / Expressions and functions</div>
+
+  <h1>Expressions and functions</h1>
+  <p class="lead">Expressions appear in <code>filter</code>, <code>derive</code>, <code>having</code>, <code>select</code>, <code>sort</code>, group keys, aggregate arguments, and join conditions.</p>
+
+  <section>
+    <h2>Literals and identifiers</h2>
+    <table>
+      <tr><th>Form</th><th>Examples</th><th>Notes</th></tr>
+      <tr><td>Numbers</td><td><code>42</code>, <code>12.5</code>, <code>007</code></td><td>Integers and decimals; no leading sign (unary <code>-</code> applies).</td></tr>
+      <tr><td>Strings</td><td><code>'Ada'</code>, <code>"Ada"</code>, <code>'it''s'</code>, <code>'a\nb'</code></td><td>Single- or double-quoted, single line; escapes <code>\\</code> <code>\'</code> <code>\"</code> <code>\n</code>; the formatter canonicalizes to single quotes.</td></tr>
+      <tr><td>Booleans and NULL</td><td><code>true</code>, <code>false</code>, <code>null</code></td><td>Case-insensitive; formatted as <code>TRUE</code>/<code>FALSE</code>/<code>NULL</code>.</td></tr>
+      <tr><td>Identifiers</td><td><code>quantity</code>, <code>orders.customer</code></td><td>Unquoted names match <code>[A-Za-z_][A-Za-z0-9_]*</code>; dots qualify a source label.</td></tr>
+      <tr><td>Quoted identifiers</td><td><code>`order`</code>, <code>`Order Date`</code>, <code>`2024_sales`</code></td><td>Backticks allow reserved words, spaces, and digit-leading names; double the backtick to escape it; quote each dotted part separately.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Operators</h2>
+    <table>
+      <tr><th>Category</th><th>Operators</th></tr>
+      <tr><td>Arithmetic</td><td><code>+</code> <code>-</code> <code>*</code> <code>/</code> <code>%</code>, unary <code>+</code> <code>-</code></td></tr>
+      <tr><td>Comparison</td><td><code>=</code> <code>==</code> <code>!=</code> <code>&lt;&gt;</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td></tr>
+      <tr><td>Logic</td><td><code>and</code> <code>or</code> <code>not</code></td></tr>
+      <tr><td>NULL checks</td><td><code>is null</code>, <code>is not null</code></td></tr>
+      <tr><td>Membership / ranges</td><td><code>in (...)</code>, <code>not in (...)</code>, <code>between a and b</code>, <code>not between ...</code></td></tr>
+      <tr><td>Patterns</td><td><code>like</code>, <code>not like</code> (<code>%</code> and <code>_</code>, case-sensitive)</td></tr>
+      <tr><td>Concatenation</td><td><code>||</code></td></tr>
+    </table>
+    <p>Precedence, lowest to highest: <code>or</code> &rarr; <code>and</code> &rarr; <code>not</code> &rarr; comparisons &rarr; <code>+</code> <code>-</code> <code>||</code> &rarr; <code>*</code> <code>/</code> <code>%</code> &rarr; unary <code>+</code> <code>-</code>. Chained comparisons (<code>a &lt; b &lt; c</code>) are rejected; combine them with <code>and</code> or use <code>between</code>. A prefix <code>not</code> negates the whole comparison: <code>not a in (1, 2)</code> means <code>NOT (a IN (1, 2))</code>.</p>
+  </section>
+
+  <section>
+    <h2>Conditional and conversion</h2>
+    <pre>case when quantity &gt;= 6 then 'bulk' when quantity &gt;= 3 then 'medium' else 'small' end
+cast(quantity as integer)
+cast(price_text as double)</pre>
+    <p>Type names for <code>cast</code> follow DuckDB (<code>integer</code>, <code>double</code>, <code>varchar</code>, <code>boolean</code>, <code>date</code>, <code>timestamp</code>, ...).</p>
+  </section>
+
+  <section>
+    <h2>Aggregate functions</h2>
+    <table>
+      <tr><th>Call</th><th>Result</th></tr>
+      <tr><td><code>COUNT(*)</code></td><td>Rows in the group.</td></tr>
+      <tr><td><code>COUNT(expr)</code></td><td>Non-NULL values.</td></tr>
+      <tr><td><code>COUNT(DISTINCT expr)</code></td><td>Distinct non-NULL values.</td></tr>
+      <tr><td><code>SUM</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code></td><td>Numeric or comparable aggregates; NULLs are ignored, empty groups yield NULL (COUNT yields 0).</td></tr>
+    </table>
+    <p>Aggregates are valid only inside an <code>aggregate</code> stage and must be named: <code>revenue = SUM(line_total)</code>. Later stages reference the name.</p>
+  </section>
+
+  <section>
+    <h2>Window functions</h2>
+    <pre>window rank = ROW_NUMBER() over (partition by customer order by quantity desc, order_id)
+window total = SUM(line_total) over ()</pre>
+    <p><code>ROW_NUMBER</code>, <code>RANK</code>, <code>DENSE_RANK</code>, <code>LAG</code>, <code>LEAD</code>, and the aggregates <code>SUM</code>, <code>AVG</code>, <code>COUNT</code>, <code>MIN</code>, <code>MAX</code>. <code>over ()</code> computes over the whole relation (grand totals); <code>COUNT(*) over (...)</code> is the only wildcard form. Frame clauses are not implemented yet.</p>
+  </section>
+
+  <section>
+    <h2>Scalar functions</h2>
+    <table>
+      <tr><th>Function</th><th>Description</th></tr>
+      <tr><td><code>COALESCE(a, b, ...)</code></td><td>First non-NULL argument.</td></tr>
+      <tr><td><code>NULLIF(a, b)</code></td><td>NULL when <code>a = b</code>, else <code>a</code>.</td></tr>
+      <tr><td><code>LOWER(s)</code>, <code>UPPER(s)</code></td><td>Case conversion.</td></tr>
+      <tr><td><code>TRIM(s)</code></td><td>Strip surrounding whitespace.</td></tr>
+      <tr><td><code>LENGTH(s)</code></td><td>String length.</td></tr>
+      <tr><td><code>CONCAT(a, b, ...)</code></td><td>Concatenate values (skips NULLs).</td></tr>
+      <tr><td><code>ABS(n)</code>, <code>ROUND(n, digits)</code></td><td>Numeric helpers.</td></tr>
+      <tr><td><code>strftime(date, format)</code></td><td>Format a date/timestamp, e.g. <code>strftime(order_date, '%Y-%m')</code>.</td></tr>
+      <tr><td><code>date_trunc(part, date)</code></td><td>Truncate to <code>day</code>, <code>month</code>, <code>year</code>, ...</td></tr>
+    </table>
+    <p>Function and aggregate names are not reserved and are case-insensitive. Use the <code>sql</code> hatch for anything outside this list.</p>
+  </section>
+
+  <div class="pager">
+    <a href="language.html">&larr; Language guide</a>
+    <a href="cli.html">CLI reference &rarr;</a>
+  </div>
+
+  <footer class="site">UNSeQueL is open source under MIT. Grammar v1.3 (compiler 0.4.0).</footer>
+</main>
+</body>
+</html>

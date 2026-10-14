@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="description" content="The Python prototype: the ordered .usql surface and the .pusql pipeline surface, their grammars, install steps, and how they differ from the production compiler.">
+  <meta name="theme-color" content="#101827">
+  <link rel="canonical" href="https://absterjr.github.io/UNSeQueL/docs/prototype.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Python prototype — UNSeQueL">
+  <meta property="og:description" content="The early .usql and .pusql surfaces, install, and example commands.">
+  <meta property="og:url" content="https://absterjr.github.io/UNSeQueL/docs/prototype.html">
+  <title>Python prototype — UNSeQueL</title>
+  <link rel="stylesheet" href="../style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23101827'/%3E%3Cpath d='M22 26v30a18 18 0 0 0 36 0V26M66 74V26l24 48V26' fill='none' stroke='%235eead4' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<main>
+  <header class="site">
+    <a class="brand" href="../index.html">UNSeQueL</a>
+    <nav class="site" aria-label="Main navigation">
+      <a href="./index.html" aria-current="page">Docs</a>
+      <a href="https://github.com/absterjr/UNSeQueL">GitHub</a>
+      <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>
+      <a href="https://github.com/absterjr/UNSeQueL/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+  </header>
+
+  <div class="crumb"><a href="../index.html">Home</a> / <a href="./index.html">Documentation</a> / Python prototype</div>
+
+  <h1>Python prototype</h1>
+  <p class="lead">The Python package (<code>unsequel 0.7.0</code>) is the original, dependency-free implementation. It hosts two older surfaces — the ordered <code>.usql</code> syntax and the <code>.pusql</code> pipeline syntax — with a built-in in-memory engine plus an optional DuckDB backend. New users should start with the <a href="getting-started.html">compiler</a>; the prototype is retained for comparison and for learning how the engine works inside.</p>
+
+  <section>
+    <h2>Install and run</h2>
+    <pre>git clone https://github.com/absterjr/UNSeQueL.git
+cd UNSeQueL
+python -m pip install -e .
+python -m unsequel run examples/revenue.usql --data orders=examples/orders.csv</pre>
+    <p>Requires Python 3.10+. In a virtual environment or pipx the console script is <code>unsequel-python</code>; <code>python -m unsequel</code> is the portable form used in the docs.</p>
+  </section>
+
+  <section>
+    <h2>Ordered surface (<code>.usql</code>)</h2>
+    <p>Clause names from SQL, written in execution order. <code>FROM</code> and <code>SELECT</code> are required and the clause order is enforced.</p>
+    <pre>FROM orders
+WHERE quantity &gt; 0
+GROUP BY country
+HAVING COUNT(*) &gt; 1
+SELECT country, SUM(quantity * unit_price) AS revenue
+ORDER BY revenue DESC
+LIMIT 10</pre>
+    <p>The ordered core covers CTEs, nested sources, joins (inner/left/right/full/cross), <code>UNION</code>/<code>INTERSECT</code>/<code>EXCEPT</code>, and a SQLite input adapter, and it is deliberately dependency-free. It has no native window stage; use the <code>sql</code> hatch for window functions in this surface.</p>
+  </section>
+
+  <section>
+    <h2>Pipeline surface (<code>.pusql</code>)</h2>
+    <p>One stage per line; <code>where</code> is position-sensitive (row vs group) and <code>group</code> combines keys with aggregates.</p>
+    <pre>from orders
+derive total = quantity * unit_price
+group country (revenue = SUM(total), orders = COUNT(*))
+sort -revenue</pre>
+    <pre>python -m unsequel run examples/pipeline/revenue.pusql --pipeline \
+  --data orders=examples/orders.csv</pre>
+    <p>With a schema file, the pipeline can be validated, compiled to DuckDB SQL (one CTE per stage), and stepped through stage by stage with <code>check</code>, <code>compile</code>, and <code>preview</code>.</p>
+  </section>
+
+  <section>
+    <h2>Differences from the compiler</h2>
+    <table>
+      <tr><th>Area</th><th>Prototype</th><th>Compiler (<code>.unsequel</code>)</th></tr>
+      <tr><td>Row / group filters</td><td>Position-sensitive <code>where</code></td><td>Explicit <code>filter</code> and <code>having</code></td></tr>
+      <tr><td>Grouping</td><td><code>group keys (aggs)</code> combined</td><td>Split <code>group by</code> + <code>aggregate</code></td></tr>
+      <tr><td>Windows</td><td><code>sql</code> hatch</td><td>Native <code>window</code> stage, including <code>over ()</code></td></tr>
+      <tr><td>Set operators</td><td>In the ordered surface; <code>union</code> etc. in <code>.pusql</code> backlog</td><td><code>union</code>/<code>union all</code>/<code>intersect</code>/<code>except</code> stages</td></tr>
+      <tr><td>Engine</td><td>In-memory executor or optional DuckDB</td><td>DuckDB only</td></tr>
+      <tr><td>Identifiers</td><td>Unquoted or SQLite-style</td><td>Unquoted or backtick-quoted</td></tr>
+    </table>
+    <p>Do not copy examples between the surfaces; the dialects differ (see the repository README's map of the three surfaces).</p>
+  </section>
+
+  <section>
+    <h2>CSV options and engines</h2>
+    <pre>python -m unsequel run customer.usql \
+  --data customers=customers.csv --delimiter ';' \
+  --column-type customers.postal_code=text</pre>
+    <p>The prototype applies the same whole-column inference rules as the compiler (leading-zero identifiers stay text, literal <code>null</code>/<code>none</code>/<code>nan</code> stay strings) and supports <code>--delimiter</code> and <code>--column-type</code>. <code>run --engine duckdb</code> executes the generated SQL against DuckDB when the <code>duckdb</code> extra is installed; the default memory engine is dependency-free. Semantics and known engine differences are documented in the repository's <code>docs/semantics.md</code>.</p>
+  </section>
+
+  <div class="pager">
+    <a href="vscode.html">&larr; VS Code</a>
+    <a href="comparison.html">Comparison and scope &rarr;</a>
+  </div>
+
+  <footer class="site">UNSeQueL is open source under MIT. Python prototype 0.7.0.</footer>
+</main>
+</body>
+</html>

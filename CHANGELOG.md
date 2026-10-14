@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Documentation site: the GitHub Pages site is now a full documentation set
+  (docs/getting-started, language, expressions, CLI reference, semantics,
+  worked examples, VS Code, Python prototype, comparison, roadmap) with a
+  shared stylesheet, cross-page navigation, per-page metadata and canonical
+  URLs, and an expanded sitemap. Site tests now check every page's metadata,
+  that local links resolve, and that the sitemap lists each page.
 - Nested programs (grammar v1.3, compiler 0.4.0): `with name = (...)` CTE
   definitions, aliased subquery sources (`from (...) as x`,
   `join (...) as y on ...`), and set operators (`union`, `union all`,
