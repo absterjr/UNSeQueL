@@ -39,8 +39,9 @@ contain placeholder tokens.
 - About description (set): “UNSeQueL is a FROM-first query language for
   writing SQL-like transformations in execution order; Python prototype and
   DuckDB/TypeScript compiler.”
-- Suggested topics: `sql`, `query-language`, `duckdb`, `sql-pipeline`,
-  `from-first`, `typescript`, `python`, `data-analysis`.
+- Topics set: `sql`, `query-language`, `duckdb`, `sql-pipeline`,
+  `pipe-syntax`, `sql-alternative`, `from-first`, `typescript`, `python`,
+  `data-analysis`.
 - Social preview source/image: `site/social-preview.svg` and
   `site/social-preview.png`. Upload the PNG under **Settings → General → Social
   preview**; the repository API does not expose this upload field.
