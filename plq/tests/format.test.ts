@@ -13,8 +13,8 @@ import { parseProgram } from "../src/parser.js";
 const REFERENCE = join(__dirname, "..", "examples", "reference");
 const COVERAGE = join(__dirname, "..", "examples", "coverage");
 
-const referenceFiles = readdirSync(REFERENCE).filter((f) => f.endsWith(".plq")).sort();
-const coverageFiles = readdirSync(COVERAGE).filter((f) => f.endsWith(".plq")).sort();
+const referenceFiles = readdirSync(REFERENCE).filter((f) => f.endsWith(".unsequel")).sort();
+const coverageFiles = readdirSync(COVERAGE).filter((f) => f.endsWith(".unsequel")).sort();
 
 describe("formatter: corpus", () => {
   it("treats every reference query as canonical", () => {
@@ -109,7 +109,7 @@ describe("formatter: rules", () => {
 
 describe("formatter: CLI", () => {
   it("prints the canonical form", async () => {
-    const path = join(REFERENCE, "q20_full_pipeline.plq");
+    const path = join(REFERENCE, "q20_full_pipeline.unsequel");
     const result = await runCli(["fmt", path]);
     expect(result.code).toBe(0);
     expect(result.stdout).toBe(readFileSync(path, "utf8"));
@@ -117,7 +117,7 @@ describe("formatter: CLI", () => {
 
   it("--check accepts CRLF files", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-crlf-"));
-    const path = join(directory, "query.plq");
+      const path = join(directory, "query.unsequel");
     try {
       writeFileSync(path, "from orders\r\nsort order_id\r\n");
       const result = await runCli(["fmt", path, "--check"]);
@@ -129,7 +129,7 @@ describe("formatter: CLI", () => {
 
   it("--check exits 1 for non-canonical text and 0 after --write", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-fmt-"));
-    const path = join(directory, "query.plq");
+      const path = join(directory, "query.unsequel");
     try {
       writeFileSync(path, "FROM orders\n");
       const bad = await runCli(["fmt", path, "--check"]);

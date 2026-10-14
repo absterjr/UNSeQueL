@@ -1,7 +1,7 @@
 {
-  "name": "unsequel-plq",
-  "version": "0.2.0",
-  "description": "UNSeQueL PLQ compiler: write SQL-like queries in execution order and compile composable stages to DuckDB SQL.",
+  "name": "unsequel",
+  "version": "0.3.0",
+  "description": "UNSeQueL query language compiler: write SQL-like queries in execution order and compile composable stages to DuckDB SQL.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -23,7 +23,7 @@
   ],
   "type": "module",
   "bin": {
-    "plq": "./dist/main.js"
+    "unsequel": "./dist/main.js"
   },
   "main": "./dist/cli.js",
   "types": "./dist/cli.d.ts",
@@ -42,7 +42,7 @@
     "test:watch": "vitest",
     "fmt:check": "node scripts/check-formatter.mjs",
     "editors:check": "node scripts/check-editors.mjs && node --check editors/vscode/extension.js",
-    "smoke": "node dist/main.js run examples/real/r01_top_products.plq --format json && node dist/main.js run examples/real/r03_repeat_customers.plq --format csv && node dist/main.js run examples/real/r04_monthly_revenue.plq --format csv && node dist/main.js run examples/real/r05_share_of_total.plq --format json",
+    "smoke": "node dist/main.js run examples/real/r01_top_products.unsequel --format json && node dist/main.js run examples/real/r03_repeat_customers.unsequel --format csv && node dist/main.js run examples/real/r04_monthly_revenue.unsequel --format csv && node dist/main.js run examples/real/r05_share_of_total.unsequel --format json",
     "prepack": "npm run build"
   },
   "engines": {

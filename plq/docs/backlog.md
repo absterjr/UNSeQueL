@@ -19,7 +19,7 @@ native functions and whole-relation windows for those queries.
 ## P1 — language completeness
 
 4. CTEs, nested pipeline sources (`from (from orders ...) as x`), and
-   `UNION` / `INTERSECT` / `EXCEPT` in `.plq`.
+   `UNION` / `INTERSECT` / `EXCEPT` in `.unsequel`.
 5. Window frame clauses (`rows between ...`).
 6. A second SQL target (e.g. PostgreSQL) if user feedback confirms warehouse
    portability is a core requirement; DuckDB remains the only target today.
@@ -27,8 +27,8 @@ native functions and whole-relation windows for those queries.
 
 ## P2 — tooling
 
-8. VS Code extension polish: remember the PLQ terminal's working directory
-   per workspace, optionally run `plq fmt` on save, and publish the extension
+8. VS Code extension polish: remember the UNSeQueL terminal's working directory
+   per workspace, optionally run `unsequel fmt` on save, and publish the extension
    to the Marketplace.
 9. Standalone binaries — spike `bun build --compile` or Node SEA with the
    DuckDB native addon so users need neither Node nor npm.
@@ -39,7 +39,7 @@ Shipped since the original dogfood pass: `strftime`/`date_trunc`, `over ()`,
 `select *, expression = ...`, right/full/cross joins, repeated group/aggregate
 units, relational stages after projections/joins/pagination, stable sort order
 through later stages, backtick identifiers, strict ambiguous-column errors,
-stdin (`plq run -`), file directives, line selections, interactive `repl`,
+stdin (`unsequel run -`), file directives, line selections, interactive `repl`,
 source introspection, and the VS Code extension in
 [`../editors/vscode/`](../editors/vscode/).
 

@@ -19,11 +19,11 @@ function readJson(relative) {
 }
 
 const pkg = readJson("editors/vscode/package.json");
-if (pkg.contributes?.languages?.[0]?.id !== "plq") {
-  fail("package.json must contribute the 'plq' language");
+if (pkg.contributes?.languages?.[0]?.id !== "unsequel") {
+  fail("package.json must contribute the 'unsequel' language");
 }
 const commands = (pkg.contributes?.commands ?? []).map((command) => command.command);
-for (const required of ["plq.runSelection", "plq.runFile", "plq.openRepl"]) {
+for (const required of ["unsequel.runSelection", "unsequel.runFile", "unsequel.openRepl"]) {
   if (!commands.includes(required)) fail(`package.json missing command ${required}`);
 }
 

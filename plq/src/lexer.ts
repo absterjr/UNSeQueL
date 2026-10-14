@@ -1,7 +1,7 @@
 /**
- * PLQ lexer (plan step 3; aligned to grammar v1.2).
+ * UNSeQueL lexer (plan step 3; aligned to grammar v1.2).
  *
- * Turns raw `.plq` text into a flat token stream for the recursive-descent
+ * Turns raw `.unsequel` text into a flat token stream for the recursive-descent
  * parser (step 4). Follows docs/grammar.md §2:
  *
  * - stage and expression keywords are case-insensitive; tokens carry the

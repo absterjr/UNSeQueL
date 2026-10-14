@@ -1,6 +1,6 @@
-# PLQ semantics
+# UNSeQueL pipeline semantics
 
-PLQ is a sequential relation language compiled to DuckDB SQL. Each stage
+The `.unsequel` dialect is a sequential relation language compiled to DuckDB SQL. Each stage
 consumes the relation produced by the preceding stage. See the
 [grammar](grammar.md) for syntax and the repository-level
 [semantics/conformance page](https://github.com/absterjr/UNSeQueL/blob/main/docs/semantics.md)
@@ -26,7 +26,7 @@ for shared NULL, CSV, and engine behavior.
 
 ## Joins and names
 
-PLQ supports inner, left, right, full outer, and cross joins. Qualified names
+UNSeQueL supports inner, left, right, full outer, and cross joins. Qualified names
 are resolved against their source label. If two inputs expose the same bare
 column name, using that bare name after the join is an error; qualify it (for
 example, `orders.id` or `products.id`). `select *` exposes colliding right-side
@@ -42,7 +42,7 @@ select `2024_sales`, `order`
 ```
 
 Each qualified component is quoted separately: `` `sales table`.`Order Date` ``.
-Backticks are PLQ's identifier quoting syntax; ordinary string literals remain
+Backticks are UNSeQueL's identifier quoting syntax; ordinary string literals remain
 single- or double-quoted.
 
 `select *` can be extended by named expressions:
@@ -63,7 +63,7 @@ is not in scope there, and the compiler reports that explicitly.
 `window` stages add window results to the current relation. They can follow a
 group/aggregate and appear before or after a projection. Whole-relation windows
 such as `window total = SUM(revenue) over ()` are supported. In conventional
-SQL evaluation, windows occur after `HAVING` and before final `SELECT`; PLQ's
+SQL evaluation, windows occur after `HAVING` and before final `SELECT`; UNSeQueL's
 explicit stage is a transformation interface, not a claim that its source
 order lists every internal SQL evaluation phase.
 
@@ -89,7 +89,7 @@ decimal types such as `decimal(10,2)`). Options also work with file directives.
 
 ## Boundaries
 
-PLQ targets DuckDB only. It does not yet implement CTE syntax, set operators,
+UNSeQueL targets DuckDB only. It does not yet implement CTE syntax, set operators,
 or subquery sources; use the SQL hatch for an unsupported query or track the
 feature in the [compiler backlog](backlog.md). The grammar deliberately
 distinguishes supported syntax from the broader capabilities of DuckDB and

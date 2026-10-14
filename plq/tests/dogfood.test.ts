@@ -20,7 +20,7 @@ import { analyze } from "../src/semantics.js";
 
 const ROOT = join(__dirname, "..", "..");
 const REAL = join(__dirname, "..", "examples", "real");
-const PLQ_SPEC = join(__dirname, "..", "examples", "spec");
+const SPEC_DIR = join(__dirname, "..", "examples", "spec");
 const SHARED_SPEC = join(ROOT, "examples", "spec");
 const SCHEMA = loadSchema(join(ROOT, "examples", "spec", "schema.json"));
 
@@ -32,17 +32,17 @@ const EXPECTED_ROWS: Record<string, number> = {
   r05_share_of_total: 3,
 };
 
-const files = readdirSync(REAL).filter((f) => f.endsWith(".plq")).sort();
+const files = readdirSync(REAL).filter((f) => f.endsWith(".unsequel")).sort();
 
 describe("dogfood: real queries", () => {
   it("ships the five migrated queries", () => {
     expect(files).toHaveLength(5);
-    expect(files.map((f) => f.replace(/\.plq$/, ""))).toEqual(Object.keys(EXPECTED_ROWS));
+    expect(files.map((f) => f.replace(/\.unsequel$/, ""))).toEqual(Object.keys(EXPECTED_ROWS));
   });
 
   it("keeps packaged data copies in sync and resolves every source directive", () => {
     for (const file of ["orders.csv", "products.csv", "customers.csv", "members.csv", "schema.json"]) {
-      const packaged = readFileSync(join(PLQ_SPEC, file), "utf8").replace(/\r\n/g, "\n");
+      const packaged = readFileSync(join(SPEC_DIR, file), "utf8").replace(/\r\n/g, "\n");
       const shared = readFileSync(join(SHARED_SPEC, file), "utf8").replace(/\r\n/g, "\n");
       expect(packaged, file).toBe(shared);
     }
@@ -77,7 +77,7 @@ describe("dogfood: real queries", () => {
 
     const results = new Map<string, Array<Record<string, unknown>>>();
     for (const file of files) {
-      const name = file.replace(/\.plq$/, "");
+      const name = file.replace(/\.unsequel$/, "");
       const source = readFileSync(join(REAL, file), "utf8");
       const program = parseProgram(splitDirectives(source).body);
       const reader = await connection.runAndReadAll(emitSql(program, SCHEMA));

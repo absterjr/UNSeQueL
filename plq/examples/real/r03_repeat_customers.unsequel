@@ -1,5 +1,5 @@
 # source orders: ../spec/orders.csv
-# Real query: repeat customers (group filter with a COUNT)
+# Real UNSeQueL query: repeat customers (group filter with a COUNT)
 from orders
 group by customer
 aggregate orders = COUNT(*), revenue = SUM(quantity * unit_price)

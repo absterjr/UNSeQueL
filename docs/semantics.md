@@ -6,12 +6,12 @@ SQL feature is implemented.
 
 ## Which surface should I use?
 
-For a new user, start with **PLQ** (`.plq`, TypeScript compiler, DuckDB target,
+For a new user, start with **UNSeQueL** (`.unsequel`, TypeScript compiler, DuckDB target,
 VS Code extension). The Python `.usql` and `.pusql` surfaces are prototypes
 retained for comparison and learning; they have different grammars and are not
 three dialects a beginner is expected to choose between. See the
 [repository map](../README.md#repository-map) and the
-[PLQ grammar](../plq/docs/grammar.md).
+[UNSeQueL grammar](../plq/docs/grammar.md).
 
 UNSeQueL's aim is to make relational transformations readable in the order
 they are applied. That does not remove the need to learn SQL: the generated
@@ -38,7 +38,7 @@ Its documented relation-stage sequence is `FROM`/`JOIN`, `WHERE`, `GROUP BY`,
 `HAVING`, `SELECT`, `ORDER BY`, `LIMIT`, `OFFSET`, and set operations. This is
 not a complete model of every SQL evaluation phase: in particular the Python
 ordered surface has no native window stage. Real SQL windows execute after
-aggregation/HAVING and before final projection; PLQ exposes windows as an
+aggregation/HAVING and before final projection; UNSeQueL exposes windows as an
 explicit stage, while the Python prototype uses its SQL hatch.
 
 `HAVING` runs before `SELECT`; a `SELECT` alias is not available there. The
@@ -90,7 +90,7 @@ python -m unsequel run customer.usql \
 ```
 
 The same delimiter and type overrides are passed to the optional DuckDB
-backend. PLQ applies equivalent whole-column inference before loading CSVs;
+backend. The production compiler applies equivalent whole-column inference before loading CSVs;
 its CLI options are documented in [plq/README.md](../plq/README.md).
 
 ## Engine boundaries
@@ -112,7 +112,7 @@ cases belong here before a semantic change is considered complete.
 
 ## Scope of the production compiler
 
-PLQ is DuckDB-only today. Its stage composition, joins, backtick identifiers,
+The production compiler is DuckDB-only today. Its stage composition, joins, backtick identifiers,
 whole-relation windows, CSV inference and limitations are specified in
 [plq/docs/grammar.md](../plq/docs/grammar.md); the prioritized unimplemented
 features are in [plq/docs/backlog.md](../plq/docs/backlog.md). It is not a

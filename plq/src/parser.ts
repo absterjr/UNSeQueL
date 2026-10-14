@@ -1,5 +1,5 @@
 /**
- * PLQ parser (plan step 4, audit batch B6).
+ * UNSeQueL parser (plan step 4, audit batch B6).
  *
  * Hand-written recursive descent over the token stream from `tokenize`,
  * implementing docs/grammar.md v1.2: the stage grammar (§3), the ordering

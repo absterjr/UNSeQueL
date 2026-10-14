@@ -1,5 +1,5 @@
 # source orders: ../spec/orders.csv
-# Real query: monthly revenue trend.
+# Real UNSeQueL query: monthly revenue trend.
 from orders
 derive month = strftime(order_date, '%Y-%m')
 group by month

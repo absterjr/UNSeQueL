@@ -1,4 +1,4 @@
-# PLQ sample data
+# UNSeQueL sample data
 
 These small CSVs mirror the repository's shared tutorial dataset at
 [`examples/spec/`](https://github.com/absterjr/UNSeQueL/tree/main/examples/spec).

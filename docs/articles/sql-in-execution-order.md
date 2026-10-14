@@ -28,17 +28,17 @@ reason about a query?** That is still an untested learning hypothesis. A user
 must still learn SQL to work directly with databases and warehouses.
 
 The project has a Python prototype (`.usql` and `.pusql`) and a production
-compiler (`.plq`) targeting DuckDB. New users should start with `.plq`; the
+compiler (`.unsequel`) targeting DuckDB. New users should start with `.unsequel`; the
 prototype dialects remain available for comparison, not as extra choices in
-the recommended path. PLQ files can declare their sources, run from the
+the recommended path. UNSeQueL files can declare their sources, run from the
 command line, execute a selected line range, or run from the VS Code extension.
 
 This space is busy for good reason. DuckDB already supports FROM-first SQL;
 PRQL compiles pipelines to multiple SQL dialects; Malloy focuses on semantic
 modeling and composable queries; Kusto serves analytics/log workloads; and
-GoogleSQL, Spark SQL, and Databricks SQL document composable pipe syntax. PLQ's
-current focus is a compact, locally runnable stage model with preview and
-editor selection. It is DuckDB-only and still lacks some SQL features, so it
+GoogleSQL, Spark SQL, and Databricks SQL document composable pipe syntax.
+UNSeQueL's current focus is a compact, locally runnable stage model with
+preview and editor selection. It is DuckDB-only and still lacks some SQL features, so it
 does not claim broader capability or portability.
 
 Try it:
@@ -47,7 +47,7 @@ Try it:
 git clone https://github.com/absterjr/UNSeQueL.git
 cd UNSeQueL/plq
 npm install -g .
-plq run examples/real/r01_top_products.plq
+unsequel run examples/real/r01_top_products.unsequel
 ```
 
 Repository and discussions: <https://github.com/absterjr/UNSeQueL>

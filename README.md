@@ -37,8 +37,8 @@ LIMIT 10
 
 This example shows the relation stages in scope, not every SQL evaluation
 phase. SQL window functions execute after grouping/HAVING and before final
-projection: the Python `.usql` prototype has no native window stage, while PLQ
-provides an explicit `window` stage.
+projection: the Python `.usql` prototype has no native window stage, while the
+`.unsequel` dialect provides an explicit `window` stage.
 
 The point is not to replace SQL: learners still need to read and write SQL.
 The design goal is to make the supported relational stages visible while you
@@ -52,31 +52,32 @@ feature requests have issue templates.
 ## Repository map
 
 There are three code surfaces, but they are not three choices for a new user.
-Start with the production `.plq` surface below. `.usql` and `.pusql` are Python
-prototype dialects retained for comparison; their grammars differ from PLQ.
+Start with the production `.unsequel` surface below. `.usql` and `.pusql` are Python
+prototype dialects retained for comparison; their grammars differ from the
+`.unsequel` dialect.
 
 | Surface | Extension | Tool | Dialect |
 | --- | --- | --- | --- |
 | Ordered prototype | `.usql` | `python -m unsequel` | `FROM ... WHERE ... GROUP BY ... HAVING ... SELECT ... ORDER BY ...` |
 | Pipeline (prototype) | `.pusql` | `python -m unsequel ... --pipeline` (inferred for `.pusql`) | one stage per line; `where` is position-sensitive (row vs group); `group keys (aggregates)` |
-| Pipeline (recommended) | `.plq` | `plq` CLI and [VS Code extension](plq/editors/vscode/README.md) | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows and backtick identifiers; DuckDB target — [grammar v1.2](plq/docs/grammar.md) |
+| Pipeline (recommended) | `.unsequel` | `unsequel` CLI and [UNSeQueL VS Code extension](plq/editors/vscode/README.md) | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows and backtick identifiers; DuckDB target — [grammar v1.2](plq/docs/grammar.md) |
 
 New here? Run one self-contained query — no schema or data flags required:
 
 ```bash
 cd plq
 npm install -g .
-plq run examples/real/r01_top_products.plq
+unsequel run examples/real/r01_top_products.unsequel
 ```
 
-`.plq` files can declare their own sources, run a line selection, read from
-stdin, or open an interactive `plq repl`. A VS Code extension (syntax
+`.unsequel` files can declare their own sources, run a line selection, read from
+stdin, or open an interactive `unsequel repl`. A VS Code extension (syntax
 highlighting, Run Selection/File/REPL) is in
 [plq/editors/vscode](plq/editors/vscode/README.md).
 
 ## Status
 
-The Python 0.6.0 prototype implements an ordered SQL-like subset with a lexer,
+The Python 0.7.0 prototype implements an ordered SQL-like subset with a lexer,
 semantic checks, an in-memory relational executor, CTEs, nested sources, set
 operations, five join types, and a SQLite adapter. The separate production
 compiler is described below; neither surface claims full SQL compatibility.
@@ -100,16 +101,16 @@ cd UNSeQueL
 python -m pip install -e .
 ```
 
-The `unsequel` command is installed in a virtual environment or pipx
-environment. `python -m unsequel` is the portable fallback when a user-level
-Python `Scripts` directory is not on `PATH`.
+The Python prototype command is `unsequel-python` in a virtual environment or
+pipx environment. `python -m unsequel` is the portable fallback. The production
+compiler's Node command is `unsequel`.
 
 ## Run a Python prototype query
 
 The repository includes a small example dataset:
 
 ```bash
-unsequel run examples/revenue.usql --data orders=examples/orders.csv
+python -m unsequel run examples/revenue.usql --data orders=examples/orders.csv
 ```
 
 You can also run it without installing the console command:
@@ -264,19 +265,19 @@ The production compiler in [plq/](plq/README.md) is a growing DuckDB-targeted
 implementation in TypeScript/Node. It uses a hand-written recursive-descent
 parser, one CTE per lowering unit, schema-aware validation, and golden plus
 DuckDB execution tests. Its current frozen specification is
-[PLQ grammar v1.2](plq/docs/grammar.md); CTEs, set operators, subquery sources,
+[UNSeQueL grammar v1.2](plq/docs/grammar.md); CTEs, set operators, subquery sources,
 and non-DuckDB targets remain outside its implemented subset.
 
-`.plq` files run like SQL — they declare their own sources, and a query can be
+`.unsequel` files run like SQL — they declare their own sources, and a query can be
 run whole, selected by line range, piped through stdin, or explored in an
 interactive `repl`:
 
 ```bash
 cd plq
-npm install -g .        # once; puts `plq` on PATH
-plq run examples/real/r01_top_products.plq
-plq run examples/real/r01_top_products.plq --lines 4:10
-plq repl
+  npm install -g .        # once; puts `unsequel` on PATH
+unsequel run examples/real/r01_top_products.unsequel
+unsequel run examples/real/r01_top_products.unsequel --lines 4:10
+unsequel repl
 ```
 
 A VS Code extension (syntax highlighting plus Run Selection/File/REPL) lives
@@ -319,12 +320,12 @@ untested. See [semantics and scope](docs/semantics.md) and the
 
 ## Boundaries and roadmap
 
-The Python core and PLQ compiler implement different read/query subsets; neither
+The Python core and the production compiler implement different read/query subsets; neither
 is a full SQL implementation. DDL/DML (`CREATE`, `INSERT`, `UPDATE`, `DELETE`),
 recursive queries, scalar subqueries inside expressions, user-defined
 functions, and a streaming/native query planner are not implemented. CTEs,
 set operators, subquery sources, and additional SQL targets are also not yet
-implemented by PLQ, even though the Python ordered prototype supports several
+implemented by the production compiler, even though the Python ordered prototype supports several
 of those features.
 
 The prioritised lists are [docs/backlog.md](docs/backlog.md) (Python

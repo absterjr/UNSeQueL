@@ -1,5 +1,5 @@
 /**
- * Leading file directives for self-contained `.plq` files:
+ * Leading file directives for self-contained `.unsequel` files:
  *
  *     # source orders: ../data/orders.csv
  *     # schema: ../data/schema.json

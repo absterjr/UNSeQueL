@@ -1,5 +1,5 @@
 /**
- * Shared error hierarchy for the PLQ compiler.
+ * Shared error hierarchy for the UNSeQueL compiler.
  *
  * Source-located errors carry a 1-based position; schema-file errors carry
  * none. `LexError` comes from `tokenize`, `ParseError` from the parser,

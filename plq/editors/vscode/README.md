@@ -1,13 +1,13 @@
-# UNSeQueL PLQ for VS Code
+# UNSeQueL for VS Code
 
-Syntax highlighting and run commands for `.plq` files — run queries like SQL
+Syntax highlighting and run commands for `.unsequel` files — run queries like SQL
 clients run `.sql` files.
 
 | Command (Ctrl+Shift+P) | What it does |
 | --- | --- |
-| `PLQ: Run Selection` | runs the selected lines with `plq run <file> --lines A:B` |
-| `PLQ: Run File` | runs the whole file with `plq run <file>` |
-| `PLQ: Open REPL` | opens an interactive `plq repl` terminal |
+| `UNSeQueL: Run Selection` | runs the selected lines with `unsequel run <file> --lines A:B` |
+| `UNSeQueL: Run File` | runs the whole file with `unsequel run <file>` |
+| `UNSeQueL: Open REPL` | opens an interactive `unsequel repl` terminal |
 
 The file's own `# source name: path` directives supply the connection, so no
 flags are needed. Both run commands are also in the editor context menu.
@@ -23,27 +23,27 @@ and press `F5` — a second VS Code window opens with the extension loaded.
 
 ```bash
 cd plq/editors/vscode
-npx @vscode/vsce package --allow-missing-repository
-code --install-extension plq-vscode-0.2.0.vsix
+npx @vscode/vsce package
+code --install-extension unsequel-vscode-0.3.0.vsix
 ```
 
 **Manual copy:** copy `editors/vscode/` into your extensions directory
-(`%USERPROFILE%\.vscode\extensions\plq-vscode-0.2.0` on Windows,
-`~/.vscode/extensions/plq-vscode-0.2.0` elsewhere) and restart VS Code.
+(`%USERPROFILE%\.vscode\extensions\unsequel-vscode-0.3.0` on Windows,
+`~/.vscode/extensions/unsequel-vscode-0.3.0` elsewhere) and restart VS Code.
 
 ## Without the extension
 
-`plq repl` plus **Terminal: Run Selected Text in Active Terminal** gives the
+`unsequel repl` plus **Terminal: Run Selected Text in Active Terminal** gives the
 same select-and-run flow: the selected stages paste into the REPL and execute
 on a blank line.
 
 ## Settings
 
-- `plq.executable` — the `plq` command to run; set an absolute path if `plq`
-  is not on `PATH`.
+- `unsequel.executable` — the `unsequel` command to run; set an absolute path
+  if it is not on `PATH`.
 
 ## Uninstall
 
 ```bash
-code --uninstall-extension unsequel.plq-vscode
+code --uninstall-extension unsequel.unsequel-vscode
 ```

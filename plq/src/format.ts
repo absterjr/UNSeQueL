@@ -1,5 +1,5 @@
 /**
- * Canonical, idempotent formatter for PLQ programs (plan step 8).
+ * Canonical, idempotent formatter for UNSeQueL programs (plan step 8).
  *
  * Rules (grammar §7, shared with the Python formatter): lowercase stage
  * keywords, uppercase expression keywords, one stage per line, single-quoted

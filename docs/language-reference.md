@@ -1,7 +1,7 @@
 # UNSeQueL Language Reference
 
 This reference documents the **Python ordered `.usql` prototype**. New users
-should start with the production `.plq` compiler and its
+should start with the production `.unsequel` compiler and its
 [grammar](../plq/docs/grammar.md); the `.pusql` prototype has a third, older
 pipeline dialect.
 
@@ -51,7 +51,7 @@ UNSeQueL evaluates a query in this order:
 This is the ordered prototype's supported relation sequence, not a complete
 description of SQL's evaluation phases. In ordinary SQL, window functions run
 after HAVING and before final projection; `.usql` has no native window stage.
-PLQ exposes windows as a separate stage.
+UNSeQueL exposes windows as a separate stage.
 
 That is why this is valid:
 
@@ -170,4 +170,4 @@ The Python prototype is a read/query subset, not a full SQL implementation. It
 does not include table-changing statements, recursive CTEs, scalar subqueries
 inside expressions, user-defined functions, or streaming/native query
 planning. The production compiler has a different, documented subset; see
-[PLQ's backlog](../plq/docs/backlog.md).
+[the compiler backlog](../plq/docs/backlog.md).

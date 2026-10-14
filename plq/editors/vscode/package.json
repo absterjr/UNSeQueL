@@ -1,8 +1,8 @@
 {
-  "name": "plq-vscode",
-  "displayName": "UNSeQueL PLQ",
-  "description": "UNSeQueL PLQ syntax highlighting and run commands for .plq pipeline query files, powered by DuckDB.",
-  "version": "0.2.0",
+  "name": "unsequel-vscode",
+  "displayName": "UNSeQueL",
+  "description": "UNSeQueL syntax highlighting and run commands for .unsequel query files, powered by DuckDB.",
+  "version": "0.3.0",
   "publisher": "unsequel",
   "license": "MIT",
   "repository": {
@@ -17,66 +17,66 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onLanguage:plq",
-    "onCommand:plq.runSelection",
-    "onCommand:plq.runFile",
-    "onCommand:plq.openRepl"
+    "onLanguage:unsequel",
+    "onCommand:unsequel.runSelection",
+    "onCommand:unsequel.runFile",
+    "onCommand:unsequel.openRepl"
   ],
   "main": "./extension.js",
   "contributes": {
     "languages": [
       {
-        "id": "plq",
-        "aliases": ["PLQ", "plq"],
-        "extensions": [".plq"],
+        "id": "unsequel",
+        "aliases": ["UNSeQueL", "unsequel"],
+        "extensions": [".unsequel"],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "plq",
-        "scopeName": "source.plq",
-        "path": "./syntaxes/plq.tmLanguage.json"
+        "language": "unsequel",
+        "scopeName": "source.unsequel",
+        "path": "./syntaxes/unsequel.tmLanguage.json"
       }
     ],
     "commands": [
       {
-        "command": "plq.runSelection",
-        "title": "PLQ: Run Selection",
-        "category": "PLQ"
+        "command": "unsequel.runSelection",
+        "title": "UNSeQueL: Run Selection",
+        "category": "UNSeQueL"
       },
       {
-        "command": "plq.runFile",
-        "title": "PLQ: Run File",
-        "category": "PLQ"
+        "command": "unsequel.runFile",
+        "title": "UNSeQueL: Run File",
+        "category": "UNSeQueL"
       },
       {
-        "command": "plq.openRepl",
-        "title": "PLQ: Open REPL",
-        "category": "PLQ"
+        "command": "unsequel.openRepl",
+        "title": "UNSeQueL: Open REPL",
+        "category": "UNSeQueL"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "command": "plq.runSelection",
-          "when": "editorLangId == plq",
+          "command": "unsequel.runSelection",
+          "when": "editorLangId == unsequel",
           "group": "navigation@1"
         },
         {
-          "command": "plq.runFile",
-          "when": "editorLangId == plq",
+          "command": "unsequel.runFile",
+          "when": "editorLangId == unsequel",
           "group": "navigation@2"
         }
       ]
     },
     "configuration": {
-      "title": "PLQ",
+      "title": "UNSeQueL",
       "properties": {
-        "plq.executable": {
+        "unsequel.executable": {
           "type": "string",
-          "default": "plq",
-          "description": "The plq executable to run. Use an absolute path if plq is not on PATH."
+          "default": "unsequel",
+          "description": "The UNSeQueL executable to run. Use an absolute path if it is not on PATH."
         }
       }
     }

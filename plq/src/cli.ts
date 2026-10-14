@@ -1,5 +1,5 @@
 /**
- * PLQ CLI: check, compile, preview, run, fmt, and the interactive repl.
+ * UNSeQueL CLI: check, compile, preview, run, fmt, and the interactive repl.
  *
  * SQL-like execution model: a query file may declare its own sources and
  * schema as leading directives, `-` reads the query from stdin, and
@@ -30,32 +30,32 @@ export interface CliResult {
   stderr: string;
 }
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
-const USAGE = `plq ${VERSION}
-pipeline query language compiler
+const USAGE = `unsequel ${VERSION}
+UNSeQueL query language compiler
 
-usage: plq <command> [options]
+usage: unsequel <command> [options]
 
 commands:
-  check    <query.plq> [--schema s.json] [--lines A:B]
+  check    <query.unsequel> [--schema s.json] [--lines A:B]
            parse a program; --schema (or a '# schema:' directive) validates it
-  compile  <query.plq> [--schema s.json] [--stage N] [--lines A:B]
+  compile  <query.unsequel> [--schema s.json] [--stage N] [--lines A:B]
            [--data name=path] [--delimiter C] [--column-type table.column=type]
            print the generated DuckDB SQL (optionally truncated at stage N)
-  preview  <query.plq> --stage N [--limit K] [--data name=path] [--lines A:B]
+  preview  <query.unsequel> --stage N [--limit K] [--data name=path] [--lines A:B]
            [--delimiter C] [--column-type table.column=type]
            run the program truncated at grammar stage N and show sample rows
-  run      <query.plq | -> [--data name=path] [--schema s.json]
+  run      <query.unsequel | -> [--data name=path] [--schema s.json]
            [--format table|json|csv] [--lines A:B] [--delimiter C]
            [--column-type table.column=type]
            execute the whole program ('-' reads the query from stdin)
-  fmt      <query.plq> [--write | --check]
+  fmt      <query.unsequel> [--write | --check]
            print the canonical form; --write rewrites the file, --check exits 1
   repl     [--data name=path] [--schema s.json] [--format table|json|csv]
            [--delimiter C] [--column-type table.column=type]
            interactive session; a query runs on a blank line or ';'
-           (bare 'plq' opens the repl on a terminal)
+  (bare 'unsequel' opens the repl on a terminal)
 
 query files can declare their own connection, so no flags are needed:
 
@@ -292,9 +292,9 @@ function cmdCheck(args: Args): string {
   const schema = declaredSchema(args, directives, path);
   if (schema !== null) {
     analyze(program, schema);
-    return "valid PLQ query (schema OK)\n";
+    return "valid UNSeQueL query (schema OK)\n";
   }
-  return "valid PLQ query\n";
+  return "valid UNSeQueL query\n";
 }
 
 async function cmdCompile(args: Args): Promise<string> {
@@ -441,7 +441,7 @@ function commandArgs(command: string, argv: readonly string[]): Args {
 
 export async function runCli(argv: readonly string[]): Promise<CliResult> {
   const wantsVersion = argv.includes("--version") || argv.includes("-V");
-  if (wantsVersion) return { code: 0, stdout: `plq ${VERSION}\n`, stderr: "" };
+  if (wantsVersion) return { code: 0, stdout: `unsequel ${VERSION}\n`, stderr: "" };
   if (argv.includes("--help") || argv.includes("-h")) {
     return { code: 0, stdout: USAGE, stderr: "" };
   }
@@ -467,7 +467,7 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
   }
 }
 
-/** Interactive terminal session (bare `plq` or `plq repl` on a TTY). */
+/** Interactive terminal session (bare `unsequel` or `unsequel repl` on a TTY). */
 export async function startInteractiveRepl(argv: readonly string[]): Promise<CliResult> {
   let session: ReplSession;
   try {
@@ -484,7 +484,7 @@ export async function startInteractiveRepl(argv: readonly string[]): Promise<Cli
   }
 
   process.stdout.write(
-    `plq ${VERSION} — one stage per line; run a query with a blank line, ';', or .run\n`);
+    `unsequel ${VERSION} — one stage per line; run a query with a blank line, ';', or .run\n`);
   const terminal = createInterface({ input: process.stdin, output: process.stdout });
   const showPrompt = () => {
     terminal.setPrompt(session.prompt());

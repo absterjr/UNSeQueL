@@ -8,7 +8,7 @@ body:
     attributes:
       label: Surface
       options:
-        - plq compiler (.plq)
+        - UNSeQueL compiler (.unsequel)
         - Python prototype (.usql / .pusql)
         - Tooling / editor
         - Documentation

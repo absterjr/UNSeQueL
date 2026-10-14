@@ -37,9 +37,9 @@ const HELP = `commands:
 
 write one stage per line; end a query with a blank line, a lone ';', or .run`;
 
-const PROMPT_PREFIXES = ["plq> ", "plq>", "...> ", "...>"];
+const PROMPT_PREFIXES = ["unsequel> ", "unsequel>", "...> ", "...>"];
 
-/** Accept pasted transcripts: strip leading `plq>` / `...>` prompt text. */
+/** Accept pasted transcripts: strip leading `unsequel>` / `...>` prompt text. */
 function stripPromptPrefixes(line: string): string {
   let input = line;
   for (let i = 0; i < 3; i += 1) {
@@ -78,7 +78,7 @@ export class ReplSession {
 
   /** Prompt shown before the next line: continuation while a query is open. */
   prompt(): string {
-    return this.buffer.length > 0 ? "...> " : "plq> ";
+    return this.buffer.length > 0 ? "...> " : "unsequel> ";
   }
 
   sourceNames(): string[] {

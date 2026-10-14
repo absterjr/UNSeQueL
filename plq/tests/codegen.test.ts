@@ -36,10 +36,10 @@ const EXTENDED: Schema = (() => {
   return parseSchema(raw);
 })();
 
-const files = readdirSync(REFERENCE).filter((f) => f.endsWith(".plq")).sort();
+const files = readdirSync(REFERENCE).filter((f) => f.endsWith(".unsequel")).sort();
 
 function programFor(name: string) {
-  return parseProgram(readFileSync(join(REFERENCE, `${name}.plq`), "utf8"));
+  return parseProgram(readFileSync(join(REFERENCE, `${name}.unsequel`), "utf8"));
 }
 
 function generate(name: string): string {
@@ -50,7 +50,7 @@ describe("codegen: golden files", () => {
   it("matches the golden SQL for every reference query", () => {
     expect(files).toHaveLength(21);
     for (const file of files) {
-      const name = file.replace(/\.plq$/, "");
+      const name = file.replace(/\.unsequel$/, "");
       const expected = readFileSync(join(GOLDEN, `${name}.sql`), "utf8")
         .replace(/\r\n/g, "\n")
         .trimEnd();
@@ -60,7 +60,7 @@ describe("codegen: golden files", () => {
 
   it("emits one CTE per lowering unit and selects the last", () => {
     for (const file of files) {
-      const name = file.replace(/\.plq$/, "");
+      const name = file.replace(/\.unsequel$/, "");
       const program = programFor(name);
       const sql = emitSql(program, SCHEMA);
       const units = loweringUnits(program);
@@ -143,9 +143,9 @@ describe("codegen: errors", () => {
 describe("codegen: corpus agreement", () => {
   it("lowers every fixture that parses and analyzes (check => compile)", () => {
     const fixtures: Array<{ file: string; schema: Schema }> = [
-      ...readdirSync(REFERENCE).filter((f) => f.endsWith(".plq"))
+      ...readdirSync(REFERENCE).filter((f) => f.endsWith(".unsequel"))
         .map((file) => ({ file: join(REFERENCE, file), schema: SCHEMA })),
-      ...readdirSync(COVERAGE).filter((f) => f.endsWith(".plq"))
+      ...readdirSync(COVERAGE).filter((f) => f.endsWith(".unsequel"))
         .map((file) => ({ file: join(COVERAGE, file), schema: EXTENDED })),
     ];
     expect(fixtures).toHaveLength(34);
@@ -194,7 +194,7 @@ describe("codegen: DuckDB execution parity", () => {
 
   it("generated SQL returns the same rows as the handwritten equivalents", async () => {
     for (const file of files) {
-      const name = file.replace(/\.plq$/, "");
+      const name = file.replace(/\.unsequel$/, "");
       const generated = await rows(connection, generate(name));
       const handwrittenSql = readFileSync(join(HANDWRITTEN, `${name}.sql`), "utf8");
       const handwritten = await rows(connection, handwrittenSql);

@@ -46,7 +46,7 @@ function expectPipelineError(source: string): PipelineError {
 }
 
 describe("parser: reference corpus", () => {
-  const files = readdirSync(REFERENCE).filter((f) => f.endsWith(".plq")).sort();
+  const files = readdirSync(REFERENCE).filter((f) => f.endsWith(".unsequel")).sort();
 
   it("parses all 21 reference queries into programs", () => {
     expect(files).toHaveLength(21);
@@ -59,7 +59,7 @@ describe("parser: reference corpus", () => {
   });
 
   it("q20 parses to the expected stage sequence with source lines", () => {
-    const program = parse(readFileSync(join(REFERENCE, "q20_full_pipeline.plq"), "utf8"));
+    const program = parse(readFileSync(join(REFERENCE, "q20_full_pipeline.unsequel"), "utf8"));
     expect(program.map((stage) => stage.kind)).toEqual([
       "from", "join", "derive", "group by", "aggregate", "having", "derive", "sort", "take",
     ]);
@@ -67,7 +67,7 @@ describe("parser: reference corpus", () => {
   });
 
   it("q09 builds group, aggregate, and descending sort nodes", () => {
-    const program = parse(readFileSync(join(REFERENCE, "q09_group_count.plq"), "utf8"));
+    const program = parse(readFileSync(join(REFERENCE, "q09_group_count.unsequel"), "utf8"));
     const group = program[1] as GroupByStage;
     expect(group.keys.map((key) => key.name)).toEqual(["country"]);
     const aggregate = program[2] as AggregateStage;
@@ -78,7 +78,7 @@ describe("parser: reference corpus", () => {
   });
 
   it("q21 carries the raw SQL text and a row-phase filter", () => {
-    const program = parse(readFileSync(join(REFERENCE, "q21_sql_hatch.plq"), "utf8"));
+    const program = parse(readFileSync(join(REFERENCE, "q21_sql_hatch.unsequel"), "utf8"));
     const sql = program[1];
     expect(sql?.kind).toBe("sql");
     expect((sql as { text: string }).text).toContain("ROW_NUMBER() OVER");
@@ -87,7 +87,7 @@ describe("parser: reference corpus", () => {
   });
 
   it("q02 selects the named columns", () => {
-    const program = parse(readFileSync(join(REFERENCE, "q02_project_columns.plq"), "utf8"));
+    const program = parse(readFileSync(join(REFERENCE, "q02_project_columns.unsequel"), "utf8"));
     const select = program[1] as SelectStage;
     expect(select.star).toBe(false);
     expect(select.items.map((item) => (item.expr as NameExpr).name))
@@ -96,7 +96,7 @@ describe("parser: reference corpus", () => {
 });
 
 describe("parser: coverage corpus", () => {
-  const files = readdirSync(COVERAGE).filter((f) => f.endsWith(".plq")).sort();
+  const files = readdirSync(COVERAGE).filter((f) => f.endsWith(".unsequel")).sort();
 
   it("parses all 13 coverage fixtures", () => {
     for (const file of files) {
@@ -106,7 +106,7 @@ describe("parser: coverage corpus", () => {
   });
 
   it("c01 keeps source aliases and qualified names", () => {
-    const program = parse(readFileSync(join(COVERAGE, "c01_aliases.plq"), "utf8"));
+    const program = parse(readFileSync(join(COVERAGE, "c01_aliases.unsequel"), "utf8"));
     const from = program[0] as FromStage;
     expect(from.source).toMatchObject({ name: "analytics.orders", alias: "o" });
     const joinStage = program[1] as JoinStage;
@@ -115,7 +115,7 @@ describe("parser: coverage corpus", () => {
   });
 
   it("c02 builds all aggregate forms", () => {
-    const program = parse(readFileSync(join(COVERAGE, "c02_group_expr.plq"), "utf8"));
+    const program = parse(readFileSync(join(COVERAGE, "c02_group_expr.unsequel"), "utf8"));
     const group = program[1] as GroupByStage;
     expect(group.keys.map((key) => key.name)).toEqual(["double_qty"]);
     const aggregate = program[2] as AggregateStage;
@@ -126,7 +126,7 @@ describe("parser: coverage corpus", () => {
   });
 
   it("c12 builds three window stages with partition and order clauses", () => {
-    const program = parse(readFileSync(join(COVERAGE, "c12_window.plq"), "utf8"));
+    const program = parse(readFileSync(join(COVERAGE, "c12_window.unsequel"), "utf8"));
     const windows = program.filter((stage) => stage.kind === "window") as WindowStage[];
     expect(windows.map((stage) => stage.name))
       .toEqual(["rn", "customer_total", "customer_count"]);
@@ -136,7 +136,7 @@ describe("parser: coverage corpus", () => {
   });
 
   it("c05 parses every derive item", () => {
-    const program = parse(readFileSync(join(COVERAGE, "c05_derive_multi.plq"), "utf8"));
+    const program = parse(readFileSync(join(COVERAGE, "c05_derive_multi.unsequel"), "utf8"));
     const derive = program[1] as DeriveStage;
     expect(derive.phase).toBe("row");
     expect(derive.items).toHaveLength(11);

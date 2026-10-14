@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 const dir = "examples/reference";
 let failed = 0;
-for (const file of readdirSync(dir).filter((name) => name.endsWith(".plq")).sort()) {
+  for (const file of readdirSync(dir).filter((name) => name.endsWith(".unsequel")).sort()) {
   try {
     execFileSync(process.execPath, ["dist/main.js", "fmt", join(dir, file), "--check"], {
       stdio: "inherit",

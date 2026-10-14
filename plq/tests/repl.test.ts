@@ -93,13 +93,13 @@ describe("repl session", () => {
     expect(session.prompt()).toBe("...> ");
     const out = await session.handleLine(".run");
     expect(out).toContain("1 row(s)");
-    expect(session.prompt()).toBe("plq> ");
+    expect(session.prompt()).toBe("unsequel> ");
   });
 
   it("accepts pasted transcripts with prompt prefixes", async () => {
     const session = new ReplSession({ sources: new Map([["orders", ORDERS]]) });
-    expect(await session.handleLine("plq> .sources")).toContain("orders");
-    await session.handleLine("plq> from orders");
+    expect(await session.handleLine("unsequel> .sources")).toContain("orders");
+    await session.handleLine("unsequel> from orders");
     await session.handleLine("...> take 1");
     const out = await session.handleLine("");
     expect(out).toContain("1 row(s)");
@@ -133,7 +133,7 @@ describe("repl session", () => {
 describe("cli: selection and schema-less execution", () => {
   it("runs only the selected line range", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-lines-"));
-    const path = join(directory, "two_queries.plq");
+    const path = join(directory, "two_queries.unsequel");
     try {
       writeFileSync(path, "from orders\ntake 1\n\nfrom orders\ntake 2\n");
       const first = await runCli([
@@ -158,7 +158,7 @@ describe("cli: selection and schema-less execution", () => {
 
   it("keeps file directives when --lines excludes them", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-lines2-"));
-    const path = join(directory, "two.plq");
+    const path = join(directory, "two.unsequel");
     try {
       writeFileSync(path,
         `# source orders: ${ORDERS}\n`
@@ -178,7 +178,7 @@ describe("cli: selection and schema-less execution", () => {
   });
 
   it("runs and compiles without --schema by introspecting sources", async () => {
-    const query = join(__dirname, "..", "examples", "reference", "q01_all_orders.plq");
+    const query = join(__dirname, "..", "examples", "reference", "q01_all_orders.unsequel");
     const result = await runCli(["run", query, "--format", "json", `--data=orders=${ORDERS}`]);
     expect(result.code).toBe(0);
     expect((JSON.parse(result.stdout) as unknown[]).length).toBe(15);
@@ -190,7 +190,7 @@ describe("cli: selection and schema-less execution", () => {
 
   it("honors '# source' directives so files are self-contained", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-self-"));
-    const path = join(directory, "self.plq");
+    const path = join(directory, "self.unsequel");
     try {
       writeFileSync(path, `# source orders: ${ORDERS}\nfrom orders\ntake 1\n`);
       const result = await runCli(["run", path, "--format", "json"]);
@@ -203,7 +203,7 @@ describe("cli: selection and schema-less execution", () => {
 
   it("honors a '# schema:' directive for check", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-schema-"));
-    const path = join(directory, "checked.plq");
+    const path = join(directory, "checked.unsequel");
     try {
       writeFileSync(path, `# schema: ${SCHEMA}\nfrom orders\ntake 1\n`);
       const result = await runCli(["check", path]);

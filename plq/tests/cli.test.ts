@@ -11,7 +11,7 @@ import { VERSION, runCli, type CliResult } from "../src/cli.js";
 const ROOT = join(__dirname, "..", "..");
 const REFERENCE = join(__dirname, "..", "examples", "reference");
 const SCHEMA = join(ROOT, "examples", "spec", "schema.json");
-const Q20 = join(REFERENCE, "q20_full_pipeline.plq");
+const Q20 = join(REFERENCE, "q20_full_pipeline.unsequel");
 const DATA = [
   `--data=orders=${join(ROOT, "examples", "spec", "orders.csv")}`,
   `--data=products=${join(ROOT, "examples", "spec", "products.csv")}`,
@@ -32,23 +32,23 @@ describe("cli: basics", () => {
   it("starts with no arguments and explains itself", async () => {
     const result = await runCli([]);
     expect(result.code).toBe(2);
-    expect(result.stderr).toContain("usage: plq");
+    expect(result.stderr).toContain("usage: unsequel");
   });
 
   it("reports its version", async () => {
     const result = await runCli(["--version"]);
     expect(result.code).toBe(0);
-    expect(result.stdout).toBe(`plq ${VERSION}\n`);
+    expect(result.stdout).toBe(`unsequel ${VERSION}\n`);
   });
 
   it("prints usage on --help", async () => {
     const result = await runCli(["--help"]);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain("usage: plq");
+    expect(result.stdout).toContain("usage: unsequel");
   });
 
   it("rejects unknown commands", async () => {
-    const result = await runCli(["frobnicate", "query.plq"]);
+    const result = await runCli(["frobnicate", "query.unsequel"]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain("unknown command");
   });
@@ -58,12 +58,12 @@ describe("cli: check", () => {
   it("parses and validates against a schema", async () => {
     const result = await runCli(["check", Q20, "--schema", SCHEMA]);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain("valid PLQ query (schema OK)");
+    expect(result.stdout).toContain("valid UNSeQueL query (schema OK)");
   });
 
   it("surfaces stage-located errors", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-"));
-    const path = join(directory, "bad.plq");
+    const path = join(directory, "bad.unsequel");
     writeFileSync(path, "from orders\nfilter missing_column > 1\n");
     try {
       const result = await runCli(["check", path, "--schema", SCHEMA]);
@@ -158,13 +158,13 @@ describe("cli: options and data validation", () => {
   it("strips a UTF-8 BOM from query and schema files", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-bom-"));
     try {
-      const queryPath = join(directory, "query.plq");
+      const queryPath = join(directory, "query.unsequel");
       writeFileSync(queryPath, "\uFEFFfrom orders\n");
       const schemaPath = join(directory, "schema.json");
       writeFileSync(schemaPath, `\uFEFF${readFileSync(SCHEMA, "utf8")}`);
       const result = await runCli(["check", queryPath, "--schema", schemaPath]);
       expect(result.code).toBe(0);
-      expect(result.stdout).toContain("valid PLQ query (schema OK)");
+      expect(result.stdout).toContain("valid UNSeQueL query (schema OK)");
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -173,7 +173,7 @@ describe("cli: options and data validation", () => {
   it("reports DuckDB errors as clean error lines", async () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-dberr-"));
     try {
-      const queryPath = join(directory, "query.plq");
+      const queryPath = join(directory, "query.unsequel");
       writeFileSync(queryPath,
         'from orders\nsql "SELECT bogus_col FROM __input__"\nselect bogus_col\n');
       const result = await runCli([
@@ -204,7 +204,7 @@ describe("cli: run", () => {
     const directory = mkdtempSync(join(tmpdir(), "plq-csv-types-"));
     try {
       const data = join(directory, "codes.csv");
-      const query = join(directory, "query.plq");
+      const query = join(directory, "query.unsequel");
       writeFileSync(data, "postal;label\n02134;None\n00501;Nan\n");
       writeFileSync(query, "from codes\nselect postal, label\n");
       const inferred = await runCli([

@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "PLQ",
-  "scopeName": "source.plq",
+  "name": "UNSeQueL",
+  "scopeName": "source.unsequel",
   "patterns": [
     { "include": "#directives" },
     { "include": "#comments" },
@@ -18,8 +18,8 @@
         {
           "match": "^\\s*#\\s*(source\\s+[A-Za-z_][A-Za-z0-9_]*|schema)\\s*:(.*)$",
           "captures": {
-            "1": { "name": "keyword.control.directive.plq" },
-            "2": { "name": "string.unquoted.path.plq" }
+            "1": { "name": "keyword.control.directive.unsequel" },
+            "2": { "name": "string.unquoted.path.unsequel" }
           }
         }
       ]
@@ -28,11 +28,11 @@
       "patterns": [
         {
           "match": "#.*$",
-          "name": "comment.line.number-sign.plq"
+          "name": "comment.line.number-sign.unsequel"
         },
         {
           "match": "--.*$",
-          "name": "comment.line.double-dash.plq"
+          "name": "comment.line.double-dash.unsequel"
         }
       ]
     },
@@ -40,7 +40,7 @@
       "patterns": [
         {
           "match": "`(?:``|[^`])+`",
-          "name": "variable.other.quoted.plq"
+          "name": "variable.other.quoted.unsequel"
         }
       ]
     },
@@ -49,9 +49,9 @@
         {
           "begin": "\"",
           "end": "\"",
-          "name": "string.quoted.double.plq",
+          "name": "string.quoted.double.unsequel",
           "patterns": [
-            { "match": "\\\\.", "name": "constant.character.escape.plq" }
+            { "match": "\\\\.", "name": "constant.character.escape.unsequel" }
           ]
         }
       ]
@@ -60,11 +60,11 @@
       "patterns": [
         {
           "match": "\\b(?:from|join|left|right|full|cross|filter|derive|group|by|aggregate|having|window|select|sort|skip|take|distinct|sql|union|except|intersect|each)\\b",
-          "name": "keyword.control.stage.plq"
+          "name": "keyword.control.stage.unsequel"
         },
         {
           "match": "\\b(?:on|as|over|partition|order|asc|desc|and|or|not|in|like|between|is|null|case|when|then|else|end|cast|true|false)\\b",
-          "name": "keyword.operator.word.plq"
+          "name": "keyword.operator.word.unsequel"
         }
       ]
     },
@@ -72,7 +72,7 @@
       "patterns": [
         {
           "match": "(?i)\\b(?:count|sum|avg|min|max|coalesce|nullif|lower|upper|abs|round|length|trim|concat|strftime|date_trunc|row_number|rank|dense_rank|lag|lead)\\b(?=\\s*\\()",
-          "name": "support.function.plq"
+          "name": "support.function.unsequel"
         }
       ]
     },
@@ -80,11 +80,11 @@
       "patterns": [
         {
           "match": "(?:<>|!=|<=|>=|=|<|>|\\|)",
-          "name": "keyword.operator.comparison.plq"
+          "name": "keyword.operator.comparison.unsequel"
         },
         {
           "match": "(?:\\*|/|%|\\+|-)",
-          "name": "keyword.operator.arithmetic.plq"
+          "name": "keyword.operator.arithmetic.unsequel"
         }
       ]
     },
@@ -92,7 +92,7 @@
       "patterns": [
         {
           "match": "\\b\\d+(?:\\.\\d+)?\\b",
-          "name": "constant.numeric.plq"
+          "name": "constant.numeric.unsequel"
         }
       ]
     }

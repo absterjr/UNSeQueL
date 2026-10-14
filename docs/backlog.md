@@ -28,7 +28,7 @@ overrides, and non-blocking stdin tests.
 ## P1 — language completeness
 
 4. `right join` / `full join` / `cross join` in the Python `.pusql` grammar
-   (the production `.plq` grammar now supports all five join kinds).
+   (the production `.unsequel` grammar now supports all five join kinds).
 5. Subquery / nested-pipeline sources in `.pusql` (`from (from orders ...) as x`).
 6. Set operations as `.pusql` stages (`union`, `intersect`, `except`); the
    ordered `.usql` core already supports them.

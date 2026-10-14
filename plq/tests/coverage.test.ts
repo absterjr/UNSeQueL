@@ -14,14 +14,14 @@ import { parseProgram } from "../src/parser.js";
 const COVERAGE = join(__dirname, "..", "examples", "coverage");
 
 const files = readdirSync(COVERAGE)
-  .filter((name) => name.endsWith(".plq"))
+  .filter((name) => name.endsWith(".unsequel"))
   .sort();
 
 describe("coverage corpus (B4)", () => {
   it("ships fixtures for every uncovered grammar feature", () => {
     expect(files).toHaveLength(13);
-    expect(files[0]).toBe("c01_aliases.plq");
-    expect(files[12]).toBe("c13_unary.plq");
+    expect(files[0]).toBe("c01_aliases.unsequel");
+    expect(files[12]).toBe("c13_unary.unsequel");
   });
 
   it("every fixture lexes without errors", () => {

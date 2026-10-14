@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Naming migration: the production TypeScript package, executable, and VS Code
+  extension all use the full `unsequel` / `UNSeQueL` name; the canonical query
+  suffix is `.unsequel` (converted from `.plq` throughout the corpus, examples,
+  tests, and docs). The Python package remains `unsequel`, with
+  `unsequel-python` as its console script and `python -m unsequel` unchanged.
+  The v0.6.0 release assets keep their original names; the follow-up release
+  uses the full brand.
+
 ## 0.6.0 (Python) / plq 0.2.0 — 2026-10-14
 
 - External-audit hardening: the Python engine now rejects non-grouped columns,

@@ -14,7 +14,7 @@ import { KEYWORDS, LexError, tokenize, type Token } from "../src/lexer.js";
 const REFERENCE = join(__dirname, "..", "examples", "reference");
 
 const referenceFiles = readdirSync(REFERENCE)
-  .filter((name) => name.endsWith(".plq"))
+  .filter((name) => name.endsWith(".unsequel"))
   .sort();
 
 function reference(name: string): string {
@@ -52,7 +52,7 @@ describe("lexer: reference corpus", () => {
   });
 
   it("q20 tokenizes into the expected stage vocabulary", () => {
-    const tokens = tokenize(reference("q20_full_pipeline.plq"));
+    const tokens = tokenize(reference("q20_full_pipeline.unsequel"));
     const keywords = tokens.filter((token) => token.type === "keyword").map((t) => t.value);
     expect(keywords).toContain("from");
     expect(keywords).toContain("join");
@@ -65,7 +65,7 @@ describe("lexer: reference corpus", () => {
   });
 
   it("q21 keeps the raw SQL as one string token", () => {
-    const tokens = tokenize(reference("q21_sql_hatch.plq"));
+    const tokens = tokenize(reference("q21_sql_hatch.unsequel"));
     const strings = tokens.filter((token) => token.type === "string");
     expect(strings).toHaveLength(1);
     expect(strings[0]?.value).toContain("ROW_NUMBER() OVER");

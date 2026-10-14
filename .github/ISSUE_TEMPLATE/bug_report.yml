@@ -8,7 +8,7 @@ body:
     attributes:
       label: Component
       options:
-        - plq compiler (TypeScript)
+        - UNSeQueL compiler (.unsequel)
         - Python prototype (unsequel)
         - VS Code extension
         - Documentation
@@ -20,7 +20,7 @@ body:
       label: What happened?
       description: Include the exact query and the full error or output.
       placeholder: |
-        $ plq run my_query.plq
+        $ unsequel run my_query.unsequel
         error: ...
     validations:
       required: true
@@ -45,6 +45,6 @@ body:
     id: version
     attributes:
       label: Version and OS
-      description: "`plq --version` or `python -m unsequel --version`, plus your operating system."
+      description: "`unsequel --version` or `python -m unsequel --version`, plus your operating system."
     validations:
       required: true

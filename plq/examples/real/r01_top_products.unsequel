@@ -1,6 +1,6 @@
 # source orders: ../spec/orders.csv
 # source products: ../spec/products.csv
-# Real query: top products by revenue (join + group + top-N)
+# Real UNSeQueL query: top products by revenue (join + group + top-N)
 from orders
 join products on orders.product_id = products.product_id
 derive line_total = quantity * unit_price

@@ -37,14 +37,14 @@ function stageKeyword(line: string): string {
 }
 
 const files = readdirSync(REFERENCE)
-  .filter((name) => name.endsWith(".plq"))
+  .filter((name) => name.endsWith(".unsequel"))
   .sort();
 
 describe("reference corpus (step 2)", () => {
   it("contains exactly the 21 validated queries", () => {
     expect(files).toHaveLength(21);
-    expect(files[0]).toBe("q01_all_orders.plq");
-    expect(files[20]).toBe("q21_sql_hatch.plq");
+    expect(files[0]).toBe("q01_all_orders.unsequel");
+    expect(files[20]).toBe("q21_sql_hatch.unsequel");
   });
 
   it("every query starts with a from stage", () => {
@@ -69,7 +69,7 @@ describe("reference corpus (step 2)", () => {
     const withSql = files.filter((file) =>
       /\bsql\s+"/i.test(readFileSync(join(REFERENCE, file), "utf8")),
     );
-    expect(withSql).toEqual(["q21_sql_hatch.plq"]);
+    expect(withSql).toEqual(["q21_sql_hatch.unsequel"]);
   });
 
   it("every reference query parses into a full program (step 4)", () => {

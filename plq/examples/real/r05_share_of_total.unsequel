@@ -1,5 +1,5 @@
 # source orders: ../spec/orders.csv
-# Real query: share of total revenue per order.
+# Real UNSeQueL query: share of total revenue per order.
 from orders
 derive line_total = quantity * unit_price
 window total_revenue = SUM(line_total) over ()

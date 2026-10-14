@@ -1,6 +1,6 @@
 # source orders: ../spec/orders.csv
 # source customers: ../spec/customers.csv
-# Real query: revenue by customer segment with average order value
+# Real UNSeQueL query: revenue by customer segment with average order value
 from orders
 join customers on orders.customer = customers.customer
 group by segment

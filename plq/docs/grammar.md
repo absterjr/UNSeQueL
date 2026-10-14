@@ -1,4 +1,4 @@
-# PLQ Language Specification v1.2
+# UNSeQueL Pipeline Language Specification v1.2
 
 Status: **frozen for v1.2**. Changes require a version bump and re-validation of the
 reference queries in [`examples/reference/`](../examples/reference/).
@@ -22,7 +22,7 @@ hand-written recursive descent parser, one CTE per pipeline stage.
 
 ## 1. Program model
 
-A PLQ program is an ordered list of **stages**. Each stage transforms the
+A UNSeQueL program is an ordered list of **stages**. Each stage transforms the
 relation produced by the previous stage. The first stage is always `from`.
 
 ```text
@@ -110,7 +110,7 @@ Deliberate v1.2 lexical consequences:
 Deliberate dialect changes from the Python prototype (recorded for
 cross-implementation awareness):
 
-| Prototype | PLQ v1.x | Why |
+| Prototype | UNSeQueL v1.x | Why |
 | --- | --- | --- |
 | `where` position-sensitive | `filter` (current relation) + `having` (group-oriented spelling) | explicit stage names clarify the pipeline position |
 | `group keys (aggs)` combined | `group by` + `aggregate` stages (one lowering unit) | one concept per stage; maps 1:1 to SQL while keeping one CTE per unit |
@@ -118,7 +118,7 @@ cross-implementation awareness):
 | `window` reserved | `window` implemented | ranking queries work natively; the prototype uses the `sql` hatch |
 | identifiers may contain `$` | `[A-Za-z_][A-Za-z0-9_]*` only | stricter lexical rule |
 | strings may contain raw newlines | strings are single-line (`\n` escape) | keeps one stage per line |
-| an ordered `.usql` surface also exists | `.plq` is pipeline-only | the prototype hosts two surfaces; the compiler one |
+| an ordered `.usql` surface also exists | `.unsequel` is pipeline-only | the prototype hosts two surfaces; the compiler one |
 
 ## 3. Stages
 

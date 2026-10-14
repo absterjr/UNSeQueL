@@ -42,7 +42,7 @@ function semanticError(text: string, schema: Schema = SCHEMA): SemanticError {
 }
 
 describe("semantics: reference corpus", () => {
-  const files = readdirSync(REFERENCE).filter((f) => f.endsWith(".plq")).sort();
+  const files = readdirSync(REFERENCE).filter((f) => f.endsWith(".unsequel")).sort();
 
   it("analyzes all 21 reference queries", () => {
     expect(files).toHaveLength(21);
@@ -56,11 +56,11 @@ describe("semantics: reference corpus", () => {
 
   it("tracks lineage for q01 and the q07 join collision rename", () => {
     const q01 = analyze(
-      parseProgram(readFileSync(join(REFERENCE, "q01_all_orders.plq"), "utf8")), SCHEMA);
+      parseProgram(readFileSync(join(REFERENCE, "q01_all_orders.unsequel"), "utf8")), SCHEMA);
     expect(q01[0]?.columns).toHaveLength(7);
 
     const q07 = analyze(
-      parseProgram(readFileSync(join(REFERENCE, "q07_inner_join.plq"), "utf8")), SCHEMA);
+      parseProgram(readFileSync(join(REFERENCE, "q07_inner_join.unsequel"), "utf8")), SCHEMA);
     const joined = q07[1]?.columns ?? [];
     expect(joined).toContain("products_product_id");
     expect(joined).toContain("product_name");
@@ -69,18 +69,18 @@ describe("semantics: reference corpus", () => {
 
   it("tracks the group boundary for q09 and q12", () => {
     const q09 = analyze(
-      parseProgram(readFileSync(join(REFERENCE, "q09_group_count.plq"), "utf8")), SCHEMA);
+      parseProgram(readFileSync(join(REFERENCE, "q09_group_count.unsequel"), "utf8")), SCHEMA);
     expect(q09[1]?.columns).toEqual(["country"]);
     expect(q09[2]?.columns).toEqual(["country", "orders"]);
 
     const q12 = analyze(
-      parseProgram(readFileSync(join(REFERENCE, "q12_post_group_metric.plq"), "utf8")), SCHEMA);
+      parseProgram(readFileSync(join(REFERENCE, "q12_post_group_metric.unsequel"), "utf8")), SCHEMA);
     expect(q12[q12.length - 1]?.columns).toContain("avg_order");
   });
 
   it("marks everything after the hatch opaque (q21)", () => {
     const q21 = analyze(
-      parseProgram(readFileSync(join(REFERENCE, "q21_sql_hatch.plq"), "utf8")), SCHEMA);
+      parseProgram(readFileSync(join(REFERENCE, "q21_sql_hatch.unsequel"), "utf8")), SCHEMA);
     expect(q21[1]?.columns).toEqual(["<raw sql>"]);
     expect(q21[2]?.columns).toEqual(["<opaque>"]);
   });
@@ -88,7 +88,7 @@ describe("semantics: reference corpus", () => {
 
 describe("semantics: coverage corpus", () => {
   it("analyzes all 13 fixtures against an extended schema", () => {
-    const files = readdirSync(COVERAGE).filter((f) => f.endsWith(".plq")).sort();
+    const files = readdirSync(COVERAGE).filter((f) => f.endsWith(".unsequel")).sort();
     expect(files).toHaveLength(13);
     for (const file of files) {
       const lineage = analyze(

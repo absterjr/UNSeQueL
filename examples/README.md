@@ -9,5 +9,5 @@ Sample data and queries for the **Python prototype**.
 | `pipeline/*.pusql` | pipeline `.pusql` | the prototype's pipeline surface (`where`, combined `group`) |
 
 The production compiler's examples live in [`../plq/examples/`](../plq/examples/)
-and use the evolved `.plq` dialect (`filter`/`having`, split `group by` +
+and use the evolved `.unsequel` dialect (`filter`/`having`, split `group by` +
 `aggregate`) — see the repository map in the top-level README.

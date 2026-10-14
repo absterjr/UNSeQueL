@@ -75,9 +75,9 @@
   <section class="hero" style="border:0">
     <div class="eyebrow">FROM-first · stage-by-stage · DuckDB</div>
     <h1>Write queries in the order they run.</h1>
-    <p>UNSeQueL is a small query language for reading transformations top to bottom: start with data, filter, group, project, then sort and take. Run `.plq` files directly against local CSV, JSON, or Parquet data.</p>
+    <p>UNSeQueL is a small query language for reading transformations top to bottom: start with data, filter, group, project, then sort and take. Run `.unsequel` files directly against local CSV, JSON, or Parquet data.</p>
     <div class="actions">
-      <a class="button" href="https://github.com/absterjr/UNSeQueL/tree/main/plq">Try PLQ</a>
+      <a class="button" href="https://github.com/absterjr/UNSeQueL/tree/main/plq">Try UNSeQueL</a>
       <a class="button secondary" href="https://github.com/absterjr/UNSeQueL/discussions">Ask or discuss</a>
     </div>
   </section>
@@ -107,16 +107,16 @@ LIMIT 10</pre></div>
   <section>
     <h2>Run it like a query, not a program</h2>
     <div class="steps">
-      <div class="card"><b>1 · Declare sources</b><p>Put `# source orders: path/to/orders.csv` at the top of a `.plq` file. Paths are relative to the file.</p></div>
-      <div class="card"><b>2 · Run a query or selection</b><p>Use `plq run query.plq` or run selected lines with `--lines A:B`. File sources remain available to the selection.</p></div>
-      <div class="card"><b>3 · Use your editor</b><p>The VS Code extension highlights `.plq` and adds Run Selection, Run File, and Open REPL commands.</p></div>
+      <div class="card"><b>1 · Declare sources</b><p>Put `# source orders: path/to/orders.csv` at the top of a `.unsequel` file. Paths are relative to the file.</p></div>
+      <div class="card"><b>2 · Run a query or selection</b><p>Use `unsequel run query.unsequel` or run selected lines with `--lines A:B`. File sources remain available to the selection.</p></div>
+      <div class="card"><b>3 · Use your editor</b><p>The VS Code extension highlights `.unsequel` and adds Run Selection, Run File, and Open REPL commands.</p></div>
     </div>
   </section>
 
   <section>
     <h2>Honest about the alternatives</h2>
     <p>UNSeQueL is not the first ordered query language. <a href="https://duckdb.org/docs/current/sql/query_syntax/from">DuckDB</a> already has FROM-first SQL; <a href="https://prql-lang.org/">PRQL</a> compiles pipelines to multiple SQL dialects; <a href="https://docs.malloydata.dev/documentation/language/query.html">Malloy</a> adds semantic modeling; <a href="https://learn.microsoft.com/en-us/kusto/query/queries?view=microsoft-fabric">Kusto</a> is built for analytics/log queries; and <a href="https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/pipe-syntax">BigQuery GoogleSQL</a>, <a href="https://spark.apache.org/docs/latest/sql-pipe-syntax.html">Spark SQL</a>, and <a href="https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-qry-pipeline">Databricks SQL</a> now have composable pipe syntax.</p>
-    <p>The current UNSeQueL distinction is a compact stage model, local-file execution, stage preview, selection runs, and an editor workflow. PLQ currently targets DuckDB and still lacks CTE syntax, set operators, and subquery sources. See the <a href="https://github.com/absterjr/UNSeQueL/blob/main/README.md#how-unsequel-fits-among-query-languages">comparison and scope</a>.</p>
+    <p>The current UNSeQueL distinction is a compact stage model, local-file execution, stage preview, selection runs, and an editor workflow. UNSeQueL currently targets DuckDB and still lacks CTE syntax, set operators, and subquery sources. See the <a href="https://github.com/absterjr/UNSeQueL/blob/main/README.md#how-unsequel-fits-among-query-languages">comparison and scope</a>.</p>
   </section>
 
   <section>
@@ -124,8 +124,8 @@ LIMIT 10</pre></div>
     <div class="card"><pre>git clone https://github.com/absterjr/UNSeQueL.git
 cd UNSeQueL/plq
 npm install -g .
-plq run examples/real/r01_top_products.plq</pre></div>
-    <p style="margin-top:16px">The npm package will be published as <code>unsequel-plq</code>; until then, the source install above works. For the Python prototypes, source semantics, grammar, issues, and the 20-minute first task, visit the <a href="https://github.com/absterjr/UNSeQueL">repository README</a> and <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>.</p>
+unsequel run examples/real/r01_top_products.unsequel</pre></div>
+    <p style="margin-top:16px">The npm package will be published as <code>unsequel</code>; until then, the source install above works. For the Python prototypes, source semantics, grammar, issues, and the 20-minute first task, visit the <a href="https://github.com/absterjr/UNSeQueL">repository README</a> and <a href="https://github.com/absterjr/UNSeQueL/discussions">Discussions</a>.</p>
   </section>
 
   <footer>UNSeQueL is open source under MIT. Syntax and behavior are evolving; feedback and counterexamples are welcome.</footer>

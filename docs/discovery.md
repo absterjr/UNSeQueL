@@ -65,14 +65,18 @@ contain placeholder tokens.
 
 ## Releases and packages
 
-- GitHub release `v0.6.0` is live with a Python wheel, `unsequel-plq 0.2.0`
-  npm tarball, and PLQ VS Code `0.2.0` VSIX attached.
-- PyPI `unsequel` had no published release when checked. npm's short name
-  `plq` is occupied by an unrelated `0.0.1` package; the planned compiler
-  package name is `unsequel-plq` (the binary remains `plq`).
-- Before tagging, finish the release notes, full CI, clean-install smoke tests,
-  and `npm pack --dry-run` / Python wheel checks.
-- PyPI and npm publication need owner-controlled accounts/tokens; see
-  [CONTRIBUTING.md](../CONTRIBUTING.md) and the package metadata.
-- The VS Code extension can be published separately after choosing its
-  Marketplace publisher account.
+- GitHub release `v0.6.0` is the initial package release with a Python wheel and
+  `unsequel-plq 0.2.0` tarball (the short-lived npm name).
+- The naming follow-up release is being prepared as `v0.7.0`: Python package
+  `unsequel 0.7.0`, npm package/CLI `unsequel 0.3.0`, and the VS Code extension
+  branded `UNSeQueL` (`0.3.0`). The Python prototype console script is
+  `unsequel-python` so it does not collide with the production Node command.
+- npm `usql`, `unsql`, and `plq` belong to other publishers. npm `unsequel` has
+  an unpublished 2015 registry record; the owner must confirm the full name can
+  be reclaimed when publishing.
+  PyPI `unsequel` had no published release when checked.
+- Attach the updated Python wheel, npm tarball, and VS Code VSIX to the
+  follow-up GitHub release after final CI.
+- PyPI/npm and VS Code Marketplace publication need owner-controlled
+  accounts/tokens; see [CONTRIBUTING.md](../CONTRIBUTING.md) and the package
+  metadata.

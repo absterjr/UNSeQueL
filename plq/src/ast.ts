@@ -1,5 +1,5 @@
 /**
- * PLQ AST contract (plan step 4, audit batch B3).
+ * UNSeQueL AST contract (plan step 4, audit batch B3).
  *
  * One typed node per grammar stage (docs/grammar.md §3) plus the expression
  * nodes from §5. Every node carries its source span; stage nodes also carry

@@ -1,4 +1,4 @@
-# UNSeQueL PLQ — pipeline query language compiler
+# UNSeQueL — pipeline query language compiler
 
 Write a query in the order it executes — one composable transform per line —
 and run it against CSV/Parquet/JSON files with one command:
@@ -12,7 +12,7 @@ sort -revenue
 ```
 
 ```bash
-plq run my_query.plq
+unsequel run my_query.unsequel
 ```
 
 Plans are compiled to DuckDB SQL with one CTE per pipeline unit.
@@ -22,28 +22,30 @@ Plans are compiled to DuckDB SQL with one CTE per pipeline unit.
 From this directory (the compiler is not published to npm yet):
 
 ```bash
-npm install -g .        # puts `plq` on PATH
-plq --version
+npm install -g .        # puts `unsequel` on PATH
+unsequel --version
 ```
 
 `npm link` works the same way for development.
 
-The short npm name `plq` is already registered by an unrelated package. The
-registry package will be `unsequel-plq`; the installed executable remains
-`plq` (`npm install -g unsequel-plq` after publication).
+The Python package and npm package use the full name `unsequel`. The production
+compiler installs the `unsequel` executable; the Python prototype remains
+available as `python -m unsequel` or `unsequel-python` in a virtual environment.
+The npm registry has an old unpublished `unsequel` record; confirm that name
+can be reclaimed when publishing from your account.
 
 ## Run queries like SQL
 
-`.plq` files declare their own connection with `# source name: path`
+`.unsequel` files declare their own connection with `# source name: path`
 directives (relative to the file), so no flags are needed:
 
 ```bash
-plq run examples/real/r01_top_products.plq              # join + group + top-N
-plq run examples/real/r03_repeat_customers.plq --format json
-plq run examples/real/r01_top_products.plq --lines 4:10 # run just that range
-echo "from orders | take 1" | plq run - \
+unsequel run examples/real/r01_top_products.unsequel              # join + group + top-N
+unsequel run examples/real/r03_repeat_customers.unsequel --format json
+unsequel run examples/real/r01_top_products.unsequel --lines 4:10 # run just that range
+echo "from orders | take 1" | unsequel run - \
   --data orders=examples/spec/orders.csv                 # query from stdin
-plq repl                                                # interactive session
+unsequel repl                                           # interactive session
 ```
 
 Without a schema file, loaded tables are introspected, so `run`, `compile`,
@@ -56,24 +58,26 @@ one dirty value makes the column text instead of producing mixed Python-like
 types. Set a delimiter or override a column type when needed:
 
 ```bash
-plq run query.plq --delimiter ';' --column-type orders.postal_code=text
+unsequel run query.unsequel --delimiter ';' --column-type orders.postal_code=text
 ```
 
-Inside `plq repl`: one stage per line; a query runs on a blank line, a lone
+Inside `unsequel repl`: one stage per line; a query runs on a blank line, a lone
 `;`, or `.run`. Dot commands:
 `.load name=path`, `.sources`, `.schema [path]`, `.format table|json|csv`,
-`.clear`, `.quit`. Pasted `plq>`/`...>` prompt prefixes are stripped, so
+`.clear`, `.quit`. Pasted `unsequel>`/`...>` prompt prefixes are stripped, so
 example transcripts can be copied wholesale.
 
 ## Use it from your editor
 
-`plq/editors/vscode/` ships a VS Code extension (syntax highlighting plus
-`PLQ: Run Selection`, `PLQ: Run File`, `PLQ: Open REPL`). Install it with F5
+`plq/editors/vscode/` ships the UNSeQueL VS Code extension (syntax highlighting
+for `.unsequel` files, plus `UNSeQueL: Run Selection`,
+`UNSeQueL: Run File`, `UNSeQueL: Open REPL`).
+Install it with F5
 in that folder or from a VSIX — see
 [editors/vscode/README.md](editors/vscode/README.md). Run Selection executes
-`plq run <file> --lines A:B`, so select a query, run it, done.
+`unsequel run <file> --lines A:B`, so select a query, run it, done.
 
-In any editor that can send text to a terminal: open `plq repl` and use
+In any editor that can send text to a terminal: open `unsequel repl` and use
 "Run Selected Text in Active Terminal"; the selected stages execute on a
 blank line.
 
@@ -87,11 +91,12 @@ blank line.
 | Codegen | one CTE per pipeline stage |
 
 The executable prototype lives in the Python package at the repository root;
-this package is the current production implementation of the `.plq` subset.
+this package is the current production implementation of the `.unsequel` subset.
 It implements an **evolved dialect** of the prototype pipeline — `filter` and
 `having`, split `group by` + `aggregate`, composable stages, and native windows.
 The exact deltas are in [docs/grammar.md](docs/grammar.md) §2; do not copy
-`.pusql` examples into `.plq` files or vice versa. PLQ currently targets
+`.pusql` examples into `.unsequel` files or vice versa. The `.unsequel` dialect
+currently targets
 DuckDB only and does not yet include CTEs, set operators, or subquery sources.
 
 ## Plan status
@@ -118,7 +123,7 @@ notes and [docs/backlog.md](docs/backlog.md) for what comes next.
 - [`docs/semantics.md`](docs/semantics.md) — composition, identifier
   resolution, ordering, windows, and CSV loading behavior
 - [`examples/reference/`](examples/reference/) — the 21 reference programs in
-  `.plq` syntax, the behavioral baseline for the lexer and parser
+  `.unsequel` syntax, the behavioral baseline for the lexer and parser
 - [`examples/coverage/`](examples/coverage/README.md) — parser fixtures for
   grammar features the reference set does not exercise (window, aliases,
   DISTINCT aggregates, NOT variants, CAST, …)
@@ -140,5 +145,5 @@ npm test              # vitest
 npm run build         # dist/main.js
 npm run fmt:check     # formatter fixtures stay canonical
 npm run editors:check # VS Code extension JSON + regexes
-npm run smoke         # node dist/main.js run examples/real/r01_top_products.plq
+npm run smoke         # node dist/main.js run examples/real/r01_top_products.unsequel
 ```
