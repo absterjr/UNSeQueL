@@ -1,0 +1,5 @@
+with recent = (from orders | filter quantity > 1 | select customer, quantity)
+from recent as r
+join customers as c on r.customer = c.customer
+select r.customer, c.segment, r.quantity
+sort customer

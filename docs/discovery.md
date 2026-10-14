@@ -78,3 +78,13 @@ contain placeholder tokens.
 - PyPI/npm and VS Code Marketplace publication need owner-controlled
   accounts/tokens; see [CONTRIBUTING.md](../CONTRIBUTING.md) and the package
   metadata.
+- Publishing prep verified from this machine: `npm publish --dry-run` packs
+  `unsequel@0.4.0` cleanly (auth still required for the real upload), the
+  Python wheel builds as `unsequel-0.7.0-py3-none-any.whl`, and the VSIX builds
+  as `unsequel-vscode-0.3.0.vsix`. Owner commands after login:
+  `npm login` then `npm publish` in `compiler/`; `python -m pip install build
+  twine` then `python -m twine upload dist/*` for PyPI; `npx @vscode/vsce
+  publish` for the Marketplace (choose the editor after feedback).
+- Second SQL target decision (October 2026): deferred until external feedback
+  confirms warehouse portability matters; DuckDB stays the locked first
+  target (see `compiler/docs/backlog.md` P1).

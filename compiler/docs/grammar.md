@@ -1,6 +1,6 @@
-# UNSeQueL Pipeline Language Specification v1.2
+# UNSeQueL Pipeline Language Specification v1.3
 
-Status: **frozen for v1.2**. Changes require a version bump and re-validation of the
+Status: **frozen for v1.3**. Changes require a version bump and re-validation of the
 reference queries in [`examples/reference/`](../examples/reference/).
 
 - **v1.0** — initial frozen grammar; 21 reference queries hand-validated.
@@ -16,6 +16,14 @@ reference queries in [`examples/reference/`](../examples/reference/).
   windows (`OVER ()`), and native `strftime`/`date_trunc`; rejects ambiguous
   unqualified references after joins. Golden SQL now carries an internal row
   ordinal so sort order remains well-defined through later stages.
+- **v1.3** — adds nested programs: `with name = (...)` CTE definitions,
+  subquery sources (`from (... ) as x`, `join (...) as y on ...`), and set
+  operators (`union`, `union all`, `intersect`, `except`). Nested stages are
+  written inline with `|` separators (newlines inside parentheses are also
+  stage separators for the nested program). Nested chains lower to their own
+  prefixed CTE blocks (`<outer>_with_<g>_stage_<u>`, `..._sub_...`,
+  `..._set_...`); a trailing sort's internal ordinal is stripped at the
+  nested boundary.
 
 Stack decisions are locked: TypeScript/Node compiler, DuckDB first target,
 hand-written recursive descent parser, one CTE per pipeline stage.
@@ -23,7 +31,8 @@ hand-written recursive descent parser, one CTE per pipeline stage.
 ## 1. Program model
 
 A UNSeQueL program is an ordered list of **stages**. Each stage transforms the
-relation produced by the previous stage. The first stage is always `from`.
+relation produced by the previous stage. A program may open with zero or more
+`with` definitions; the first materialized stage is always `from`.
 
 ```text
 from orders
@@ -72,7 +81,7 @@ Worked map for the program above (7 grammar stages, 6 units):
 | number | `integer` or `integer "." digit { digit }`; no leading sign, no leading/trailing dot (`12.` is not a number; the parser reports it) |
 | string | single- or double-quoted, **single line**; escapes `\\` `\'` `\"` `\n`; doubled quotes (`''`, `""`) also escape; canonical output uses single quotes |
 | comment | `#` or `--` to end of line; not preserved by the formatter |
-| separator | a newline or `|` at parenthesis depth zero terminates a stage; a newline at depth > 0 is a parse error ("a stage cannot span lines") |
+| separator | a newline or `|` at parenthesis depth zero terminates a stage; inside parentheses both `|` and newlines separate the stages of a nested program |
 
 Canonical spelling (formatter): stage keywords lowercase; expression keywords
 uppercase (`AND`, `IS NULL`, `CASE ... END`); `-column` for descending sort.
@@ -87,8 +96,8 @@ collisions (`order_id` is a distinct identifier from the keyword `order`).
 
 | Group | Words |
 | --- | --- |
-| stages | `from` `join` `left` `right` `full` `cross` `filter` `derive` `group` `by` `aggregate` `having` `window` `select` `sort` `skip` `take` `distinct` `sql` |
-| clauses / modifiers | `on` `as` `over` `partition` `order` `asc` `desc` |
+| stages | `from` `join` `left` `right` `full` `cross` `filter` `derive` `group` `by` `aggregate` `having` `window` `select` `sort` `skip` `take` `distinct` `sql` `with` `union` `intersect` `except` |
+| clauses / modifiers | `on` `as` `over` `partition` `order` `asc` `desc` `all` |
 | expressions | `and` `or` `not` `in` `like` `between` `is` `null` `case` `when` `then` `else` `end` `cast` `true` `false` |
 
 `group by`, `left join`, `right join`, `full join`, and `cross join` are
@@ -99,13 +108,15 @@ Function and aggregate names are **not** reserved and are case-insensitive:
 `abs`, `round`, `length`, `trim`, `concat`, `row_number`, `rank`,
 `dense_rank`, `lag`, `lead`, `strftime`, `date_trunc`.
 
-Deliberate v1.2 lexical consequences:
+Deliberate v1.3 lexical consequences:
 
 - Unquoted identifiers cannot use reserved words or spaces; quote such names
   with backticks (e.g. `` `order` ``, `` `Order Date` ``).
 - `--` starts a comment even when written as adjacent subtraction
   (`a--b` is `a` + comment; write `a - -b` for double negation). This matches
   SQL.
+- A newline inside parentheses belongs to the nested program; `|` is the
+  portable inline separator and is what the formatter emits.
 
 Deliberate dialect changes from the Python prototype (recorded for
 cross-implementation awareness):
@@ -114,7 +125,8 @@ cross-implementation awareness):
 | --- | --- | --- |
 | `where` position-sensitive | `filter` (current relation) + `having` (group-oriented spelling) | explicit stage names clarify the pipeline position |
 | `group keys (aggs)` combined | `group by` + `aggregate` stages (one lowering unit) | one concept per stage; maps 1:1 to SQL while keeping one CTE per unit |
-| subquery sources accepted | not part of v1.x | no silent data loss; subqueries are a future feature |
+| subquery sources accepted | subquery sources and `with` definitions (v1.3) | nested programs stay explicit while codegen keeps the CTE-chain contract |
+| set operators in the ordered surface | `union` / `union all` / `intersect` / `except` stages (v1.3) | relations can be combined at any pipeline point |
 | `window` reserved | `window` implemented | ranking queries work natively; the prototype uses the `sql` hatch |
 | identifiers may contain `$` | `[A-Za-z_][A-Za-z0-9_]*` only | stricter lexical rule |
 | strings may contain raw newlines | strings are single-line (`\n` escape) | keeps one stage per line |
@@ -129,16 +141,22 @@ node carries its 1-based grammar index and its source span.
 
 ```ebnf
 from_stage = "from" , source ;
-source     = qualified_name , [ "as" , identifier ] ;
+source     = qualified_name , [ "as" , identifier ]
+           | "(" , program , ")" , "as" , identifier ;
+program    = stage , { "|" | newline , stage } ;
 ```
 
-- Exactly one `from`, and it is the first stage.
-- The table name is matched against the schema by name. The source **label**
-  (used for qualified references and join collisions) is the alias if given,
-  otherwise the last segment of the name (`sales.orders` → `orders`).
-- Subquery sources are not part of v1.x.
-- **IR:** `FromStage { source: { name, alias? }, index, span }`
-- **SQL (U=1):** `stage_1 AS (SELECT * FROM <name> [AS <alias>])`
+- Exactly one `from`, and it is the first materialized stage (after any
+  `with` definitions).
+- The table name is matched against the `with` names first, then the schema.
+  The source **label** (used for qualified references and join collisions) is
+  the alias if given, otherwise the last segment of the name
+  (`sales.orders` → `orders`).
+- A subquery source must be aliased; the alias supplies the label and the
+  column lineage that the analyzer computes for the nested program.
+- **IR:** `FromStage { source: { name, alias?, program? }, index, span }`
+- **SQL (U=1):** `stage_1 AS (SELECT * FROM <name> [AS <alias>])`; a subquery
+  or CTE emits its nested chain first and selects from the last nested CTE.
 
 ### 3.2 `join` / `left join`
 
@@ -153,7 +171,8 @@ join_stage = [ "left" | "right" | "full" ] , "join" , source , "on" , expr
 - References in `ON` that exist on both sides must be qualified; use the
   incoming and right-side source labels. Other bare names may resolve against
   the incoming relation, but qualification is recommended.
-- Right-table labels default as in §3.1. A right column whose name collides
+- Right-table labels default as in §3.1; a subquery right side must be
+  aliased and uses its alias as the label. A right column whose name collides
   with a live column is exposed as `<label>_<column>` for `select *` output.
 - **IR:** `JoinStage { kind: "inner" | "left" | "right" | "full" | "cross", source, on }`
 - **SQL:** `stage_u AS (SELECT <prev>.*, <right cols> FROM stage_{u-1} [LEFT] JOIN <source> ON <expr>)`
@@ -355,33 +374,66 @@ sql_stage = "sql" , string ;
 - **SQL:** the text becomes its own CTE with `__input__` rewritten to
   `stage_{u-1}` (substitution never touches string literals).
 
-## 4. Ordering and composition rules (v1.2)
+### 3.14 `with`
 
-1. `from` is first and appears exactly once.
-2. Any join kind may follow the current relation, including after grouping,
+```ebnf
+with_stage = "with" , identifier , "=" , "(" , program , ")" ;
+```
+
+- Defines a named relation from a nested program; definitions precede `from`
+  and may reference earlier definitions.
+- The analyzer computes the definition's final column families, so `from name`
+  and `join name on ...` type-check like a table.
+- **IR:** `WithStage { name, program }`
+- **SQL:** the nested chain is emitted first under its own prefixed CTE names.
+
+### 3.15 `union` / `union all` / `intersect` / `except`
+
+```ebnf
+set_stage = ( "union" , [ "all" ] | "intersect" | "except" ) ,
+            "(" , program , ")" ;
+```
+
+- Combines the current relation with a nested program at this pipeline point;
+  `union all` keeps duplicates, plain `union` deduplicates.
+- Arity is checked by the analyzer unless either side is `sql`-opaque.
+- Column names and order follow the left side; the sort ordinal is reset.
+- **IR:** `SetStage { op: "union" | "union all" | "intersect" | "except", program }`
+- **SQL:** `stage_u AS (SELECT * FROM stage_{u-1} UNION [ALL|INTERSECT|EXCEPT] SELECT * FROM <nested last CTE>)`
+
+## 4. Ordering and composition rules (v1.3)
+
+1. Zero or more `with` definitions may open the program; each defines one name
+   and must appear before `from`. Names are unique per program.
+2. `from` is the first materialized stage and appears exactly once. Its source
+   is a table, a `with` name, or an aliased nested program.
+3. Any join kind may follow the current relation, including after grouping,
    projection, or pagination. A join after `sql` is rejected because the hatch
    output schema is opaque. Ambiguous bare references after a join are errors;
    qualify them with a source label.
-3. Every `group by` must be immediately followed by `aggregate`. The pair may
+4. Every `group by` must be immediately followed by `aggregate`. The pair may
    repeat: a later group can aggregate the earlier aggregate's output.
-4. `filter`, `having`, `derive`, `window`, and `select` operate on the relation
+5. `filter`, `having`, `derive`, `window`, and `select` operate on the relation
    produced at their position and can be repeated/interleaved. Aggregate calls
    themselves remain confined to `aggregate`; later expressions refer to their
    named outputs.
-5. `select *` can be extended by named expressions. If an added output name
+6. `select *` can be extended by named expressions. If an added output name
    would duplicate a live column, the compiler reports it instead of silently
    overwriting it.
-6. `sort`, `skip`, and `take` can occur at any point and can be repeated. A
+7. `sort`, `skip`, and `take` can occur at any point and can be repeated. A
    hidden row ordinal preserves sort order through row-preserving stages and
-   pagination; `group by`, `distinct`, and `sql` establish a new ordering
-   boundary. A projection may drop the visible sort keys while the ordinal
-   preserves the established order.
-7. `distinct` can occur anywhere; it resets previous sort order. Add a new
+   pagination; `group by`, `distinct`, `set`, and `sql` establish a new
+   ordering boundary. A projection may drop the visible sort keys while the
+   ordinal preserves the established order.
+8. `distinct` can occur anywhere; it resets previous sort order. Add a new
    `sort` when output order matters.
-8. Aggregate calls are valid only inside `aggregate`. Aggregate arguments may
-   not contain aggregate calls; `DISTINCT` and `*` are COUNT-only (`COUNT(*)`).
-9. Backtick-quoted identifiers can name reserved, spaced, and digit-leading
-   columns; dots separate qualified components and must be quoted separately.
+9. `union` / `union all` / `intersect` / `except` take a parenthesized nested
+   program and combine it with the current relation. Both sides must have the
+   same number of columns; the left side's names and order win.
+10. Aggregate calls are valid only inside `aggregate`. Aggregate arguments may
+    not contain aggregate calls; `DISTINCT` and `*` are COUNT-only (`COUNT(*)`).
+11. Backtick-quoted identifiers can name reserved, spaced, and digit-leading
+    columns; dots separate qualified components and must be quoted separately.
 
 ## 5. Expression grammar
 

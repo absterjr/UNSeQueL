@@ -32,6 +32,7 @@ import {
   type RawSqlStage,
   type SelectItemNode,
   type SelectStage,
+  type SetStage,
   type SkipStage,
   type SortKey,
   type SortStage,
@@ -39,6 +40,7 @@ import {
   type TakeStage,
   type UnaryExpr,
   type WindowStage,
+  type WithStage,
 } from "./ast.js";
 import { splitDirectives } from "./directives.js";
 import { KEYWORDS } from "./lexer.js";
@@ -203,9 +205,18 @@ function renderInner(expr: Expr): string {
 // Stages
 // --------------------------------------------------------------------------- //
 
-function renderSource(source: { name: string; alias: string | null }): string {
+function renderSource(source: { name: string; alias: string | null; program?: Program }): string {
+  if (source.program !== undefined) {
+    const alias = source.alias === null ? "" : ` as ${renderIdentifierPart(source.alias)}`;
+    return `(${renderInline(source.program)})${alias}`;
+  }
   const name = renderIdentifier(source.name);
   return source.alias === null ? name : `${name} as ${renderIdentifierPart(source.alias)}`;
+}
+
+/** One-line rendering for a nested program: stages joined with ` | `. */
+function renderInline(program: Program): string {
+  return program.map(formatStage).join(" | ");
 }
 
 function renderSortKey(key: SortKey): string {
@@ -233,6 +244,14 @@ function formatStage(stage: Stage): string {
   switch (stage.kind) {
     case "from":
       return `from ${renderSource((stage as FromStage).source)}`;
+    case "with": {
+      const withStage = stage as WithStage;
+      return `with ${renderIdentifierPart(withStage.name)} = (${renderInline(withStage.program)})`;
+    }
+    case "set": {
+      const set = stage as SetStage;
+      return `${set.op} (${renderInline(set.program)})`;
+    }
     case "join": {
       const join = stage as JoinStage;
       const keyword = join.joinKind === "left" ? "left join" : "join";

@@ -42,6 +42,7 @@ import {
   type SortKey,
   type SortStage,
   type SourceRef,
+  type SetStage,
   type Span,
   type Stage,
   type StageBase,
@@ -49,12 +50,14 @@ import {
   type UnaryExpr,
   type WindowCall,
   type WindowStage,
+  type WithStage,
 } from "./ast.js";
 import { ParseError, PipelineError, PlqError } from "./errors.js";
 import { tokenize, type Token } from "./lexer.js";
 
 const STAGE_STARTS = new Set([
-  "from", "join", "left", "right", "full", "cross", "filter", "derive", "group", "aggregate", "having",
+  "from", "with", "union", "intersect", "except",
+  "join", "left", "right", "full", "cross", "filter", "derive", "group", "aggregate", "having",
   "window", "select", "sort", "skip", "take", "distinct", "sql",
 ]);
 
@@ -74,7 +77,11 @@ const COMPARISONS = new Set(["=", "==", "!=", "<>", "<", "<=", ">", ">="]);
 const NEGATABLE_TAILS = new Set(["in", "like", "between"]);
 
 export function parseProgram(source: string): Program {
-  const tokens = tokenize(source);
+  return programFromTokens(tokenize(source));
+}
+
+/** Parse a program from an existing token list (used for nested programs). */
+function programFromTokens(tokens: readonly Token[]): Program {
   const rawStages = splitStages(tokens);
   if (rawStages.length === 0) {
     const eof = tokens[tokens.length - 1] as Token;
@@ -92,6 +99,7 @@ export function parseProgram(source: string): Program {
   let aggregated = false;
   let groupPending = false;
   let afterHatch = false;
+  const withNames = new Set<string>();
 
   for (let position = 0; position < entries.length; position += 1) {
     const entry = entries[position] as (typeof entries)[number];
@@ -108,8 +116,14 @@ export function parseProgram(source: string): Program {
 
     const nextKeyword = entries[position + 1]?.keyword;
 
-    if (index === 1 && keyword !== "from") {
-      throw fail("a pipeline must start with 'from'");
+    if (index === 1 && keyword !== "from" && keyword !== "with") {
+      throw fail("a pipeline must start with 'with' or 'from'");
+    }
+    if (keyword === "with") {
+      if (sawFrom) throw fail("'with' definitions must appear before 'from'");
+    }
+    if (["union", "intersect", "except"].includes(keyword) && !sawFrom) {
+      throw fail(`'${keyword}' requires a preceding from`);
     }
     if (keyword === "from" && sawFrom) {
       throw fail("'from' may appear only once in a pipeline");
@@ -145,6 +159,13 @@ export function parseProgram(source: string): Program {
     }
     stages.push(stage);
 
+    if (keyword === "with") {
+      const named = stage as WithStage;
+      if (withNames.has(named.name)) {
+        throw fail(`with '${named.name}' is defined more than once`);
+      }
+      withNames.add(named.name);
+    }
     if (keyword === "from") sawFrom = true;
     if (keyword === "group by") groupPending = true;
     if (keyword === "aggregate") {
@@ -173,15 +194,26 @@ function splitStages(tokens: readonly Token[]): Token[][] {
   let depth = 0;
   for (const token of tokens) {
     if (token.type === "eof") break;
-    const isSeparator = token.type === "newline" || (token.type === "operator" && token.value === "|");
-    if (isSeparator) {
+    if (token.type === "newline") {
+      // Inside parentheses a newline stays in the token stream so a nested
+      // program can use it as a stage separator; at depth zero it terminates
+      // the current stage.
       if (depth > 0) {
-        if (token.type === "newline") {
-          throw new ParseError(
-            "a stage cannot span lines; keep parenthesized expressions on one line",
-            token.line, token.column);
-        }
-        throw new ParseError("unexpected '|' inside parentheses", token.line, token.column);
+        current.push(token);
+        continue;
+      }
+      if (current.length > 0) {
+        stages.push(current);
+        current = [];
+      }
+      continue;
+    }
+    if (token.type === "operator" && token.value === "|") {
+      // Inside parentheses '|' separates stages of a nested program; the
+      // outer splitter keeps it for the nested parse.
+      if (depth > 0) {
+        current.push(token);
+        continue;
       }
       if (current.length > 0) {
         stages.push(current);
@@ -325,6 +357,26 @@ class TokenReader {
     }
   }
 
+  /** Consume a balanced `( ... )` and return the inner tokens. */
+  readBalancedParens(what: string): Token[] {
+    this.expectPunct("(", `to open ${what}`);
+    const inner: Token[] = [];
+    let depth = 1;
+    while (true) {
+      const token = this.peek();
+      if (token === null) this.fail(`unclosed '(' in ${what}`);
+      if (token.type === "punctuation" && token.value === "(") depth += 1;
+      if (token.type === "punctuation" && token.value === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          this.advance();
+          return inner;
+        }
+      }
+      inner.push(this.advance());
+    }
+  }
+
   fail(message: string, token?: Token | null): never {
     if (token) throw new ParseError(message, token.line, token.column);
     const last = this.lastConsumed;
@@ -385,6 +437,28 @@ function parseStageBody(
       const source = parseSource(reader, "from source");
       reader.expectEnd();
       return { ...base(index, keyword, span), kind: "from", source } satisfies FromStage;
+    }
+    case "with": {
+      const name = reader.expectIdentifier("with needs a name: with name = (program)");
+      reader.expectOperator("=", "after the with name");
+      const inner = reader.readBalancedParens("the with program");
+      reader.expectEnd();
+      return {
+        ...base(index, keyword, span), kind: "with",
+        name: name.value, program: programFromTokens(inner),
+      } satisfies WithStage;
+    }
+    case "union":
+    case "intersect":
+    case "except": {
+      let op: SetStage["op"] = keyword;
+      if (keyword === "union" && reader.matchKeyword("all")) op = "union all";
+      const inner = reader.readBalancedParens(`the ${op} program`);
+      reader.expectEnd();
+      return {
+        ...base(index, keyword, span), kind: "set",
+        op, program: programFromTokens(inner),
+      } satisfies SetStage;
     }
     case "join":
     case "left join":
@@ -543,7 +617,14 @@ function parseSource(reader: TokenReader, what: string): SourceRef {
   const start = reader.peek();
   if (!start) reader.fail(`expected a table name for the ${what}`);
   if (start.type === "punctuation" && start.value === "(") {
-    reader.fail(`a ${what} cannot be a subquery; the pipeline grammar reads tables`, start);
+    const inner = reader.readBalancedParens(`the ${what} subquery`);
+    let alias: string | null = null;
+    if (reader.matchKeyword("as")) {
+      alias = reader.expectIdentifier("expected an alias after 'as'").value;
+    } else {
+      reader.fail(`a ${what} subquery requires an alias: (...) as name`, reader.peek() ?? undefined);
+    }
+    return { name: "", alias, span: spanFrom(reader, start), program: programFromTokens(inner) };
   }
   if (!isIdentifierToken(start)) {
     reader.fail(`expected a table name for the ${what}`, start);

@@ -315,11 +315,25 @@ function fromStage(stage: FromStage, schema: Schema): StageResult {
   };
 }
 
-function joinStage(stage: JoinStage, schema: Schema, prevCte: string,
-                   prev: Cols, live: readonly string[]): StageResult {
+interface ResolvedRight {
+  sql: string;
+  label: string;
+  columns: readonly string[];
+}
+
+function rightForTable(stage: JoinStage, schema: Schema): ResolvedRight {
   const table = schema.tables.get(stage.source.name);
   if (table === undefined) throw stageError(stage, `unknown joined table '${stage.source.name}'`);
-  const label = labelOf(stage.source);
+  return {
+    sql: sourceSql(stage.source),
+    label: labelOf(stage.source),
+    columns: [...table.columns.keys()],
+  };
+}
+
+function joinStage(stage: JoinStage, prevCte: string, prev: Cols, live: readonly string[],
+                   right: ResolvedRight): StageResult {
+  const label = right.label;
 
   // ON runs in the join's own scope: bare names resolve to the previous CTE,
   // qualified names to whichever side owns them (left labels included).
@@ -332,7 +346,7 @@ function joinStage(stage: JoinStage, schema: Schema, prevCte: string,
   for (const [name, exposed] of prev.lookup) {
     if (name.includes(".")) onLookup.set(name, `${prevCte}.${exposed}`);
   }
-  for (const column of table.columns.keys()) {
+  for (const column of right.columns) {
     onLookup.set(`${label}.${column}`, `${ident(label)}.${ident(column)}`);
     if (live.some((name) => name.toLowerCase() === column.toLowerCase())) {
       onAmbiguous.add(column.toLowerCase());
@@ -347,7 +361,7 @@ function joinStage(stage: JoinStage, schema: Schema, prevCte: string,
   const projected: string[] = [`${prevCte}.*`];
   const lookup = new Map(prev.lookup);
   const newLive = [...live];
-  for (const column of table.columns.keys()) {
+  for (const column of right.columns) {
     const collision = taken.has(column.toLowerCase());
     if (collision) ambiguous.add(column.toLowerCase());
     const exposed = collision ? `${label}_${column}` : column;
@@ -373,9 +387,25 @@ function joinStage(stage: JoinStage, schema: Schema, prevCte: string,
   }[stage.joinKind];
   return {
     sql: `SELECT ${projected.join(", ")} FROM ${prevCte} ${keyword} `
-      + `${sourceSql(stage.source)}${stage.joinKind === "cross" ? "" : ` ON ${onSql}`}`,
+      + `${right.sql}${stage.joinKind === "cross" ? "" : ` ON ${onSql}`}`,
     cols: new Cols(lookup, false, ambiguous),
     live: newLive,
+  };
+}
+
+/** `SELECT * FROM <cte> AS <label>` with the label's columns addressable. */
+function fromResolved(sql: string, label: string, live: readonly string[],
+                      source: Cols): StageResult {
+  const lookup = new Map<string, string>();
+  for (const name of live) {
+    lookup.set(name, ident(name));
+    if (label !== "") lookup.set(`${label}.${name}`, ident(name));
+  }
+  const aliased = label === "" ? sql : `${sql} AS ${ident(label)}`;
+  return {
+    sql: `SELECT * FROM ${aliased}`,
+    cols: new Cols(lookup, source.opaque, source.ambiguous),
+    live: [...live],
   };
 }
 
@@ -532,34 +562,42 @@ function internalOrderNames(program: Program, schema: Schema): Set<string> {
   for (const table of schema.tables.values()) {
     for (const column of table.columns.keys()) names.add(column.toLowerCase());
   }
-  for (const stage of program) {
-    switch (stage.kind) {
-      case "from":
-      case "join":
-        if (stage.source.alias !== null) names.add(stage.source.alias.toLowerCase());
-        break;
-      case "derive":
-        for (const item of stage.items) names.add(item.name.toLowerCase());
-        break;
-      case "group by":
-        for (const item of stage.keys) names.add(item.name.toLowerCase());
-        break;
-      case "aggregate":
-        for (const item of stage.items) names.add(item.name.toLowerCase());
-        break;
-      case "window":
-        names.add(stage.name.toLowerCase());
-        break;
-      case "select":
-        for (const item of stage.items) {
-          names.add((item.alias ?? expressionName(item.expr)).toLowerCase());
-        }
-        break;
-      case "sql":
-        names.add(stage.text.toLowerCase());
-        break;
+  const collect = (stages: Program): void => {
+    for (const stage of stages) {
+      switch (stage.kind) {
+        case "with":
+        case "set":
+          collect(stage.program);
+          break;
+        case "from":
+        case "join":
+          if (stage.source.alias !== null) names.add(stage.source.alias.toLowerCase());
+          if (stage.source.program !== undefined) collect(stage.source.program);
+          break;
+        case "derive":
+          for (const item of stage.items) names.add(item.name.toLowerCase());
+          break;
+        case "group by":
+          for (const item of stage.keys) names.add(item.name.toLowerCase());
+          break;
+        case "aggregate":
+          for (const item of stage.items) names.add(item.name.toLowerCase());
+          break;
+        case "window":
+          names.add(stage.name.toLowerCase());
+          break;
+        case "select":
+          for (const item of stage.items) {
+            names.add((item.alias ?? expressionName(item.expr)).toLowerCase());
+          }
+          break;
+        case "sql":
+          names.add(stage.text.toLowerCase());
+          break;
+      }
     }
-  }
+  };
+  collect(program);
   return names;
 }
 
@@ -582,45 +620,95 @@ function truncate(program: Program, stopAt: number | undefined): Program {
   return stages;
 }
 
-export function emitSql(program: Program, schema: Schema, options: EmitOptions = {}): string {
-  const stages = truncate(program, options.stopAt);
-  if (stages.length === 0 || stages[0]?.kind !== "from") {
-    throw new CodegenError("a program must start with a from stage");
-  }
+interface ChainState {
+  lastCte: string;
+  cols: Cols;
+  live: readonly string[];
+  orderColumn: string | null;
+}
 
-  const ctes: Array<{ name: string; sql: string }> = [];
-  let cols = new Cols();
-  let live: readonly string[] = [];
+interface ChainContext {
+  schema: Schema;
+  ctes: Array<{ name: string; sql: string }>;
+  nextOrderName: () => string;
+}
+
+function buildChain(stages: Program, context: ChainContext, prefix: string,
+                    nested: boolean, inheritedWiths: Map<string, ChainState>): ChainState {
+  const withNames = new Map(inheritedWiths);
+  let state: ChainState | null = null;
   let orderColumn: string | null = null;
-  let orderOrdinal = 0;
-  const reservedNames = internalOrderNames(program, schema);
-  const rawSqlTexts = program.filter((stage): stage is RawSqlStage => stage.kind === "sql")
-    .map((stage) => stage.text.toLowerCase());
-  const nextOrderName = (): string => {
-    let candidate: string;
-    do {
-      orderOrdinal += 1;
-      candidate = `__unsequel_internal_order_${orderOrdinal}`;
-    } while (reservedNames.has(candidate.toLowerCase())
-      || rawSqlTexts.some((text) => text.includes(candidate.toLowerCase())));
-    reservedNames.add(candidate.toLowerCase());
-    return candidate;
-  };
   let position = 0;
   let ordinal = 0;
 
   while (position < stages.length) {
     const stage = stages[position] as Stage;
+    if (stage.kind === "with") {
+      const inner = buildChain(stage.program, context, `${prefix}with_${stage.index}_`,
+                               true, withNames);
+      withNames.set(stage.name, inner);
+      if (state === null) state = inner;
+      position += 1;
+      continue;
+    }
+
     ordinal += 1;
-    const prevCte = `stage_${ordinal - 1}`;
+    const name = `${prefix}stage_${ordinal}`;
+    const prevCte = state === null ? `${prefix}stage_0` : state.lastCte;
+    const cols = state?.cols ?? new Cols();
+    const live = state?.live ?? [];
     let result: StageResult;
+
     switch (stage.kind) {
-      case "from":
-        result = fromStage(stage, schema);
+      case "from": {
+        const source = stage.source;
+        if (source.program !== undefined) {
+          const inner = buildChain(source.program, context, `${prefix}sub_${stage.index}_`,
+                                   true, withNames);
+          result = fromResolved(inner.lastCte, source.alias ?? "", inner.live, inner.cols);
+        } else if (withNames.has(source.name)) {
+          const inner = withNames.get(source.name) as ChainState;
+          result = fromResolved(inner.lastCte, source.alias ?? source.name,
+                                inner.live, inner.cols);
+        } else {
+          result = fromStage(stage, context.schema);
+        }
+        orderColumn = null;
         break;
-      case "join":
-        result = joinStage(stage, schema, prevCte, cols, live);
+      }
+      case "join": {
+        const source = stage.source;
+        let right: ResolvedRight;
+        if (source.program !== undefined) {
+          const inner = buildChain(source.program, context, `${prefix}join_${stage.index}_`,
+                                   true, withNames);
+          const label = source.alias ?? "";
+          right = {
+            sql: label === "" ? inner.lastCte : `${inner.lastCte} AS ${ident(label)}`,
+            label,
+            columns: inner.live,
+          };
+        } else if (withNames.has(source.name)) {
+          const inner = withNames.get(source.name) as ChainState;
+          const label = source.alias ?? source.name;
+          right = { sql: `${inner.lastCte} AS ${ident(label)}`, label, columns: inner.live };
+        } else {
+          right = rightForTable(stage, context.schema);
+        }
+        result = joinStage(stage, prevCte, cols, live, right);
         break;
+      }
+      case "set": {
+        const inner = buildChain(stage.program, context, `${prefix}set_${stage.index}_`,
+                                 true, withNames);
+        const keyword = stage.op.toUpperCase();
+        const left = orderColumn === null
+          ? `SELECT * FROM ${prevCte}`
+          : `SELECT * EXCLUDE (${ident(orderColumn)}) FROM ${prevCte}`;
+        result = { sql: `${left} ${keyword} SELECT * FROM ${inner.lastCte}`, cols, live };
+        orderColumn = null;
+        break;
+      }
       case "group by": {
         const aggregate = stages[position + 1];
         if (aggregate === undefined || aggregate.kind !== "aggregate") {
@@ -633,7 +721,7 @@ export function emitSql(program: Program, schema: Schema, options: EmitOptions =
       }
       case "sort": {
         const sort = stage as SortStage;
-        const nextOrder = nextOrderName();
+        const nextOrder = context.nextOrderName();
         result = {
           sql: sortStageSql(sort, prevCte, cols, orderColumn, nextOrder),
           cols,
@@ -643,9 +731,6 @@ export function emitSql(program: Program, schema: Schema, options: EmitOptions =
         break;
       }
       case "distinct":
-        result = singleStageSql(stage, prevCte, cols, live, orderColumn);
-        orderColumn = null;
-        break;
       case "sql":
         result = singleStageSql(stage, prevCte, cols, live, orderColumn);
         orderColumn = null;
@@ -657,16 +742,56 @@ export function emitSql(program: Program, schema: Schema, options: EmitOptions =
         result = singleStageSql(stage, prevCte, cols, live, orderColumn);
         break;
     }
-    ctes.push({ name: `stage_${ordinal}`, sql: result.sql });
-    cols = result.cols;
-    live = result.live;
+
+    context.ctes.push({ name, sql: result.sql });
+    state = { lastCte: name, cols: result.cols, live: result.live, orderColumn };
     position += 1;
   }
 
-  const body = ctes.map((cte) => `${cte.name} AS (\n  ${cte.sql}\n)`).join(",\n");
-  const finalOrder = orderColumn === null
-    ? `SELECT * FROM stage_${ctes.length};`
-    : `SELECT * EXCLUDE (${ident(orderColumn)}) FROM stage_${ctes.length} `
-      + `ORDER BY ${ident(orderColumn)};`;
+  if (state === null) {
+    throw new CodegenError(
+      "a program must define a relation with a from stage or a with definition");
+  }
+  if (nested && state.orderColumn !== null) {
+    const out = `${prefix}out`;
+    context.ctes.push({
+      name: out,
+      sql: `SELECT * EXCLUDE (${ident(state.orderColumn)}) FROM ${state.lastCte}`,
+    });
+    return { lastCte: out, cols: state.cols, live: state.live, orderColumn: null };
+  }
+  return state;
+}
+
+export function emitSql(program: Program, schema: Schema, options: EmitOptions = {}): string {
+  const stages = truncate(program, options.stopAt);
+  if (stages.length === 0) {
+    throw new CodegenError("a program cannot be empty");
+  }
+
+  const reservedNames = internalOrderNames(program, schema);
+  const rawSqlTexts = program.filter((stage): stage is RawSqlStage => stage.kind === "sql")
+    .map((stage) => stage.text.toLowerCase());
+  let orderOrdinal = 0;
+  const nextOrderName = (): string => {
+    let candidate: string;
+    do {
+      orderOrdinal += 1;
+      candidate = `__unsequel_internal_order_${orderOrdinal}`;
+    } while (reservedNames.has(candidate.toLowerCase())
+      || rawSqlTexts.some((text) => text.includes(candidate.toLowerCase())));
+    reservedNames.add(candidate.toLowerCase());
+    return candidate;
+  };
+
+  const context: ChainContext = { schema, ctes: [], nextOrderName };
+  const state = buildChain(stages, context, "", false, new Map());
+  const body = context.ctes
+    .map((cte) => `${cte.name} AS (\n  ${cte.sql}\n)`)
+    .join(",\n");
+  const finalOrder = state.orderColumn === null
+    ? `SELECT * FROM ${state.lastCte};`
+    : `SELECT * EXCLUDE (${ident(state.orderColumn)}) FROM ${state.lastCte} `
+      + `ORDER BY ${ident(state.orderColumn)};`;
   return `WITH ${body}\n${finalOrder}`;
 }

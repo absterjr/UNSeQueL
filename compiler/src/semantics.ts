@@ -22,7 +22,7 @@
  * As a side effect `analyze` returns the per-stage column lineage.
  */
 
-import { expressionName, type Expr, type Program, type SelectItemNode, type Stage, type WindowCall } from "./ast.js";
+import { expressionName, type Expr, type Program, type SelectItemNode, type SourceRef, type Stage, type WindowCall } from "./ast.js";
 import { SemanticError } from "./errors.js";
 import { type Schema, type TypeFamily, typeFamily } from "./schema.js";
 
@@ -60,6 +60,10 @@ class Scope {
 
   entries(): Array<[string, TypeFamily]> {
     return [...this.families.entries()];
+  }
+
+  snapshot(): Map<string, TypeFamily> {
+    return new Map(this.families);
   }
 
   bareNames(): string[] {
@@ -194,7 +198,56 @@ function windowFamily(call: WindowCall, scope: Scope): TypeFamily {
   return "unknown";
 }
 
-export function analyze(stages: Program, schema: Schema): StageLineage[] {
+interface Analysis {
+  lineage: StageLineage[];
+  columns: string[];
+  families: Map<string, TypeFamily>;
+  opaque: boolean;
+}
+
+interface ResolvedSource {
+  label: string;
+  families: Map<string, TypeFamily>;
+}
+
+function tableFamilies(columns: ReadonlyMap<string, string>): Map<string, TypeFamily> {
+  const families = new Map<string, TypeFamily>();
+  for (const [column, declared] of columns) families.set(column, typeFamily(declared));
+  return families;
+}
+
+function resolveSource(source: SourceRef, schema: Schema, ctes: Map<string, Analysis>,
+                       stage: Stage, role: "from" | "join"): ResolvedSource {
+  if (source.program !== undefined) {
+    const inner = analyzeProgram(source.program, schema, ctes);
+    return { label: source.alias ?? "", families: inner.families };
+  }
+  const cte = ctes.get(source.name);
+  if (cte !== undefined) {
+    return { label: source.alias ?? source.name, families: cte.families };
+  }
+  const table = schema.tables.get(source.name);
+  if (table === undefined) {
+    throw semanticError(stage, role === "from"
+      ? `unknown table '${source.name}'`
+      : `unknown joined table '${source.name}'`);
+  }
+  return {
+    label: source.alias ?? source.name.split(".").pop() ?? source.name,
+    families: tableFamilies(table.columns),
+  };
+}
+
+function addSourceColumns(scope: Scope, source: ResolvedSource): void {
+  for (const [column, family] of source.families) {
+    if (column.includes(".")) continue;
+    scope.set(`${source.label}.${column}`, family);
+    scope.set(column, family);
+  }
+}
+
+function analyzeProgram(stages: Program, schema: Schema,
+                        ctes: Map<string, Analysis>): Analysis {
   let scope = new Scope();
   let opaque = false;
   let groupRowScope: Scope | null = null;
@@ -207,32 +260,22 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
     }
 
     switch (stage.kind) {
+      case "with": {
+        const inner = analyzeProgram(stage.program, schema, ctes);
+        ctes.set(stage.name, inner);
+        lineage.push({ index: stage.index, keyword: stage.keyword, columns: inner.columns });
+        continue;
+      }
       case "from": {
-        const table = schema.tables.get(stage.source.name);
-        if (table === undefined) {
-          throw semanticError(stage, `unknown table '${stage.source.name}'`);
-        }
-        const label = stage.source.alias
-          ?? stage.source.name.split(".").pop()
-          ?? stage.source.name;
-        for (const [column, declared] of table.columns) {
-          const family = typeFamily(declared);
-          scope.set(column, family);
-          scope.set(`${label}.${column}`, family);
-        }
+        addSourceColumns(scope, resolveSource(stage.source, schema, ctes, stage, "from"));
         break;
       }
       case "join": {
-        const table = schema.tables.get(stage.source.name);
-        if (table === undefined) {
-          throw semanticError(stage, `unknown joined table '${stage.source.name}'`);
-        }
-        const label = stage.source.alias
-          ?? stage.source.name.split(".").pop()
-          ?? stage.source.name;
+        const resolved = resolveSource(stage.source, schema, ctes, stage, "join");
+        const label = resolved.label;
         const taken = new Set(scope.bareNames());
-        for (const [column, declared] of table.columns) {
-          const family = typeFamily(declared);
+        for (const [column, family] of resolved.families) {
+          if (column.includes(".")) continue;
           scope.set(`${label}.${column}`, family);
           if (scope.known(column)) scope.markAmbiguous(column);
           const exposed = taken.has(column) ? `${label}_${column}` : column;
@@ -372,6 +415,18 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
       case "take":
       case "distinct":
         break;
+      case "set": {
+        const inner = analyzeProgram(stage.program, schema, ctes);
+        if (!inner.opaque) {
+          const left = scope.bareNames().length;
+          if (left !== inner.columns.length) {
+            throw semanticError(stage,
+              `'${stage.op}' requires the same number of columns on both sides `
+              + `(left ${left}, right ${inner.columns.length})`);
+          }
+        }
+        break;
+      }
       case "sql": {
         opaque = true;
         scope = new Scope();
@@ -383,5 +438,14 @@ export function analyze(stages: Program, schema: Schema): StageLineage[] {
     lineage.push({ index: stage.index, keyword: stage.keyword, columns: scope.bareNames() });
   }
 
-  return lineage;
+  return {
+    lineage,
+    columns: scope.bareNames(),
+    families: scope.snapshot(),
+    opaque,
+  };
+}
+
+export function analyze(stages: Program, schema: Schema): StageLineage[] {
+  return analyzeProgram(stages, schema, new Map()).lineage;
 }

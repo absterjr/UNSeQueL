@@ -87,10 +87,26 @@ overrides a column; supported aliases include `text`,
 `integer`, `number`, `boolean`, `date`, `time`, and `timestamp` (plus DuckDB
 decimal types such as `decimal(10,2)`). Options also work with file directives.
 
+## Nested programs (v1.3)
+
+- `with name = (...)` definitions precede `from`; later definitions may
+  reference earlier ones, and `from`/`join` resolve CTE names before schema
+  tables. Names are program-scoped.
+- Subquery sources are aliased nested programs: `from (...) as x` and
+  `join (...) as y on ...`. The analyzer computes their column families, so
+  the alias behaves like a table label.
+- `union`, `union all`, `intersect`, and `except` combine the current relation
+  with a nested program. The analyzer requires matching column counts unless
+  either side is `sql`-opaque; names and order follow the left side, and the
+  sort ordinal resets.
+- Codegen keeps the one-CTE-per-unit chain: nested programs emit their own
+  prefixed CTE blocks (`..._with_<g>_stage_<u>`, `..._sub_...`, `..._set_...`)
+  before the unit that consumes them.
+
 ## Boundaries
 
-UNSeQueL targets DuckDB only. It does not yet implement CTE syntax, set operators,
-or subquery sources; use the SQL hatch for an unsupported query or track the
-feature in the [compiler backlog](backlog.md). The grammar deliberately
-distinguishes supported syntax from the broader capabilities of DuckDB and
-other SQL engines.
+UNSeQueL targets DuckDB only today. It also does not implement window frame
+clauses (`rows between ...`) or a second SQL target; use the SQL hatch for an
+unsupported query or track the gap in the [compiler backlog](backlog.md). The
+grammar deliberately distinguishes supported syntax from the broader
+capabilities of DuckDB and other SQL engines.

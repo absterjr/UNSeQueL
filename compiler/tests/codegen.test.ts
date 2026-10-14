@@ -148,7 +148,7 @@ describe("codegen: corpus agreement", () => {
       ...readdirSync(COVERAGE).filter((f) => f.endsWith(".unsequel"))
         .map((file) => ({ file: join(COVERAGE, file), schema: EXTENDED })),
     ];
-    expect(fixtures).toHaveLength(34);
+    expect(fixtures).toHaveLength(37);
     for (const { file, schema } of fixtures) {
       const program = parseProgram(readFileSync(file, "utf8"));
       analyze(program, schema);
@@ -265,6 +265,29 @@ describe("codegen: DuckDB execution parity", () => {
     expect(result.map((row) => Number(row["quantity"]))).toEqual([10, 8, 7]);
     expect(result.some((row) => Object.keys(row).some((key) => key.startsWith("__unsequel"))))
       .toBe(false);
+  });
+
+  it("executes CTE, set-operator, and subquery-source programs", async () => {
+    const cte = parseProgram(
+      "with top = (from orders | sort -quantity | take 3)\n"
+      + "from top\njoin products as p on top.product_id = p.product_id\n"
+      + "select top.order_id, p.product_name, top.quantity\nsort order_id");
+    const cteRows = await rows(connection, emitSql(cte, SCHEMA));
+    expect(cteRows).toHaveLength(3);
+
+    const setOps = parseProgram(
+      "from orders\nselect country\n"
+      + "union (from customers | select country)\n"
+      + "intersect (from orders | filter quantity > 1 | select country)\n"
+      + "sort country");
+    const setRows = await rows(connection, emitSql(setOps, SCHEMA));
+    expect(setRows).toHaveLength(2);
+
+    const subquery = parseProgram(
+      "from (from orders | group by customer | aggregate n = COUNT(*)) as per_customer\n"
+      + "filter n > 1\nsort customer");
+    const subRows = await rows(connection, emitSql(subquery, SCHEMA));
+    expect(subRows).toHaveLength(4);
   });
 
   it("executes right, full, and cross joins", async () => {

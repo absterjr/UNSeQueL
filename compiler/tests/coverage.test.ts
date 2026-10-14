@@ -19,9 +19,9 @@ const files = readdirSync(COVERAGE)
 
 describe("coverage corpus (B4)", () => {
   it("ships fixtures for every uncovered grammar feature", () => {
-    expect(files).toHaveLength(13);
+    expect(files).toHaveLength(16);
     expect(files[0]).toBe("c01_aliases.unsequel");
-    expect(files[12]).toBe("c13_unary.unsequel");
+    expect(files[15]).toBe("c16_subquery_source.unsequel");
   });
 
   it("every fixture lexes without errors", () => {
@@ -35,7 +35,7 @@ describe("coverage corpus (B4)", () => {
   it("every fixture parses into a full program (step 4)", () => {
     for (const file of files) {
       const program = parseProgram(readFileSync(join(COVERAGE, file), "utf8"));
-      expect(program[0]?.kind, file).toBe("from");
+      expect(["from", "with"], file).toContain(program[0]?.kind);
       program.forEach((stage, index) => expect(stage.index, file).toBe(index + 1));
     }
   });

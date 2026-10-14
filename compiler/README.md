@@ -93,18 +93,18 @@ blank line.
 The executable prototype lives in the Python package at the repository root;
 this package is the current production implementation of the `.unsequel` subset.
 It implements an **evolved dialect** of the prototype pipeline — `filter` and
-`having`, split `group by` + `aggregate`, composable stages, and native windows.
+`having`, split `group by` + `aggregate`, composable stages, native windows,
+and nested programs (`with` definitions, subquery sources, and set operators).
 The exact deltas are in [docs/grammar.md](docs/grammar.md) §2; do not copy
 `.pusql` examples into `.unsequel` files or vice versa. The `.unsequel` dialect
-currently targets
-DuckDB only and does not yet include CTEs, set operators, or subquery sources.
+targets DuckDB only today; a second SQL target remains a backlog decision.
 
 ## Plan status
 
 | Step | Status |
 | --- | --- |
 | 1 — project scaffold, empty CLI + tests | done |
-| 2 — grammar document (`docs/grammar.md`, v1.2 frozen) | done |
+| 2 — grammar document (`docs/grammar.md`, v1.3 frozen) | done |
 | 3 — lexer (`src/lexer.ts`) | done |
 | 4 — parser and AST (`src/parser.ts`, `src/ast.ts`) | done |
 | 5 — schema-aware validation (`src/schema.ts`, `src/semantics.ts`) | done |

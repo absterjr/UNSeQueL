@@ -87,9 +87,9 @@ describe("semantics: reference corpus", () => {
 });
 
 describe("semantics: coverage corpus", () => {
-  it("analyzes all 13 fixtures against an extended schema", () => {
+  it("analyzes all 16 fixtures against an extended schema", () => {
     const files = readdirSync(COVERAGE).filter((f) => f.endsWith(".unsequel")).sort();
-    expect(files).toHaveLength(13);
+    expect(files).toHaveLength(16);
     for (const file of files) {
       const lineage = analyze(
         parseProgram(readFileSync(join(COVERAGE, file), "utf8")), EXTENDED);
@@ -189,6 +189,19 @@ describe("semantics: invalid programs", () => {
       "from orders\njoin products on orders.product_id = products.product_id\nselect product_id");
     expect(error.stageKeyword).toBe("select");
     expect(error.message).toContain("ambiguous column 'product_id'");
+  });
+
+  it("rejects unknown tables and CTE names", () => {
+    const error = semanticError("from missing_cte");
+    expect(error.message).toContain("unknown table 'missing_cte'");
+  });
+
+  it("rejects set operators with mismatched column counts", () => {
+    const error = semanticError(
+      "from orders\nselect order_id\n"
+      + "union (from customers | select customer, country)");
+    expect(error.stageKeyword).toBe("union");
+    expect(error.message).toContain("same number of columns");
   });
 
   it("skips checks after the hatch", () => {

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Nested programs (grammar v1.3, compiler 0.4.0): `with name = (...)` CTE
+  definitions, aliased subquery sources (`from (...) as x`,
+  `join (...) as y on ...`), and set operators (`union`, `union all`,
+  `intersect`, `except`) with arity checking; nested stages are written
+  inline with `|` or across lines inside parentheses and lower to prefixed
+  CTE blocks; the formatter round-trips them on one line. Golden/parity and
+  corpus coverage extended (3 new fixtures; compiler suite 207 tests).
+  A second SQL target is deferred pending external feedback.
 - Naming migration: the production TypeScript package, executable, and VS Code
   extension all use the full `unsequel` / `UNSeQueL` name; the canonical query
   suffix is `.unsequel` (converted from `.plq` throughout the corpus, examples,

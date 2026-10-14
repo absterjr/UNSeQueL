@@ -39,8 +39,24 @@ describe("formatter: corpus", () => {
     expect(formatProgram(formatProgram(source))).toBe(source);
   });
 
+  it("round-trips nested programs in one-line canonical form", () => {
+    const cte = "with recent = (from orders | filter quantity > 1 | select customer, quantity)\n"
+      + "from recent as r\n"
+      + "join customers as c on r.customer = c.customer\n"
+      + "select r.customer, c.segment, r.quantity\n"
+      + "sort customer\n";
+    expect(formatProgram(cte)).toBe(cte);
+    const subquery = "from (from orders | take 2) as top\nselect *\n";
+    expect(formatProgram(subquery)).toBe(subquery);
+    const setOps = "from orders\n"
+      + "select country\n"
+      + "union (from customers | select country)\n"
+      + "sort country\n";
+    expect(formatProgram(setOps)).toBe(setOps);
+  });
+
   it("is idempotent and re-parseable on the coverage corpus", () => {
-    expect(coverageFiles).toHaveLength(13);
+    expect(coverageFiles).toHaveLength(16);
     for (const file of coverageFiles) {
       const once = formatProgram(readFileSync(join(COVERAGE, file), "utf8"));
       const twice = formatProgram(once);

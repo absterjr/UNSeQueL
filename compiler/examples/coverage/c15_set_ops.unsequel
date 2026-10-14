@@ -1,0 +1,5 @@
+from orders
+select customer, country
+union (from customers | select customer, country)
+intersect (from orders | filter quantity > 1 | select customer, country)
+sort customer, country

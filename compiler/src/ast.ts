@@ -180,6 +180,8 @@ export function expressionName(expr: Expr): string {
 
 export type StageKind =
   | "from"
+  | "with"
+  | "set"
   | "join"
   | "filter"
   | "derive"
@@ -204,9 +206,12 @@ export interface StageBase {
 }
 
 export interface SourceRef {
+  /** Table or CTE name; empty for a subquery source. */
   name: string;
   alias: string | null;
   span: Span;
+  /** Nested program when the source is `( <program> ) as alias`. */
+  program?: Program;
 }
 
 export interface NamedExpr {
@@ -245,6 +250,18 @@ export interface WindowCall {
 export interface FromStage extends StageBase {
   kind: "from";
   source: SourceRef;
+}
+
+export interface WithStage extends StageBase {
+  kind: "with";
+  name: string;
+  program: Program;
+}
+
+export interface SetStage extends StageBase {
+  kind: "set";
+  op: "union" | "union all" | "intersect" | "except";
+  program: Program;
 }
 
 export interface JoinStage extends StageBase {
@@ -319,6 +336,8 @@ export interface RawSqlStage extends StageBase {
 
 export type Stage =
   | FromStage
+  | WithStage
+  | SetStage
   | JoinStage
   | FilterStage
   | DeriveStage

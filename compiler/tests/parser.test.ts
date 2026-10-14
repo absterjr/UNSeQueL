@@ -98,10 +98,10 @@ describe("parser: reference corpus", () => {
 describe("parser: coverage corpus", () => {
   const files = readdirSync(COVERAGE).filter((f) => f.endsWith(".unsequel")).sort();
 
-  it("parses all 13 coverage fixtures", () => {
+  it("parses all 16 coverage fixtures", () => {
     for (const file of files) {
       const program = parse(readFileSync(join(COVERAGE, file), "utf8"));
-      expect(program[0]?.kind, file).toBe("from");
+      expect(["from", "with"], file).toContain(program[0]?.kind);
     }
   });
 
@@ -229,10 +229,10 @@ describe("parser: expressions", () => {
 });
 
 describe("parser: ordering rules", () => {
-  it("rejects a pipeline that does not start with from", () => {
+  it("rejects a pipeline that does not start with from or with", () => {
     const error = expectPipelineError("select country\nfrom orders");
     expect(error.stageIndex).toBe(1);
-    expect(error.message).toContain("must start with 'from'");
+    expect(error.message).toContain("must start with 'with' or 'from'");
   });
 
   it("rejects group by without a following aggregate", () => {
@@ -321,14 +321,40 @@ describe("parser: ordering rules", () => {
     }
   });
 
-  it("rejects newlines inside parentheses", () => {
-    try {
-      parse("from orders\nfilter (a\n AND b)");
-      throw new Error("expected an error");
-    } catch (error) {
-      expect(error).toBeInstanceOf(ParseError);
-      expect((error as ParseError).message).toContain("cannot span lines");
-    }
+  it("allows nested programs to span lines inside parentheses", () => {
+    const program = parse(
+      "from (from orders\nfilter quantity > 1\ntake 2) as big");
+    expect(program[0]).toMatchObject({ kind: "from" });
+    const source = (program[0] as FromStage).source;
+    expect(source.program?.map((stage) => stage.kind)).toEqual(["from", "filter", "take"]);
+  });
+
+  it("rejects a subquery source without an alias", () => {
+    const error = expectPipelineError("from (from orders take 1)");
+    expect(error.message).toContain("requires an alias");
+  });
+
+  it("parses with definitions and set-operator stages", () => {
+    const program = parse(
+      "with top = (from orders | take 3)\n"
+      + "from top\n"
+      + "union all (from archives | take 1)");
+    expect(program.map((stage) => stage.kind)).toEqual(["with", "from", "set"]);
+    expect(program[0]).toMatchObject({ kind: "with", name: "top" });
+    expect(program[2]).toMatchObject({ kind: "set", op: "union all" });
+  });
+
+  it("rejects with definitions after from and duplicate names", () => {
+    expect(expectPipelineError("from orders\nwith x = (from orders | take 1)").message)
+      .toContain("before 'from'");
+    expect(expectPipelineError(
+      "with x = (from orders | take 1)\nwith x = (from orders | take 2)\nfrom x").message)
+      .toContain("defined more than once");
+  });
+
+  it("rejects set operators before from", () => {
+    const error = expectPipelineError("union (from orders take 1)");
+    expect(error.message).toContain("must start with 'with' or 'from'");
   });
 
   it("rejects joins after a sql stage", () => {

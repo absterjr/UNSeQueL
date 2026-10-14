@@ -50,8 +50,9 @@ export const KEYWORDS: ReadonlySet<string> = new Set([
   // stages
   "from", "join", "left", "right", "full", "cross", "filter", "derive", "group", "by", "aggregate",
   "having", "window", "select", "sort", "skip", "take", "distinct", "sql",
+  "with", "union", "intersect", "except",
   // clauses and modifiers
-  "on", "as", "over", "partition", "order", "asc", "desc",
+  "on", "as", "over", "partition", "order", "asc", "desc", "all",
   // expression keywords
   "and", "or", "not", "in", "like", "between", "is", "null",
   "case", "when", "then", "else", "end", "cast", "true", "false",

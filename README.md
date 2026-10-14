@@ -60,7 +60,7 @@ prototype dialects retained for comparison; their grammars differ from the
 | --- | --- | --- | --- |
 | Ordered prototype | `.usql` | `python -m unsequel` | `FROM ... WHERE ... GROUP BY ... HAVING ... SELECT ... ORDER BY ...` |
 | Pipeline (prototype) | `.pusql` | `python -m unsequel ... --pipeline` (inferred for `.pusql`) | one stage per line; `where` is position-sensitive (row vs group); `group keys (aggregates)` |
-| Pipeline (recommended) | `.unsequel` | `unsequel` CLI and [UNSeQueL VS Code extension](compiler/editors/vscode/README.md) | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows and backtick identifiers; DuckDB target — [grammar v1.2](compiler/docs/grammar.md) |
+| Pipeline (recommended) | `.unsequel` | `unsequel` CLI and [UNSeQueL VS Code extension](compiler/editors/vscode/README.md) | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows, nested programs (`with`/set/subqueries), and backtick identifiers; DuckDB target — [grammar v1.3](compiler/docs/grammar.md) |
 
 New here? Run one self-contained query — no schema or data flags required:
 
@@ -265,7 +265,7 @@ The production compiler in [compiler/](compiler/README.md) is a growing DuckDB-t
 implementation in TypeScript/Node. It uses a hand-written recursive-descent
 parser, one CTE per lowering unit, schema-aware validation, and golden plus
 DuckDB execution tests. Its current frozen specification is
-[UNSeQueL grammar v1.2](compiler/docs/grammar.md); CTEs, set operators, subquery sources,
+[UNSeQueL grammar v1.3](compiler/docs/grammar.md); window frames (`rows between ...`)
 and non-DuckDB targets remain outside its implemented subset.
 
 `.unsequel` files run like SQL — they declare their own sources, and a query can be
@@ -323,10 +323,11 @@ untested. See [semantics and scope](docs/semantics.md) and the
 The Python core and the production compiler implement different read/query subsets; neither
 is a full SQL implementation. DDL/DML (`CREATE`, `INSERT`, `UPDATE`, `DELETE`),
 recursive queries, scalar subqueries inside expressions, user-defined
-functions, and a streaming/native query planner are not implemented. CTEs,
-set operators, subquery sources, and additional SQL targets are also not yet
-implemented by the production compiler, even though the Python ordered prototype supports several
-of those features.
+functions, and a streaming/native query planner are not implemented. The
+production compiler now includes CTEs, set operators, subquery sources, and
+integration with DuckDB; window frame clauses and a second SQL target
+(non-DuckDB) remain open, even though the Python ordered prototype supports
+some of those features.
 
 The prioritised lists are [docs/backlog.md](docs/backlog.md) (Python
 prototype) and [compiler/docs/backlog.md](compiler/docs/backlog.md) (compiler), tracked

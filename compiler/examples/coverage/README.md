@@ -19,6 +19,9 @@ Step 4 must parse every file; step 5+ may extend them with schemas.
 | c11_pipes_comments | `\|` separator, `#` and `--` comments, doubled-quote escape |
 | c12_window | `window` stage, `partition by`/`order by`, `COUNT(*) OVER`, repeatable |
 | c13_unary | unary plus and minus |
+| c14_cte | `with name = (...)` definition, `from`/`join` against a CTE |
+| c15_set_ops | `union` and `intersect` stages with nested programs |
+| c16_subquery_source | aliased subquery source with group/aggregate inside |
 
 Lexer-level validation lives in `compiler/tests/coverage.test.ts` and parse
 validation in `compiler/tests/parser.test.ts` (step 4).

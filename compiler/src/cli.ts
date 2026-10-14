@@ -30,7 +30,7 @@ export interface CliResult {
   stderr: string;
 }
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.4.0";
 
 const USAGE = `unsequel ${VERSION}
 UNSeQueL query language compiler
