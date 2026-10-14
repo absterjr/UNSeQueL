@@ -65,7 +65,8 @@ contain placeholder tokens.
 
 ## Releases and packages
 
-- GitHub release `v0.7.0` is live with the full-brand artifacts:
+- GitHub release `v0.8.0` is live with `unsequel-0.4.0.tgz` (grammar v1.3
+  nested programs). The `v0.7.0` release carries the full-brand artifacts:
   `unsequel-0.7.0-py3-none-any.whl`, `unsequel-0.3.0.tgz`, and
   `unsequel-vscode-0.3.0.vsix`. The earlier `v0.6.0` release keeps its
   short-lived `plq`/`unsequel-plq` names as history.
