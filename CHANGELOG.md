@@ -7,7 +7,10 @@
   worked examples, VS Code, Python prototype, comparison, roadmap) with a
   shared stylesheet, cross-page navigation, per-page metadata and canonical
   URLs, and an expanded sitemap. Site tests now check every page's metadata,
-  that local links resolve, and that the sitemap lists each page.
+  that local links resolve, and that the sitemap lists each page. Every docs
+  page also has a W3Schools-style left sidebar listing all documentation pages
+  plus in-page section anchors; site tests check the sidebar marks the current
+  page and that every anchor target exists.
 - Nested programs (grammar v1.3, compiler 0.4.0): `with name = (...)` CTE
   definitions, aliased subquery sources (`from (...) as x`,
   `join (...) as y on ...`), and set operators (`union`, `union all`,
