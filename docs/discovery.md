@@ -9,12 +9,13 @@ owner's setup.
 
 - Site source: [`site/`](../site/)
 - Deploy workflow: [`.github/workflows/pages.yml`](../.github/workflows/pages.yml)
-- Canonical URL: <https://absterjr.github.io/UNSeQueL/>
+- Canonical URL (deployed): <https://absterjr.github.io/UNSeQueL/>
 - Sitemap: <https://absterjr.github.io/UNSeQueL/sitemap.xml>
 - Robots file: <https://absterjr.github.io/UNSeQueL/robots.txt>
 
-After the first successful workflow, confirm **Settings → Pages → Build and
-deployment → Source: GitHub Actions** if Pages is not already configured.
+Pages is enabled with **Build and deployment → Source: GitHub Actions**. The
+Pages workflow is green and the public URL, sitemap, and robots file have been
+checked.
 
 ## Google Search Console and Bing Webmaster Tools
 
@@ -63,8 +64,8 @@ contain placeholder tokens.
 
 ## Releases and packages
 
-- Current release candidates: Python `unsequel 0.6.0`, compiler `unsequel-plq
-  0.2.0` (CLI command `plq`).
+- GitHub release `v0.6.0` is live with a Python wheel, `unsequel-plq 0.2.0`
+  npm tarball, and PLQ VS Code `0.2.0` VSIX attached.
 - PyPI `unsequel` had no published release when checked. npm's short name
   `plq` is occupied by an unrelated `0.0.1` package; the planned compiler
   package name is `unsequel-plq` (the binary remains `plq`).
