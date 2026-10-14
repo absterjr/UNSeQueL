@@ -68,11 +68,11 @@ contain placeholder tokens.
 
 ## Releases and packages
 
-- GitHub release `v0.8.0` is live with `unsequel-0.4.0.tgz` (grammar v1.3
-  nested programs). The `v0.7.0` release carries the full-brand artifacts:
-  `unsequel-0.7.0-py3-none-any.whl`, `unsequel-0.3.0.tgz`, and
-  `unsequel-vscode-0.3.0.vsix`. The earlier `v0.6.0` release keeps its
-  short-lived `plq`/`unsequel-plq` names as history.
+- GitHub release `v0.1.0` is the first release, with the full artifact set
+  for every component: `unsequel-0.1.0.tgz` (npm compiler),
+  `unsequel-0.1.0-py3-none-any.whl` (Python prototype), and
+  `unsequel-vscode-0.1.0.vsix` (VS Code extension). All package versions
+  start at 0.1.0.
 - The npm names `plq`, `usql`, and `unsql` belong to other publishers;
   `unsequel` is the single name now used for the Python package, npm
   package/CLI, and VS Code extension (`.unsequel` query files).
@@ -83,9 +83,9 @@ contain placeholder tokens.
   accounts/tokens; see [CONTRIBUTING.md](../CONTRIBUTING.md) and the package
   metadata.
 - Publishing prep verified from this machine: `npm publish --dry-run` packs
-  `unsequel@0.4.0` cleanly (auth still required for the real upload), the
-  Python wheel builds as `unsequel-0.7.0-py3-none-any.whl`, and the VSIX builds
-  as `unsequel-vscode-0.3.0.vsix`. Owner commands after login:
+  `unsequel@0.1.0` cleanly (auth still required for the real upload), the
+  Python wheel builds as `unsequel-0.1.0-py3-none-any.whl`, and the VSIX
+  builds as `unsequel-vscode-0.1.0.vsix`. Owner commands after login:
   `npm login` then `npm publish` in `compiler/`; `python -m pip install build
   twine` then `python -m twine upload dist/*` for PyPI; `npx @vscode/vsce
   publish` for the Marketplace (choose the editor after feedback).

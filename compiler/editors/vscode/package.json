@@ -2,7 +2,7 @@
   "name": "unsequel-vscode",
   "displayName": "UNSeQueL",
   "description": "UNSeQueL syntax highlighting and run commands for .unsequel query files, powered by DuckDB.",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "publisher": "unsequel",
   "license": "MIT",
   "repository": {
@@ -27,8 +27,13 @@
     "languages": [
       {
         "id": "unsequel",
-        "aliases": ["UNSeQueL", "unsequel"],
-        "extensions": [".unsequel"],
+        "aliases": [
+          "UNSeQueL",
+          "unsequel"
+        ],
+        "extensions": [
+          ".unsequel"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],

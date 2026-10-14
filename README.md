@@ -77,7 +77,7 @@ highlighting, Run Selection/File/REPL) is in
 
 ## Status
 
-The Python 0.7.0 prototype implements an ordered SQL-like subset with a lexer,
+The Python 0.1.0 prototype implements an ordered SQL-like subset with a lexer,
 semantic checks, an in-memory relational executor, CTEs, nested sources, set
 operations, five join types, and a SQLite adapter. The separate production
 compiler is described below; neither surface claims full SQL compatibility.
