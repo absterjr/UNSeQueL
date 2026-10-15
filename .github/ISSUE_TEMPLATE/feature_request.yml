@@ -8,8 +8,9 @@ body:
     attributes:
       label: Surface
       options:
-        - UNSeQueL compiler (.unsequel)
-        - Python prototype (.usql / .pusql)
+        - UNSeQueL (.unsequel, TypeScript compiler)
+        - UNSeQueL (.unsequel, Python package)
+        - Python prototype (legacy .usql / .pusql)
         - Tooling / editor
         - Documentation
     validations:

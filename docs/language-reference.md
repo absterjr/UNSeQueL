@@ -1,9 +1,9 @@
 # UNSeQueL Language Reference
 
-This reference documents the **Python ordered `.usql` prototype**. New users
-should start with the production `.unsequel` compiler and its
-[grammar](../compiler/docs/grammar.md); the `.pusql` prototype has a third, older
-pipeline dialect.
+**Legacy surface.** This reference documents the Python ordered `.usql`
+prototype, retained for comparison while it is retired. The language is
+`.unsequel` — see the [grammar](../compiler/docs/grammar.md). The `.pusql`
+prototype has a third, older pipeline dialect.
 
 UNSeQueL is line-oriented on purpose: each stage is easy to see while reading
 the query. A clause may wrap across lines, but clause keywords must remain

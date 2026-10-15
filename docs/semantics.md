@@ -21,9 +21,10 @@ currently target general-purpose warehouses. The learning benefit is a design
 hypothesis; we have not run a controlled study showing that people learn SQL
 faster. See [learning validation](learning-validation.md).
 
-## Ordered prototype (`.usql`)
+## Legacy ordered prototype (`.usql`)
 
-The Python ordered surface requires both `FROM` and `SELECT`:
+This Python prototype surface is retained for comparison and is being
+retired; `.unsequel` is the language. It requires both `FROM` and `SELECT`:
 
 ```text
 FROM orders

@@ -75,11 +75,17 @@ contain placeholder tokens.
   (`gh workflow run binaries.yml` re-runs it manually). The executables
   bundle DuckDB and need no installed toolchain; they are unsigned, so
   Windows SmartScreen may warn until a signing certificate is configured.
-- GitHub release `v0.1.0` is the first release, with the full artifact set
+- GitHub release `v0.1.0` was the first release, with the full artifact set
   for every component: `unsequel-0.1.0.tgz` (npm compiler),
   `unsequel-0.1.0-py3-none-any.whl` (Python prototype), and
-  `unsequel-vscode-0.1.0.vsix` (VS Code extension). All package versions
-  start at 0.1.0.
+  `unsequel-vscode-0.1.0.vsix` (VS Code extension); all package versions
+  started at 0.1.0, and the four standalone executables were backfilled onto
+  it.
+- GitHub release `v0.2.0` adds the Python port of the canonical language
+  (front-end, analyzer, DuckDB codegen, CLI wiring), the standalone packaging,
+  and the legacy-surface retirement notices; assets: `unsequel-0.2.0.tgz`,
+  `unsequel-0.2.0-py3-none-any.whl`, `unsequel-vscode-0.2.0.vsix`, plus the
+  platform binaries attached by the `Standalone binaries` workflow.
 - The npm names `plq`, `usql`, and `unsql` belong to other publishers;
   `unsequel` is the single name now used for the Python package, npm
   package/CLI, and VS Code extension (`.unsequel` query files).
@@ -90,9 +96,9 @@ contain placeholder tokens.
   accounts/tokens; see [CONTRIBUTING.md](../CONTRIBUTING.md) and the package
   metadata.
 - Publishing prep verified from this machine: `npm publish --dry-run` packs
-  `unsequel@0.1.0` cleanly (auth still required for the real upload), the
-  Python wheel builds as `unsequel-0.1.0-py3-none-any.whl`, and the VSIX
-  builds as `unsequel-vscode-0.1.0.vsix`. Owner commands after login:
+  `unsequel@0.2.0` cleanly (auth still required for the real upload), the
+  Python wheel builds as `unsequel-0.2.0-py3-none-any.whl`, and the VSIX
+  builds as `unsequel-vscode-0.2.0.vsix`. Owner commands after login:
   `npm login` then `npm publish` in `compiler/`; `python -m pip install build
   twine` then `python -m twine upload dist/*` for PyPI; `npx @vscode/vsce
   publish` for the Marketplace (choose the editor after feedback).

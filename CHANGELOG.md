@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-15
 
+- Legacy retirement: the `.usql` and `.pusql` Python surfaces are marked as
+  being retired across the README repository map, language reference,
+  pipeline spec, semantics page, the docs site, and the issue templates.
+  `.unsequel` is the language. The v0.1.0 release also gained the standalone
+  Windows/Linux/macOS executables (built by the `Standalone binaries`
+  workflow).
 - Convergence, continued: the Python package now carries the full `.unsequel`
   pipeline — a schema-aware analyzer (`unsequel/analyzer.py`), a DuckDB SQL
   generator (`unsequel/sqlgen.py`), and CLI wiring. `python -m unsequel run

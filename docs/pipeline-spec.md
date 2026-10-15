@@ -1,5 +1,10 @@
 # UNSeQueL Pipeline Language — Specification v0.3.1
 
+> **Legacy surface.** This specification documents the Python `.pusql`
+> prototype pipeline, retained for comparison while it is retired. The
+> language is `.unsequel` — see
+> [compiler/docs/grammar.md](../compiler/docs/grammar.md).
+
 > v0.3 (Step 8) implements the reserved `sql "..."` escape hatch (§3.10),
 > defines its interaction with ordering rules and schema validation (§4, §8),
 > adds reference query 21, and specifies the canonical formatter (§9).

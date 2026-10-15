@@ -51,16 +51,17 @@ feature requests have issue templates.
 
 ## Repository map
 
-There are three code surfaces, but they are not three choices for a new user.
-Start with the production `.unsequel` surface below. `.usql` and `.pusql` are Python
-prototype dialects retained for comparison; their grammars differ from the
-`.unsequel` dialect.
+`.unsequel` is the language. Two implementations run it: the production
+TypeScript compiler (DuckDB target) and the Python package (ported front-end,
+analyzer, and DuckDB code generator — `python -m unsequel run query.unsequel`).
+The older `.usql` (ordered) and `.pusql` (pipeline) Python dialects are legacy
+prototypes retained for comparison and are being retired.
 
 | Surface | Extension | Tool | Dialect |
 | --- | --- | --- | --- |
-| Ordered prototype | `.usql` | `python -m unsequel` | `FROM ... WHERE ... GROUP BY ... HAVING ... SELECT ... ORDER BY ...` |
-| Pipeline (prototype) | `.pusql` | `python -m unsequel ... --pipeline` (inferred for `.pusql`) | one stage per line; `where` is position-sensitive (row vs group); `group keys (aggregates)` |
-| Pipeline (recommended) | `.unsequel` | `unsequel` CLI and [UNSeQueL VS Code extension](compiler/editors/vscode/README.md) | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows, nested programs (`with`/set/subqueries), and backtick identifiers; DuckDB target — [grammar v1.3](compiler/docs/grammar.md) |
+| UNSeQueL | `.unsequel` | `unsequel` CLI, [VS Code extension](compiler/editors/vscode/README.md), or `python -m unsequel` | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows, nested programs (`with`/set/subqueries), backtick identifiers — [grammar v1.3](compiler/docs/grammar.md) |
+| Ordered (legacy) | `.usql` | `python -m unsequel` | `FROM ... WHERE ... GROUP BY ... HAVING ... SELECT ... ORDER BY ...` |
+| Pipeline (legacy) | `.pusql` | `python -m unsequel ... --pipeline` (inferred for `.pusql`) | one stage per line; `where` is position-sensitive (row vs group); `group keys (aggregates)` |
 
 New here? Run one self-contained query — no schema or data flags required:
 
@@ -77,7 +78,7 @@ highlighting, Run Selection/File/REPL) is in
 
 ## Status
 
-The Python 0.1.0 prototype implements an ordered SQL-like subset with a lexer,
+The Python 0.2.0 prototype implements an ordered SQL-like subset with a lexer,
 semantic checks, an in-memory relational executor, CTEs, nested sources, set
 operations, five join types, and a SQLite adapter. It also hosts a port of the
 canonical `.unsequel` grammar v1.3: `python -m unsequel run query.unsequel`

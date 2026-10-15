@@ -24,12 +24,12 @@ and press `F5` — a second VS Code window opens with the extension loaded.
 ```bash
 cd compiler/editors/vscode
 npx @vscode/vsce package
-code --install-extension unsequel-vscode-0.1.0.vsix
+code --install-extension unsequel-vscode-0.2.0.vsix
 ```
 
 **Manual copy:** copy `editors/vscode/` into your extensions directory
-(`%USERPROFILE%\.vscode\extensions\unsequel-vscode-0.1.0` on Windows,
-`~/.vscode/extensions/unsequel-vscode-0.1.0` elsewhere) and restart VS Code.
+(`%USERPROFILE%\.vscode\extensions\unsequel-vscode-0.2.0` on Windows,
+`~/.vscode/extensions/unsequel-vscode-0.2.0` elsewhere) and restart VS Code.
 
 ## Without the extension
 
