@@ -39,8 +39,7 @@
     "README.md",
     "LICENSE",
     "docs",
-    "examples",
-    "editors"
+    "examples"
   ],
   "scripts": {
     "build": "tsc",

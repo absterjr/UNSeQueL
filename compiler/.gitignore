@@ -1,3 +1,4 @@
 *.vsix
 *.tgz
 build-exe/
+node_modules/
