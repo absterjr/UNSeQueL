@@ -442,12 +442,13 @@ def _execute_query(query: Query, tables: dict[str, Table], inherited_ctes: dict[
     select_columns: list[str] = []
     for item in query.select:
         names = visible_columns if isinstance(item.expression, Wildcard) else [item.output_name]
-        for name in names:
-            if name not in select_columns:
-                select_columns.append(name)
-    folded_columns = [name.casefold() for name in select_columns]
-    if len(folded_columns) != len(set(folded_columns)):
-        raise ExecutionError("SELECT produces duplicate column names; add distinct aliases")
+        select_columns.extend(names)
+    seen_outputs: set[str] = set()
+    for name in select_columns:
+        if name.casefold() in seen_outputs:
+            raise ExecutionError(
+                f"SELECT projects '{name}' more than once; add an alias to one of them")
+        seen_outputs.add(name.casefold())
     columns = select_columns
     if query.distinct:
         entries = _deduplicate(entries, columns)

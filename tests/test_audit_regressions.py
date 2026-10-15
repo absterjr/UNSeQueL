@@ -4,10 +4,11 @@ from pathlib import Path
 
 from unsequel.cli import _table_output
 from unsequel.engine import execute
-from unsequel.errors import ExecutionError
+from unsequel.errors import ExecutionError, ParseError
+from unsequel.expressions import Identifier
 from unsequel.io import load_table
 from unsequel.model import Table
-from unsequel.parser import parse_query
+from unsequel.parser import FromSpec, Query, SelectItem, parse_query
 
 
 class ExecutionAuditRegressionTests(unittest.TestCase):
@@ -65,6 +66,38 @@ class ExecutionAuditRegressionTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ExecutionError, r"SELECT \* would drop duplicate"):
             execute(query, tables)
+
+    def test_duplicate_select_aliases_are_rejected_at_parse_time(self):
+        with self.assertRaisesRegex(ParseError, "SELECT projects 'x' more than once"):
+            parse_query("FROM t SELECT id AS x, name AS x")
+
+    def test_select_output_cannot_overwrite_an_earlier_output(self):
+        with self.assertRaisesRegex(ParseError, "SELECT projects 'id' more than once"):
+            parse_query("FROM t SELECT id, id * 2 AS id")
+
+    def test_duplicate_select_outputs_are_case_insensitive(self):
+        with self.assertRaisesRegex(ParseError, "SELECT projects 'X' more than once"):
+            parse_query("FROM t SELECT id AS x, name AS X")
+
+    def test_engine_rejects_duplicate_outputs_in_lowered_queries(self):
+        query = Query(
+            source=FromSpec("t"),
+            select=[SelectItem(Identifier("id"), "x"), SelectItem(Identifier("name"), "x")],
+        )
+        table = Table("t", ["id", "name"], [{"id": 1, "name": "alpha"}])
+        with self.assertRaisesRegex(ExecutionError, "SELECT projects 'x' more than once"):
+            execute(query, {"t": table})
+
+    def test_select_star_with_overlapping_expression_is_rejected(self):
+        table = Table("t", ["id"], [{"id": 1}])
+        query = parse_query("FROM t SELECT *, id")
+        with self.assertRaisesRegex(ExecutionError, "SELECT projects 'id' more than once"):
+            execute(query, {"t": table})
+
+    def test_distinct_select_outputs_still_run(self):
+        table = Table("t", ["id", "name"], [{"id": 1, "name": "alpha"}])
+        result = execute(parse_query("FROM t SELECT id AS x, name AS y"), {"t": table})
+        self.assertEqual(result.rows, [{"x": 1, "y": "alpha"}])
 
     def test_arithmetic_rejects_text_instead_of_using_python_coercion(self):
         query = parse_query("FROM t SELECT value * 2")

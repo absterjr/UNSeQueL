@@ -388,10 +388,10 @@ def _parse_select(raw: _Raw) -> Select:
                 "aggregate calls belong in the group stage, not select; "
                 "reference the aggregate name instead")
         output = name or expression_name(expr)
-        if output in output_names:
+        if output.casefold() in output_names:
             raise PipelineError(
                 f"select projects '{output}' more than once; add an alias to one of them")
-        output_names.add(output)
+        output_names.add(output.casefold())
         items.append(SelectItem(expr, name))
     return Select(raw.keyword, raw.line, tuple(items))
 

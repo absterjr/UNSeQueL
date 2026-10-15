@@ -218,6 +218,7 @@ def _parse_select(tokens: list[Token]) -> tuple[list[SelectItem], bool]:
     if distinct:
         tokens = tokens[1:]
     items: list[SelectItem] = []
+    output_names: set[str] = set()
     for part in _split_top_level(tokens):
         depth = 0
         alias_index = None
@@ -237,7 +238,13 @@ def _parse_select(tokens: list[Token]) -> tuple[list[SelectItem], bool]:
             if len(alias_tokens) != 1 or alias_tokens[0].kind != "IDENT":
                 raise ParseError("SELECT AS must be followed by one alias name")
             alias = str(alias_tokens[0].value)
-        items.append(SelectItem(parse_expression_tokens(expression_tokens), alias))
+        item = SelectItem(parse_expression_tokens(expression_tokens), alias)
+        output = item.output_name
+        if output.casefold() in output_names:
+            raise ParseError(
+                f"SELECT projects '{output}' more than once; add an alias to one of them")
+        output_names.add(output.casefold())
+        items.append(item)
     if not items:
         raise ParseError("SELECT requires at least one expression")
     return items, distinct
