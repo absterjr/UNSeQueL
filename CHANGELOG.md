@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- The Python package executes canonical `.unsequel` programs on a built-in
+  in-memory engine (`unsequel/memory_engine.py`) when DuckDB is not wanted or
+  not installed: `--engine memory` is the default for `.unsequel` files and
+  `--engine duckdb` executes the generated SQL. The engine mirrors the code
+  generator's stage model (lookups, join naming, hidden sort ordinal) and
+  encodes the probed DuckDB behaviors; a parity suite pins every reference
+  query and a 22-program behavior battery against DuckDB. Stage-located
+  execution errors include line and column.
+
 ## 0.2.0 — 2026-10-15
 
 - Legacy retirement: the `.usql` and `.pusql` Python surfaces are marked as

@@ -83,7 +83,8 @@ semantic checks, an in-memory relational executor, CTEs, nested sources, set
 operations, five join types, and a SQLite adapter. It also hosts a port of the
 canonical `.unsequel` grammar v1.3: `python -m unsequel run query.unsequel`
 parses, checks, compiles, and executes the same programs as the TypeScript
-compiler on DuckDB (analyzer, codegen, `check`/`compile`/`preview` included).
+compiler — on a built-in in-memory engine by default, or on DuckDB with
+`--engine duckdb` (analyzer, codegen, `check`/`compile`/`preview` included).
 The separate production compiler is described below; neither surface claims
 full SQL compatibility.
 

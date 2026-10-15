@@ -50,10 +50,21 @@ class UnsequelCliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("schema", out)
 
-    def test_memory_engine_is_rejected_for_unsequel(self):
-        out, code = run_cli("run", QUERY, "--engine", "memory", "--schema", SCHEMA, *DATA)
-        self.assertEqual(code, 1)
-        self.assertIn("DuckDB", out)
+    def test_default_engine_is_the_memory_engine(self):
+        default_out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA)
+        memory_out, code2 = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
+                                    "--engine", "memory")
+        self.assertEqual((code, code2), (0, 0))
+        self.assertEqual(default_out, memory_out)
+
+    def test_memory_and_duckdb_engines_agree(self):
+        memory_out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
+                                   "--engine", "memory")
+        duckdb_out, code2 = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
+                                    "--engine", "duckdb")
+        self.assertEqual((code, code2), (0, 0))
+        # tied sort keys are engine-defined; compare the row sets.
+        self.assertEqual(sorted(memory_out.splitlines()), sorted(duckdb_out.splitlines()))
 
     def test_flagless_file_via_directives(self):
         with tempfile.TemporaryDirectory() as tmp:

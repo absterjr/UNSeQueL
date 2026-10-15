@@ -45,11 +45,10 @@ identifiers, explicit delimiter/type overrides, and non-blocking stdin tests.
    engines, or retire the old surfaces from the CLI and docs — the file
    extension stays `.unsequel` either way.
    **Progress (October 2026):** the v1.3 front-end (lexer, AST, parser),
-   analyzer, DuckDB code generator, and CLI wiring are ported in
-   `unsequel/grammar.py`, `analyzer.py`, and `sqlgen.py`; `python -m unsequel
-   run query.unsequel` executes the canonical language on DuckDB with the
-   compiler's golden SQL. The memory-engine execution and retiring the old
-   surfaces remain.
+   analyzer, DuckDB code generator, CLI wiring, and the in-memory execution
+   engine (`unsequel/memory_engine.py`, parity-tested against DuckDB) are
+   ported; `python -m unsequel run query.unsequel` executes the canonical
+   language on either engine. Retiring the old surfaces remains.
 2. **Native window syntax** in the prototype grammar
    (`window rank = ROW_NUMBER() over (partition by ... order by ...)`). The
    `sql` hatch covers it today, but ranking is the first thing analysts reach

@@ -112,6 +112,12 @@ The known, tested boundaries are:
 - floating-point rendering can differ (for example, JSON may render `192.0`
   and `192` differently).
 
+The Python port runs `.unsequel` on the in-memory engine by default
+(`--engine duckdb` executes the generated SQL instead). `tests/test_memory_parity.py`
+pins every reference query and a behavior battery against DuckDB, including
+division, NULL logic, coercion, casts, strings, dates, set operators, and
+window frames.
+
 `tests/test_conformance.py` covers NULL predicates and aggregates, case-sensitive
 LIKE, null ordering, tied sort keys with a tie-breaker, and empty grouped
 results across both Python backends when DuckDB is installed. Additional edge

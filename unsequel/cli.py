@@ -5,6 +5,7 @@ import csv
 import json
 import re
 import sys
+from datetime import date, datetime
 from pathlib import Path
 
 from . import __version__
@@ -16,6 +17,7 @@ from .errors import ParseError, UnsequelError
 from .format import format_pipeline, is_formatted
 from .grammar import parse_program
 from .io import load_sqlite_tables, load_table
+from .memory_engine import execute_program
 from .parser import parse_query
 from .pipeline import execute_pipeline_stages, parse_pipeline_stages
 from .schema import Schema
@@ -164,6 +166,33 @@ def _unsequel_schema(args, data: dict[str, str], schema_path: str | None) -> Sch
     return Schema.from_dict({"tables": tables})
 
 
+def _schema_from_tables(tables) -> Schema:
+    """Introspect loaded tables into a schema for memory-engine runs."""
+    declared = {}
+    for name, table in tables.items():
+        columns = {}
+        for column in table.columns:
+            sample = next(
+                (row.get(column) for row in table.rows if row.get(column) is not None),
+                None)
+            if sample is None:
+                columns[column] = "unknown"
+            elif isinstance(sample, bool):
+                columns[column] = "boolean"
+            elif isinstance(sample, int):
+                columns[column] = "integer"
+            elif isinstance(sample, float):
+                columns[column] = "number"
+            elif isinstance(sample, datetime):
+                columns[column] = "timestamp"
+            elif isinstance(sample, date):
+                columns[column] = "date"
+            else:
+                columns[column] = "text"
+        declared[name] = {"columns": columns}
+    return Schema.from_dict({"tables": declared})
+
+
 def _wants_unsequel(args) -> bool:
     return args.query != "-" and args.query.lower().endswith(".unsequel")
 
@@ -214,8 +243,8 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="parse and execute a query")
     add_pipeline_flags(run)
     run.add_argument("--engine", choices=("memory", "duckdb"), default=None,
-                     help="memory: built-in engine (default); duckdb: run generated SQL "
-                          "(.unsequel files always use DuckDB)")
+                     help="memory: built-in engine (default; .unsequel runs without "
+                          "DuckDB); duckdb: execute the generated SQL")
     run.add_argument("--data", action="append", default=[], type=_data_spec,
                      metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
     run.add_argument("--delimiter", type=_delimiter_arg,
@@ -375,15 +404,35 @@ def _cmd_run(args) -> None:
     if _wants_unsequel(args):
         if args.sqlite:
             raise UnsequelError("--sqlite is not supported for .unsequel files")
-        if args.engine == "memory":
-            raise UnsequelError(
-                ".unsequel files run on DuckDB; drop --engine or use --engine duckdb")
-        text, data, schema = _unsequel_inputs(args)
+        text = _read_query(args.query)
+        data, directive_schema = _unsequel_directives(text, args.query)
+        for name, path in args.data:
+            data[name] = path
         program = parse_program(text)
-        analyze_unsequel_program(program, schema)
-        sql = emit_unsequel_sql(program, schema)
-        column_types = {name: _column_types_for(args, name) for name in data}
-        result = run_sql(sql, data, delimiter=args.delimiter, column_types=column_types)
+        if args.engine == "duckdb":
+            schema = _unsequel_schema(args, data, args.schema or directive_schema)
+            analyze_unsequel_program(program, schema)
+            sql = emit_unsequel_sql(program, schema)
+            column_types = {name: _column_types_for(args, name) for name in data}
+            result = run_sql(sql, data, delimiter=args.delimiter,
+                             column_types=column_types)
+        else:
+            tables = {
+                name: load_table(name, path, delimiter=args.delimiter,
+                                 column_types=_column_types_for(args, name))
+                for name, path in data.items()
+            }
+            schema_path = args.schema or directive_schema
+            if schema_path:
+                schema = Schema.load(schema_path)
+            elif tables:
+                schema = _schema_from_tables(tables)
+            else:
+                raise UnsequelError(
+                    ".unsequel files need a schema: pass --schema, add a '# schema: path' "
+                    "directive, or supply --data sources to introspect")
+            analyze_unsequel_program(program, schema)
+            result = execute_program(program, tables, schema=schema)
         _print_result(result, args.format)
         return
     text = _read_query(args.query)
