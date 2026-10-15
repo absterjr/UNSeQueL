@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Standalone distribution: `packaging/unsequel.spec` builds a one-file
+  executable that bundles Python, the `unsequel` package, and DuckDB
+  (verified on Windows with both the memory and DuckDB engines), and the new
+  `Standalone binaries` workflow builds Windows/Linux/macOS assets and
+  attaches them to releases. The packaged CLI runs the current Python
+  surfaces; `.unsequel` execution arrives with the grammar port.
 - Convergence: the Python package now hosts a `.unsequel` grammar v1.3
   front-end (`unsequel/grammar.py`, a port of the compiler's lexer/AST/parser).
   It parses all 21 reference, 16 coverage, and 5 dogfood `.unsequel` queries

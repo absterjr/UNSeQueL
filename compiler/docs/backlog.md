@@ -44,8 +44,11 @@ whole-relation windows for those queries.
 9. VS Code extension polish: remember the UNSeQueL terminal's working directory
    per workspace, optionally run `unsequel fmt` on save, and publish the extension
    to the Marketplace.
-10. Standalone binaries — spike `bun build --compile` or Node SEA with the
-    DuckDB native addon so users need neither Node nor npm.
+10. Standalone binaries for the npm compiler — the Python implementation now
+    ships PyInstaller one-file executables (see
+    [../../docs/backlog.md](../../docs/backlog.md), Distribution); a Node
+    SEA or `bun build --compile` build remains an option if the npm CLI
+    needs the same.
 11. `--data` globs/directories and per-source delimiter settings (the current
     delimiter option applies to all loaded CSVs).
 12. **Zero-install WASM playground** on the Pages site: an editor running

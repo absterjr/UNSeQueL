@@ -14,6 +14,24 @@ duplicate `SELECT` output names, case-sensitive LIKE, NULL display,
 whole-column CSV inference, duplicate header checks, preserved leading-zero
 identifiers, explicit delimiter/type overrides, and non-blocking stdin tests.
 
+## Distribution — standalone executable (owner goal, October 2026)
+
+1. [x] One-file executable via PyInstaller (`packaging/unsequel.spec`):
+   bundles Python, the `unsequel` package, and DuckDB; verified on Windows
+   with both the memory engine and the bundled DuckDB engine.
+2. [x] CI workflow (`.github/workflows/binaries.yml`) builds
+   `unsequel-windows-x64.exe`, `unsequel-linux-x64`, `unsequel-macos-x64`,
+   and `unsequel-macos-arm64`, smoke-tests each, and attaches them to GitHub
+   releases automatically.
+3. [ ] `.unsequel` execution inside the packaged CLI — blocked on the port
+   (analyzer + codegen + CLI wiring).
+4. [ ] PyPI publish (`unsequel` + console scripts) so `pip install unsequel`
+   is a first-class path; owner token required.
+5. [ ] VS Code: point the extension at the standalone executable (bundled
+   download or PATH detection); Marketplace publish.
+6. [ ] Windows code signing so SmartScreen does not flag the unsigned exe
+   (owner certificate).
+
 ## P0 — convergence (October 2026 review)
 
 1. **One language: the composing `.unsequel` grammar.** The `.usql` and

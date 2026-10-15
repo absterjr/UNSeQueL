@@ -68,6 +68,13 @@ contain placeholder tokens.
 
 ## Releases and packages
 
+- Standalone binaries: the `Standalone binaries` workflow builds
+  `unsequel-windows-x64.exe`, `unsequel-linux-x64`, `unsequel-macos-x64`, and
+  `unsequel-macos-arm64` with PyInstaller (`packaging/unsequel.spec`) and
+  attaches them to every newly published release automatically
+  (`gh workflow run binaries.yml` re-runs it manually). The executables
+  bundle DuckDB and need no installed toolchain; they are unsigned, so
+  Windows SmartScreen may warn until a signing certificate is configured.
 - GitHub release `v0.1.0` is the first release, with the full artifact set
   for every component: `unsequel-0.1.0.tgz` (npm compiler),
   `unsequel-0.1.0-py3-none-any.whl` (Python prototype), and
