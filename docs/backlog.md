@@ -23,6 +23,10 @@ identifiers, explicit delimiter/type overrides, and non-blocking stdin tests.
    role: port grammar v1.3 so `.unsequel` files run on the memory/DuckDB
    engines, or retire the old surfaces from the CLI and docs — the file
    extension stays `.unsequel` either way.
+   **Progress (October 2026):** the v1.3 front-end (lexer, AST, parser) is
+   ported in `unsequel/grammar.py` and parses the compiler's reference,
+   coverage, and dogfood corpora; the analyzer, DuckDB codegen, and CLI
+   wiring come next.
 2. **Native window syntax** in the prototype grammar
    (`window rank = ROW_NUMBER() over (partition by ... order by ...)`). The
    `sql` hatch covers it today, but ranking is the first thing analysts reach

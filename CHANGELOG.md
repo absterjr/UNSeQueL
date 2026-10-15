@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Convergence: the Python package now hosts a `.unsequel` grammar v1.3
+  front-end (`unsequel/grammar.py`, a port of the compiler's lexer/AST/parser).
+  It parses all 21 reference, 16 coverage, and 5 dogfood `.unsequel` queries
+  with the same stage sequences and error messages as the TypeScript
+  compiler. Analyzer, DuckDB codegen, and CLI wiring come next.
 - Duplicate output names in `SELECT` are rejected everywhere now: the ordered
   `.usql` parser and engine raise `SELECT projects 'x' more than once; add an
   alias to one of them` (the compiler already did), and the `.pusql` select
