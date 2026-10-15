@@ -50,14 +50,14 @@ jobs:
       - name: Package the run-capable bundle
         shell: bash
         run: tar -czf "dist/unsequel-run-${{ matrix.suffix }}.tar.gz" -C dist unsequel-run
-      - name: Smoke test (compile exe: version, check, compile)
+      - name: Smoke test the compile exe (version, check, compile)
         shell: bash
         run: |
           "dist/${{ matrix.asset }}" --version
           "dist/${{ matrix.asset }}" check examples/reference/q09_group_count.unsequel
           "dist/${{ matrix.asset }}" compile examples/reference/q09_group_count.unsequel \
             --schema ../examples/spec/schema.json > /dev/null
-      - name: Smoke test (run bundle: query + output sink, no Node involved)
+      - name: Smoke test the run bundle (query and output sink, no Node)
         shell: bash
         run: |
           RUN_EXE=$([ "$RUNNER_OS" = "Windows" ] && echo unsequel.exe || echo unsequel)
