@@ -1,0 +1,119 @@
+"""CLI wiring for `.unsequel` files: run / check / compile / preview."""
+
+import contextlib
+import io
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from unsequel.cli import main
+
+SPEC = Path("examples/spec")
+SCHEMA = str(SPEC / "schema.json")
+QUERY = "compiler/examples/reference/q09_group_count.unsequel"
+DATA = [f"--data=orders={SPEC / 'orders.csv'}"]
+
+try:
+    import duckdb  # noqa: F401
+    HAS_DUCKDB = True
+except ImportError:
+    HAS_DUCKDB = False
+
+
+def run_cli(*argv) -> tuple[str, int]:
+    out = io.StringIO()
+    code = 0
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            main(list(argv))
+    except SystemExit as exit_:
+        code = exit_.code or 0
+    return out.getvalue(), code
+
+
+@unittest.skipUnless(HAS_DUCKDB, "duckdb is not installed")
+class UnsequelCliTests(unittest.TestCase):
+    def test_run_with_schema_and_data(self):
+        out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA)
+        self.assertEqual(code, 0)
+        self.assertIn("country", out)
+        self.assertIn("row(s)", out)
+
+    def test_run_introspects_data_without_a_schema(self):
+        out, code = run_cli("run", QUERY, *DATA)
+        self.assertEqual(code, 0)
+        self.assertIn("country", out)
+
+    def test_run_needs_a_schema_or_data(self):
+        out, code = run_cli("run", QUERY)
+        self.assertEqual(code, 1)
+        self.assertIn("schema", out)
+
+    def test_memory_engine_is_rejected_for_unsequel(self):
+        out, code = run_cli("run", QUERY, "--engine", "memory", "--schema", SCHEMA, *DATA)
+        self.assertEqual(code, 1)
+        self.assertIn("DuckDB", out)
+
+    def test_flagless_file_via_directives(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "orders.csv").write_text(
+                "id,country\n1,UK\n2,UK\n3,US\n", encoding="utf-8")
+            (directory / "schema.json").write_text(
+                json.dumps({"tables": {"orders": {"columns": {
+                    "id": "integer", "country": "string"}}}}),
+                encoding="utf-8")
+            (directory / "query.unsequel").write_text(
+                "# source orders: orders.csv\n"
+                "# schema: schema.json\n"
+                "from orders\n"
+                "group by country\n"
+                "aggregate n = COUNT(*)\n"
+                "sort country\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(directory / "query.unsequel"))
+            self.assertEqual(code, 0)
+            self.assertIn("UK", out)
+
+    def test_check_reports_schema_ok(self):
+        out, code = run_cli("check", QUERY, "--schema", SCHEMA)
+        self.assertEqual(code, 0)
+        self.assertIn("valid UNSeQueL program (schema OK)", out)
+
+    def test_check_reports_stage_located_semantic_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.unsequel"
+            path.write_text("from orders\nselect missing_column\n", encoding="utf-8")
+            out, code = run_cli("check", str(path), "--schema", SCHEMA)
+            self.assertEqual(code, 1)
+            self.assertIn("stage 2 (select)", out)
+            self.assertIn("unknown column 'missing_column'", out)
+
+    def test_compile_prints_the_with_chain(self):
+        out, code = run_cli("compile", QUERY, "--schema", SCHEMA)
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("WITH stage_1 AS ("))
+        self.assertIn("GROUP BY country", out)
+        self.assertIn("stage_3 AS (", out)
+
+    def test_compile_stage_truncates(self):
+        out, code = run_cli("compile", QUERY, "--schema", SCHEMA, "--stage", "1")
+        self.assertEqual(code, 0)
+        self.assertTrue(out.rstrip().endswith("SELECT * FROM stage_1;"))
+
+    def test_preview_truncates_at_a_stage(self):
+        out, code = run_cli("preview", QUERY, "--schema", SCHEMA, "--stage", "2", *DATA)
+        self.assertEqual(code, 0)
+        self.assertIn("stage 2/4", out)
+        self.assertIn("group by", out)
+
+    def test_pipeline_compile_still_requires_a_schema(self):
+        legacy = SPEC / "q03_row_filter.pusql"
+        out, code = run_cli("compile", str(legacy))
+        self.assertEqual(code, 1)
+        self.assertIn("--schema is required", out)
+
+
+if __name__ == "__main__":
+    unittest.main()

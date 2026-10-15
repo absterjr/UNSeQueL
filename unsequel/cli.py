@@ -8,16 +8,19 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .analyzer import analyze as analyze_unsequel_program
 from .codegen import emit_sql
-from .duckdb_backend import run_sql
+from .duckdb_backend import describe_source, run_sql
 from .engine import execute
 from .errors import ParseError, UnsequelError
 from .format import format_pipeline, is_formatted
+from .grammar import parse_program
 from .io import load_sqlite_tables, load_table
 from .parser import parse_query
 from .pipeline import execute_pipeline_stages, parse_pipeline_stages
 from .schema import Schema
 from .semantics import analyze
+from .sqlgen import emit_sql as emit_unsequel_sql
 
 
 def _data_spec(value: str) -> tuple[str, str]:
@@ -91,6 +94,89 @@ def _read_query(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
+_UNSEQUEL_SOURCE_DIRECTIVE = re.compile(
+    r"^#\s*source\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.+)$")
+_UNSEQUEL_SCHEMA_DIRECTIVE = re.compile(r"^#\s*schema\s*:\s*(.+)$")
+
+_DUCKDB_TYPE_FAMILIES = {
+    "BOOLEAN": "boolean",
+    "TINYINT": "integer", "SMALLINT": "integer", "INTEGER": "integer",
+    "BIGINT": "integer", "HUGEINT": "integer", "UTINYINT": "integer",
+    "USMALLINT": "integer", "UINTEGER": "integer", "UBIGINT": "integer",
+    "FLOAT": "number", "REAL": "number", "DOUBLE": "number", "DECIMAL": "number",
+    "VARCHAR": "text", "CHAR": "text", "TEXT": "text",
+    "DATE": "date", "TIME": "time", "TIMESTAMP": "timestamp",
+}
+
+
+def _resolve_relative(base: Path, raw: str) -> str:
+    path = Path(raw)
+    return str(path if path.is_absolute() else base / path)
+
+
+def _unsequel_directives(text: str, query_path: str) -> tuple[dict[str, str], str | None]:
+    """Leading `# source name: path` / `# schema: path` directives.
+
+    Matches the compiler: directives must be the file's first lines, and an
+    ordinary comment (or any other line) ends the directive block. Paths are
+    resolved relative to the query file.
+    """
+    base = Path(query_path).resolve().parent if query_path != "-" else Path.cwd()
+    sources: dict[str, str] = {}
+    schema_path: str | None = None
+    for line in text.replace("\r\n", "\n").split("\n"):
+        trimmed = line.strip()
+        if not trimmed.startswith("#"):
+            break
+        match = _UNSEQUEL_SOURCE_DIRECTIVE.match(trimmed)
+        if match:
+            sources[match.group(1)] = _resolve_relative(base, match.group(2).strip())
+            continue
+        match = _UNSEQUEL_SCHEMA_DIRECTIVE.match(trimmed)
+        if match:
+            schema_path = _resolve_relative(base, match.group(1).strip())
+            continue
+        break
+    return sources, schema_path
+
+
+def _family_from_duckdb_type(type_name: str) -> str:
+    base = type_name.upper().split("(")[0].strip()
+    return _DUCKDB_TYPE_FAMILIES.get(base, "unknown")
+
+
+def _unsequel_schema(args, data: dict[str, str], schema_path: str | None) -> Schema:
+    if schema_path:
+        return Schema.load(schema_path)
+    if not data:
+        raise UnsequelError(
+            ".unsequel files need a schema: pass --schema, add a '# schema: path' "
+            "directive, or supply --data sources to introspect")
+    delimiter = getattr(args, "delimiter", None)
+    column_type_args = getattr(args, "column_type", [])
+    tables = {}
+    for name, path in data.items():
+        overrides = {column: type_name for table, column, type_name in column_type_args
+                     if table.casefold() == name.casefold()}
+        described = describe_source(path, delimiter=delimiter, column_types=overrides)
+        tables[name] = {"columns": {column: _family_from_duckdb_type(type_name)
+                                    for column, type_name in described}}
+    return Schema.from_dict({"tables": tables})
+
+
+def _wants_unsequel(args) -> bool:
+    return args.query != "-" and args.query.lower().endswith(".unsequel")
+
+
+def _unsequel_inputs(args) -> tuple[str, dict[str, str], Schema]:
+    text = _read_query(args.query)
+    data, directive_schema = _unsequel_directives(text, args.query)
+    for name, path in getattr(args, "data", []):
+        data[name] = path
+    schema = _unsequel_schema(args, data, args.schema or directive_schema)
+    return text, data, schema
+
+
 def _load_tables(args):
     if bool(args.data) == bool(args.sqlite):
         raise UnsequelError("this command needs exactly one of --data or --sqlite")
@@ -127,8 +213,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = commands.add_parser("run", help="parse and execute a query")
     add_pipeline_flags(run)
-    run.add_argument("--engine", choices=("memory", "duckdb"), default="memory",
-                     help="memory: built-in engine (default); duckdb: run generated SQL")
+    run.add_argument("--engine", choices=("memory", "duckdb"), default=None,
+                     help="memory: built-in engine (default); duckdb: run generated SQL "
+                          "(.unsequel files always use DuckDB)")
     run.add_argument("--data", action="append", default=[], type=_data_spec,
                      metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
     run.add_argument("--delimiter", type=_delimiter_arg,
@@ -143,16 +230,18 @@ def build_parser() -> argparse.ArgumentParser:
     check = commands.add_parser("check", help="parse (and optionally schema-check) a query")
     add_pipeline_flags(check)
 
-    compile_ = commands.add_parser("compile", help="print the SQL a pipeline query compiles to")
-    compile_.add_argument("query", help="pipeline query file, or '-' for stdin")
-    compile_.add_argument("--schema", metavar="PATH", required=True,
-                          help="JSON schema file (required for codegen)")
+    compile_ = commands.add_parser("compile", help="print the SQL a query compiles to")
+    compile_.add_argument("query", help="query file, or '-' for stdin")
+    compile_.add_argument("--schema", metavar="PATH",
+                          help="JSON schema file (required for .pusql; .unsequel files "
+                               "may use a '# schema' directive or introspect --data)")
     compile_.add_argument("--stage", type=int, metavar="N",
-                          help="truncate the pipeline after stage N")
+                          help="truncate the query after stage N")
 
-    preview = commands.add_parser("preview", help="run a pipeline truncated at a stage")
-    preview.add_argument("query", help="pipeline query file, or '-' for stdin")
-    preview.add_argument("--schema", metavar="PATH", required=True)
+    preview = commands.add_parser("preview", help="run a query truncated at a stage")
+    preview.add_argument("query", help="query file, or '-' for stdin")
+    preview.add_argument("--schema", metavar="PATH",
+                         help="JSON schema file (required for .pusql)")
     preview.add_argument("--stage", type=int, metavar="N", required=True,
                          help="stage to stop at (1-based)")
     preview.add_argument("--limit", type=int, default=10, metavar="K",
@@ -210,23 +299,50 @@ def _parse_ordered_with_hint(text: str):
 
 def _cmd_check(args) -> None:
     text = _read_query(args.query)
-    if _wants_pipeline(args):
+    if _wants_unsequel(args):
+        _, data, schema = _unsequel_inputs(args)
+        program = parse_program(text)
+        analyze_unsequel_program(program, schema)
+        print("valid UNSeQueL program (schema OK)")
+    elif _wants_pipeline(args):
         _pipeline_stages(text, args.schema)
         suffix = " (schema OK)" if args.schema else ""
+        print(f"valid UNSeQueL query{suffix}")
     else:
         if args.schema:
             raise UnsequelError("--schema is only supported with --pipeline")
         _parse_ordered_with_hint(text)
-        suffix = ""
-    print(f"valid UNSeQueL query{suffix}")
+        print("valid UNSeQueL query")
 
 
 def _cmd_compile(args) -> None:
+    if _wants_unsequel(args):
+        text, _, schema = _unsequel_inputs(args)
+        program = parse_program(text)
+        print(emit_unsequel_sql(program, schema, stop_at=args.stage))
+        return
+    if not args.schema:
+        raise UnsequelError("--schema is required to compile a .pusql query")
     stages = _pipeline_stages(_read_query(args.query), args.schema)
     print(emit_sql(stages, Schema.load(args.schema), stop_at=args.stage))
 
 
 def _cmd_preview(args) -> None:
+    if _wants_unsequel(args):
+        text, data, schema = _unsequel_inputs(args)
+        program = parse_program(text)
+        total = len(program)
+        if not 1 <= args.stage <= total:
+            raise UnsequelError(f"--stage must be between 1 and {total} for this query")
+        inner = emit_unsequel_sql(program, schema, stop_at=args.stage).rstrip().rstrip(";")
+        sql = f"SELECT * FROM (\n{inner}\n) AS _preview LIMIT {args.limit}"
+        column_types = {name: _column_types_for(args, name) for name in data}
+        result = run_sql(sql, data, delimiter=args.delimiter, column_types=column_types)
+        print(f"stage {args.stage}/{total}  ({program[args.stage - 1].keyword})")
+        _print_result(result, args.format)
+        return
+    if not args.schema:
+        raise UnsequelError("--schema is required to preview a .pusql query")
     stages = _pipeline_stages(_read_query(args.query), args.schema)
     total = len(stages)
     if not 1 <= args.stage <= total:
@@ -256,6 +372,20 @@ def _cmd_fmt(args) -> None:
 
 
 def _cmd_run(args) -> None:
+    if _wants_unsequel(args):
+        if args.sqlite:
+            raise UnsequelError("--sqlite is not supported for .unsequel files")
+        if args.engine == "memory":
+            raise UnsequelError(
+                ".unsequel files run on DuckDB; drop --engine or use --engine duckdb")
+        text, data, schema = _unsequel_inputs(args)
+        program = parse_program(text)
+        analyze_unsequel_program(program, schema)
+        sql = emit_unsequel_sql(program, schema)
+        column_types = {name: _column_types_for(args, name) for name in data}
+        result = run_sql(sql, data, delimiter=args.delimiter, column_types=column_types)
+        _print_result(result, args.format)
+        return
     text = _read_query(args.query)
     if args.engine == "duckdb":
         if not _wants_pipeline(args):

@@ -55,14 +55,19 @@ def _reader(path: str, *, delimiter: str | None = None,
             f"types={{{types_sql}}})")
 
 
-def connect(data: dict[str, str], *, delimiter: str | None = None,
-            column_types: dict[str, dict[str, str]] | None = None):
+def _import_duckdb():
     try:
         import duckdb
     except ImportError as exc:  # pragma: no cover - exercised only without the extra
         raise DuckDBUnavailable(
             "duckdb is not installed; run `pip install \"unsequel[duckdb]\"`"
         ) from exc
+    return duckdb
+
+
+def connect(data: dict[str, str], *, delimiter: str | None = None,
+            column_types: dict[str, dict[str, str]] | None = None):
+    duckdb = _import_duckdb()
     con = duckdb.connect()
     for name, path in data.items():
         if not Path(path).exists():
@@ -72,6 +77,19 @@ def connect(data: dict[str, str], *, delimiter: str | None = None,
             f"CREATE TABLE {_ident(name)} AS SELECT * FROM "
             f"{_reader(str(path), delimiter=delimiter, column_types=table_types)}")
     return con
+
+
+def describe_source(path: str, *, delimiter: str | None = None,
+                    column_types: dict[str, str] | None = None) -> list[tuple[str, str]]:
+    """Column names and DuckDB type names for a data file (for introspection)."""
+    if not Path(path).exists():
+        raise UnsequelError(f"data file not found: {path}")
+    duckdb = _import_duckdb()
+    con = duckdb.connect()
+    cursor = con.execute(
+        "DESCRIBE SELECT * FROM "
+        f"{_reader(str(path), delimiter=delimiter, column_types=column_types)}")
+    return [(str(row[0]), str(row[1])) for row in cursor.fetchall()]
 
 
 def run_sql(sql: str, data: dict[str, str], *, delimiter: str | None = None,

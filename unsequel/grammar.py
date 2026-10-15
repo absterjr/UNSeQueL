@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Union
 
-from .errors import UnsequelError
+from .errors import LocatedError
 
 __all__ = [
     "GrammarError",
@@ -68,35 +68,10 @@ __all__ = [
 ]
 
 
-class GrammarError(UnsequelError):
+class GrammarError(LocatedError):
     """A lex/parse error in a `.unsequel` program, located when possible."""
 
-    def __init__(
-        self,
-        message: str,
-        line: int | None = None,
-        column: int | None = None,
-        *,
-        stage_index: int | None = None,
-        keyword: str | None = None,
-    ) -> None:
-        self.message = message
-        self.line = line
-        self.column = column
-        self.stage_index = stage_index
-        self.keyword = keyword
-        super().__init__(self._format())
-
-    def _format(self) -> str:
-        prefix = ""
-        if self.stage_index is not None:
-            prefix = f"stage {self.stage_index} ({self.keyword}): "
-        location = ""
-        if self.line is not None:
-            location = f" at line {self.line}, column {self.column}"
-        return f"{prefix}{self.message}{location}"
-
-    def with_stage(self, index: int, keyword: str) -> GrammarError:
+    def with_stage(self, index: int, keyword: str) -> "GrammarError":
         """Attach stage location, mirroring the compiler's PipelineError wrap."""
         return GrammarError(
             self.message, self.line, self.column, stage_index=index, keyword=keyword

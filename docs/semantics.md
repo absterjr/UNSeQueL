@@ -7,9 +7,10 @@ SQL feature is implemented.
 ## Which surface should I use?
 
 For a new user, start with **UNSeQueL** (`.unsequel`, TypeScript compiler, DuckDB target,
-VS Code extension). The Python `.usql` and `.pusql` surfaces are prototypes
-retained for comparison and learning; they have different grammars and are not
-three dialects a beginner is expected to choose between. See the
+VS Code extension). The Python package runs the same `.unsequel` language
+through a ported front-end, analyzer, and DuckDB code generator (see
+`unsequel/grammar.py`); its older `.usql` and `.pusql` surfaces are prototypes
+retained for comparison and are being retired. See the
 [repository map](../README.md#repository-map) and the
 [UNSeQueL grammar](../compiler/docs/grammar.md).
 

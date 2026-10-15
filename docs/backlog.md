@@ -23,8 +23,11 @@ identifiers, explicit delimiter/type overrides, and non-blocking stdin tests.
    `unsequel-windows-x64.exe`, `unsequel-linux-x64`, `unsequel-macos-x64`,
    and `unsequel-macos-arm64`, smoke-tests each, and attaches them to GitHub
    releases automatically.
-3. [ ] `.unsequel` execution inside the packaged CLI — blocked on the port
-   (analyzer + codegen + CLI wiring).
+3. [x] `.unsequel` execution inside the packaged CLI: the analyzer
+   (`unsequel/analyzer.py`), DuckDB code generator (`unsequel/sqlgen.py`), and
+   CLI wiring are ported, so `run`/`check`/`compile`/`preview` work on
+   `.unsequel` files (DuckDB-backed). The memory engine for the canonical
+   grammar is still to come.
 4. [ ] PyPI publish (`unsequel` + console scripts) so `pip install unsequel`
    is a first-class path; owner token required.
 5. [ ] VS Code: point the extension at the standalone executable (bundled
@@ -41,10 +44,12 @@ identifiers, explicit delimiter/type overrides, and non-blocking stdin tests.
    role: port grammar v1.3 so `.unsequel` files run on the memory/DuckDB
    engines, or retire the old surfaces from the CLI and docs — the file
    extension stays `.unsequel` either way.
-   **Progress (October 2026):** the v1.3 front-end (lexer, AST, parser) is
-   ported in `unsequel/grammar.py` and parses the compiler's reference,
-   coverage, and dogfood corpora; the analyzer, DuckDB codegen, and CLI
-   wiring come next.
+   **Progress (October 2026):** the v1.3 front-end (lexer, AST, parser),
+   analyzer, DuckDB code generator, and CLI wiring are ported in
+   `unsequel/grammar.py`, `analyzer.py`, and `sqlgen.py`; `python -m unsequel
+   run query.unsequel` executes the canonical language on DuckDB with the
+   compiler's golden SQL. The memory-engine execution and retiring the old
+   surfaces remain.
 2. **Native window syntax** in the prototype grammar
    (`window rank = ROW_NUMBER() over (partition by ... order by ...)`). The
    `sql` hatch covers it today, but ranking is the first thing analysts reach

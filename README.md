@@ -79,8 +79,12 @@ highlighting, Run Selection/File/REPL) is in
 
 The Python 0.1.0 prototype implements an ordered SQL-like subset with a lexer,
 semantic checks, an in-memory relational executor, CTEs, nested sources, set
-operations, five join types, and a SQLite adapter. The separate production
-compiler is described below; neither surface claims full SQL compatibility.
+operations, five join types, and a SQLite adapter. It also hosts a port of the
+canonical `.unsequel` grammar v1.3: `python -m unsequel run query.unsequel`
+parses, checks, compiles, and executes the same programs as the TypeScript
+compiler on DuckDB (analyzer, codegen, `check`/`compile`/`preview` included).
+The separate production compiler is described below; neither surface claims
+full SQL compatibility.
 
 ## Install the Python prototype
 

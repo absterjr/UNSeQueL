@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Convergence, continued: the Python package now carries the full `.unsequel`
+  pipeline — a schema-aware analyzer (`unsequel/analyzer.py`), a DuckDB SQL
+  generator (`unsequel/sqlgen.py`), and CLI wiring. `python -m unsequel run
+  query.unsequel` parses, checks, compiles, and executes on DuckDB; `check`,
+  `compile --stage`, and `preview --stage` support `.unsequel` files; `# source`
+  and `# schema` directives work, and `--data` sources are introspected when
+  no schema is given. Generated SQL is byte-identical to the compiler's
+  golden files for all 21 reference queries, and DuckDB execution matches the
+  hand-written SQL. The packaged standalone executable now runs `.unsequel`
+  too.
 - Standalone distribution: `packaging/unsequel.spec` builds a one-file
   executable that bundles Python, the `unsequel` package, and DuckDB
   (verified on Windows with both the memory and DuckDB engines), and the new
