@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Run-capable executable and output sinks: the SEA build stages a
+  per-platform run bundle (`node scripts/build-sea.mjs --with-duckdb`) whose
+  executable resolves the DuckDB module from `modules/` next to the binary —
+  the canonical grammar now runs with no npm, Node, or Python involved. The
+  `Compile exe` workflow packages both the single-file compile exe and the
+  `unsequel-run-<platform>.tar.gz` archive and attaches them to releases.
+  `run --out results.csv|.parquet|.json` writes results instead of printing
+  them (DuckDB COPY in the TypeScript CLI; the Python CLI writes CSV/JSON
+  natively and Parquet via DuckDB).
+- LSP follow-ups: quick-fix code actions (insert the required aggregate after
+  `group by`, backtick a reserved identifier) and go-to-definition for `with`
+  names.
 - Adoption tooling: the compiler core is now dependency-free — `check`,
   `compile`, `fmt`, and the new `lsp` command run without the DuckDB native
   addon (now an optional dependency), and `src/index.ts` exports the library

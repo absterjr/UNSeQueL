@@ -89,18 +89,27 @@ native addon (the optional dependency), so the compiler works in npm-locked
 environments, and `run`/`preview`/`repl` print an install hint when DuckDB is
 absent.
 
-That core also bundles into a true single-file executable — no Node, no npm,
-no DuckDB — via SEA (Node's single-executable support):
+That core also bundles into true single-file executables — no Node, no npm —
+via SEA (Node's single-executable support):
 
 ```bash
 npm install
-node scripts/build-sea.mjs     # dist/unsequel-compile.exe (or dist/unsequel-compile)
-dist/unsequel-compile check examples/reference/q09_group_count.unsequel
+npm run build:exe             # dist/unsequel-compile(.exe): check/compile/fmt/lsp
+npm run build:run-exe         # dist/unsequel-run/: the same exe + bundled DuckDB (run/preview/repl)
 ```
 
-CI builds `unsequel-compile-{windows,linux,macos}-*` on every release. The
-run-capable distribution (with DuckDB bundled) is the Python package's
-standalone executable; see the repository releases.
+The run bundle keeps the DuckDB module in `modules/` next to the binary; the
+CLI finds it there, so the folder is a complete, self-contained installation.
+CI packages both for every platform on each release
+(`unsequel-compile-{windows,linux,macos}-*` and
+`unsequel-run-<platform>.tar.gz`).
+
+Results can be written instead of printed:
+
+```bash
+unsequel run query.unsequel --out results.parquet
+unsequel run query.unsequel --out results.csv
+```
 
 The compiler is also a library: `import { parseProgram, analyze, emitSql,
 formatProgram } from "unsequel"` — nothing there loads DuckDB either

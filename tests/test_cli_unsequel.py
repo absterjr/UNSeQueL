@@ -87,6 +87,41 @@ class UnsequelCliTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("UK", out)
 
+    def test_out_writes_csv_and_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "result.csv"
+            out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
+                                "--out", str(csv_path))
+            self.assertEqual(code, 0)
+            self.assertIn("wrote", out)
+            text = csv_path.read_text(encoding="utf-8")
+            self.assertEqual(text.splitlines()[0], "country,orders")
+            self.assertIn("United Kingdom", text)
+
+            json_path = Path(tmp) / "result.json"
+            out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
+                                "--out", str(json_path))
+            self.assertEqual(code, 0)
+            first = json.loads(json_path.read_text(encoding="utf-8").splitlines()[0])
+            self.assertEqual(set(first), {"country", "orders"})
+
+    @unittest.skipUnless(HAS_DUCKDB, "duckdb is not installed")
+    def test_out_parquet_via_duckdb(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            parquet = Path(tmp) / "result.parquet"
+            out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
+                                "--out", str(parquet))
+            self.assertEqual(code, 0)
+            data = parquet.read_bytes()
+            self.assertEqual(data[:4], b"PAR1")
+            self.assertGreater(len(data), 100)
+
+    def test_out_rejects_unknown_extension(self):
+        out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
+                            "--out", "result.xlsx")
+        self.assertEqual(code, 1)
+        self.assertIn("--out must end in", out)
+
     def test_check_reports_schema_ok(self):
         out, code = run_cli("check", QUERY, "--schema", SCHEMA)
         self.assertEqual(code, 0)

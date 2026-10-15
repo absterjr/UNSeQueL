@@ -12,7 +12,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -65,3 +65,36 @@ execFileSync(
 );
 
 console.log(`built ${exePath}`);
+
+if (process.argv.includes("--with-duckdb")) {
+  // Stage a run-capable, per-platform bundle: the same exe plus the DuckDB
+  // native module in `modules/`, which the CLI resolves from next to the
+  // binary (see siblingAddon in src/duckdb.ts).
+  const stage = join(distDir, "unsequel-run");
+  rmSync(stage, { recursive: true, force: true });
+  const runExeName = process.platform === "win32" ? "unsequel.exe" : "unsequel";
+  const duckdbSource = join(root, "node_modules", "@duckdb");
+  const duckdbTarget = join(stage, "modules", "node_modules", "@duckdb");
+  mkdirSync(duckdbTarget, { recursive: true });
+  copyFileSync(exePath, join(stage, runExeName));
+  for (const entry of readdirSync(duckdbSource)) {
+    cpSync(join(duckdbSource, entry), join(duckdbTarget, entry), { recursive: true });
+  }
+  writeFileSync(join(stage, "README.txt"), [
+    "UNSeQueL run-capable executable",
+    "",
+    "This folder is a complete, self-contained UNSeQueL installation:",
+    `  ${runExeName}   the CLI (run/check/compile/preview/fmt/repl, and \`lsp\` for editors)`,
+    "  modules/      the bundled DuckDB native module",
+    "",
+    "No Node, npm, or Python is required. Keep the folder together.",
+    "",
+    "Examples:",
+    `  ./${runExeName} --version`,
+    `  ./${runExeName} run query.unsequel`,
+    "",
+    "This build is per-platform; download the archive for your OS.",
+    "",
+  ].join("\n"));
+  console.log(`run-capable bundle staged at ${stage}`);
+}

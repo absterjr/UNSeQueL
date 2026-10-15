@@ -92,6 +92,26 @@ def describe_source(path: str, *, delimiter: str | None = None,
     return [(str(row[0]), str(row[1])) for row in cursor.fetchall()]
 
 
+def copy_to_file(sql: str, path: str, data: dict[str, str], *,
+                 delimiter: str | None = None,
+                 column_types: dict[str, dict[str, str]] | None = None) -> None:
+    """Write a query's results to a file via DuckDB COPY (the --out sink)."""
+    duckdb = _import_duckdb()
+    con = connect(data, delimiter=delimiter, column_types=column_types)
+    inner = sql.strip().rstrip(";")
+    lowered = path.lower()
+    if lowered.endswith((".parquet", ".pq")):
+        options = "FORMAT PARQUET"
+    elif lowered.endswith(".json"):
+        options = "FORMAT JSON"
+    elif lowered.endswith(".csv"):
+        options = "FORMAT CSV, HEADER"
+    else:
+        raise UnsequelError("--out must end in .csv, .parquet, or .json")
+    escaped = path.replace("'", "''")
+    con.execute(f"COPY (\n{inner}\n) TO '{escaped}' ({options})")
+
+
 def run_sql(sql: str, data: dict[str, str], *, delimiter: str | None = None,
             column_types: dict[str, dict[str, str]] | None = None) -> Table:
     """Execute one SQL statement and return the result as an in-memory Table."""

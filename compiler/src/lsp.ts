@@ -15,10 +15,12 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  CodeActionKind,
   CompletionItemKind,
   SymbolKind,
   TextDocumentSyncKind,
   createConnection,
+  type CodeAction,
   type CompletionItem,
   type Connection,
   type Diagnostic,
@@ -26,6 +28,8 @@ import {
   type Hover,
   type InitializeParams,
   type InitializeResult,
+  type Location,
+  type Position,
   type Range,
   type TextEdit,
 } from "vscode-languageserver/node.js";
@@ -156,6 +160,8 @@ export function createUnsequelServer(connection: Connection): void {
         hoverProvider: true,
         documentFormattingProvider: true,
         documentSymbolProvider: true,
+        definitionProvider: true,
+        codeActionProvider: true,
       },
     };
   });
@@ -286,6 +292,87 @@ export function createUnsequelServer(connection: Connection): void {
         selectionRange: range,
       };
     });
+  });
+
+  const wordAt = (document: TextDocument, position: Position): string | null => {
+    const line = document.getText().split(/\r\n|\n/)[position.line] ?? "";
+    const before = line.slice(0, position.character);
+    const after = line.slice(position.character);
+    const word = `${/[A-Za-z0-9_`]+$/.exec(before)?.[0] ?? ""}${/^[A-Za-z0-9_`]*/.exec(after)?.[0] ?? ""}`;
+    const stripped = word.replace(/`/g, "");
+    return stripped === "" ? null : stripped;
+  };
+
+  connection.onDefinition((params): Location | null => {
+    const document = documents.get(params.textDocument.uri);
+    if (document === undefined) return null;
+    const word = wordAt(document, params.position);
+    if (word === null) return null;
+    const program = tryParse(document.getText());
+    if (program === null) return null;
+    for (const stage of program) {
+      if (stage.kind === "with" && stage.name === word) {
+        return { uri: document.uri, range: toRange(stage) };
+      }
+    }
+    return null;
+  });
+
+  connection.onCodeAction((params): CodeAction[] => {
+    const document = documents.get(params.textDocument.uri);
+    if (document === undefined) return [];
+    const lines = document.getText().split(/\r\n|\n/);
+    const actions: CodeAction[] = [];
+    for (const diagnostic of params.context.diagnostics) {
+      if (diagnostic.source !== "unsequel") continue;
+
+      if (/group by must be immediately followed by aggregate/.test(diagnostic.message)) {
+        const line = diagnostic.range.start.line;
+        const lineText = lines[line] ?? "";
+        actions.push({
+          title: "Insert the required aggregate stage",
+          kind: CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          edit: {
+            changes: {
+              [document.uri]: [{
+                range: {
+                  start: { line, character: lineText.length },
+                  end: { line, character: lineText.length },
+                },
+                newText: "\naggregate n = COUNT(*)",
+              }],
+            },
+          },
+        });
+        continue;
+      }
+
+      const keyword = /unexpected keyword '([A-Za-z_][A-Za-z0-9_]*)' in expression/
+        .exec(diagnostic.message)?.[1];
+      if (keyword !== undefined) {
+        const { line, character } = diagnostic.range.start;
+        const lineText = lines[line] ?? "";
+        if (lineText.slice(character, character + keyword.length) !== keyword) continue;
+        actions.push({
+          title: `Quote \`${keyword}\` with backticks`,
+          kind: CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          edit: {
+            changes: {
+              [document.uri]: [{
+                range: {
+                  start: { line, character },
+                  end: { line, character: character + keyword.length },
+                },
+                newText: `\`${keyword}\``,
+              }],
+            },
+          },
+        });
+      }
+    }
+    return actions;
   });
 
   documents.onDidOpen((change) => validate(change.document));

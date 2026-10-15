@@ -61,9 +61,10 @@ commands:
            [--delimiter C] [--column-type table.column=type]
            run the program truncated at grammar stage N and show sample rows
   run      <query.unsequel | -> [--data name=path] [--schema s.json]
-           [--format table|json|csv] [--lines A:B] [--delimiter C]
-           [--column-type table.column=type]
-           execute the whole program ('-' reads the query from stdin)
+           [--format table|json|csv] [--out results.csv|.parquet|.json]
+           [--lines A:B] [--delimiter C] [--column-type table.column=type]
+           execute the whole program ('-' reads the query from stdin);
+           --out writes the results instead of printing them
   fmt      <query.unsequel> [--write | --check]
            print the canonical form; --write rewrites the file, --check exits 1
   repl     [--data name=path] [--schema s.json] [--format table|json|csv]
@@ -301,6 +302,24 @@ function validateFormat(value: string): string {
   return value;
 }
 
+function sqlString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Wrap a compiled program in a DuckDB COPY so results land in a file. */
+function copyToSql(sql: string, path: string): string {
+  const inner = sql.trimEnd().replace(/;$/, "");
+  const lowered = path.toLowerCase();
+  const options = lowered.endsWith(".csv") ? " (FORMAT CSV, HEADER)"
+    : lowered.endsWith(".parquet") || lowered.endsWith(".pq") ? " (FORMAT PARQUET)"
+      : lowered.endsWith(".json") ? " (FORMAT JSON)"
+        : null;
+  if (options === null) {
+    throw new UsageError("--out must end in .csv, .parquet, or .json");
+  }
+  return `COPY (\n${inner}\n) TO ${sqlString(path)}${options}`;
+}
+
 // --------------------------------------------------------------------------- //
 // Commands
 // --------------------------------------------------------------------------- //
@@ -377,11 +396,17 @@ async function cmdRun(args: Args): Promise<string> {
       "run needs --data name=path or a '# source' directive at the top of the file");
   }
   const format = validateFormat(flag(args, "format") ?? "table");
+  const outPath = flag(args, "out");
   const { connect, runSql } = await loadDuckDB();
   const connection = await connect(sources, sourceOptions(args, sources));
   const schema = await schemaForConnection(args, directives, path, connection, sources);
   analyze(program, schema);
-  const result = await runSql(connection, emitSql(program, schema));
+  const compiled = emitSql(program, schema);
+  if (outPath !== undefined) {
+    await runSql(connection, copyToSql(compiled, outPath));
+    return `wrote ${outPath}\n`;
+  }
+  const result = await runSql(connection, compiled);
   return `${formatResult(result, format)}\n`;
 }
 
@@ -444,7 +469,7 @@ const ALLOWED_FLAGS: Record<string, readonly string[]> = {
   check: ["schema", "lines"],
   compile: ["schema", "stage", "lines", "data", "delimiter", "column-type"],
   preview: ["schema", "stage", "limit", "data", "lines", "delimiter", "column-type"],
-  run: ["schema", "data", "format", "lines", "delimiter", "column-type"],
+  run: ["schema", "data", "format", "out", "lines", "delimiter", "column-type"],
   fmt: ["write", "check"],
   repl: ["schema", "data", "format", "delimiter", "column-type"],
 };

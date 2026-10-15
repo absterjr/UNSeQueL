@@ -41,10 +41,11 @@ whole-relation windows for those queries.
 
 ## P2 — tooling
 
-9. VS Code extension: the language server (diagnostics, completion, hover
-   with generated SQL, formatting, outline) ships in `unsequel lsp` and the
-   extension is a language client. Remaining: publish to the Marketplace,
-   plus go-to-definition, semantic tokens, and code actions.
+9. VS Code extension: the language server ships in `unsequel lsp` with
+   diagnostics, completion, hover with generated SQL, formatting, an outline,
+   quick-fix code actions, and go-to-definition for `with` names; the
+   extension is a language client. Remaining: publish to the Marketplace and
+   semantic tokens.
 10. Standalone binaries for the npm side: a dependency-free compile exe
     (check/compile/fmt/lsp) builds via SEA (`scripts/build-sea.mjs`) and CI
     attaches it to releases; a run-capable Node exe stays optional because
@@ -60,8 +61,10 @@ whole-relation windows for those queries.
 14. **Real connections**: `ATTACH` an existing `.duckdb` file, DuckDB's
     Postgres/MySQL/SQLite scanners, and `httpfs` for S3/HTTP, so `# source`
     can name a connection instead of a file reloaded every run.
-15. **Output sinks**: `--out results.parquet` or an `into` target so query
-    results can feed pipelines instead of only printing.
+15. ~~**Output sinks**~~ **Done (October 2026):** `run --out
+    results.csv|.parquet|.json` writes results via DuckDB COPY (both CLIs).
+    An `into <table>` stage for persisting results remains with the
+    connection work in item 14.
 16. `--json` diagnostics mode for non-VS-Code tooling, and documented exit
     codes / shell completions.
 

@@ -50,6 +50,8 @@
     "fmt:check": "node scripts/check-formatter.mjs",
     "editors:check": "node scripts/check-editors.mjs && node --check editors/vscode/extension.js",
     "smoke": "node dist/main.js run examples/real/r01_top_products.unsequel --format json && node dist/main.js run examples/real/r03_repeat_customers.unsequel --format csv && node dist/main.js run examples/real/r04_monthly_revenue.unsequel --format csv && node dist/main.js run examples/real/r05_share_of_total.unsequel --format json",
+    "build:exe": "node scripts/build-sea.mjs",
+    "build:run-exe": "node scripts/build-sea.mjs --with-duckdb",
     "prepack": "npm run build"
   },
   "engines": {

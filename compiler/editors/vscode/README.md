@@ -14,6 +14,8 @@ Backed by the language server built into the `unsequel` CLI (`unsequel lsp`):
 | Hover | hover a stage to see the DuckDB SQL it compiles to and its output columns |
 | Formatting | the canonical formatter (`unsequel fmt`); enable `editor.formatOnSave` for format-on-save |
 | Outline | one symbol per stage (and per `with` definition) |
+| Quick fixes | insert the required `aggregate` after `group by`; backtick a reserved identifier |
+| Go to definition | jump from a `with` name (or a source using it) to its definition |
 
 | Command (Ctrl+Shift+P) | What it does |
 | --- | --- |

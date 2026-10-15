@@ -237,3 +237,48 @@ describe("cli: run", () => {
     expect(result.stderr).toContain("data file not found");
   });
 });
+
+describe("cli: output sinks", () => {
+  it("writes results with --out (csv, parquet, json)", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-out-"));
+    try {
+      const csv = join(directory, "result.csv");
+      const csvRun = await runCli([
+        "run", Q20, "--schema", SCHEMA, "--out", csv, ...DATA,
+      ]);
+      expect(csvRun.code).toBe(0);
+      expect(csvRun.stdout).toContain(`wrote ${csv}`);
+      const csvText = readFileSync(csv, "utf8");
+      expect(csvText.split("\n")[0]).toBe("category,orders,revenue,avg_order");
+      expect(csvText).toContain("home");
+
+      const parquet = join(directory, "result.parquet");
+      const parquetRun = await runCli([
+        "run", Q20, "--schema", SCHEMA, "--out", parquet, ...DATA,
+      ]);
+      expect(parquetRun.code).toBe(0);
+      const parquetBytes = readFileSync(parquet);
+      expect(parquetBytes.subarray(0, 4).toString("ascii")).toBe("PAR1");
+      expect(parquetBytes.length).toBeGreaterThan(100);
+
+      const json = join(directory, "result.json");
+      const jsonRun = await runCli([
+        "run", Q20, "--schema", SCHEMA, "--out", json, ...DATA,
+      ]);
+      expect(jsonRun.code).toBe(0);
+      const jsonText = readFileSync(json, "utf8").trim();
+      expect(jsonText.split("\n").length).toBeGreaterThanOrEqual(1);
+      expect(JSON.parse(jsonText.split("\n")[0] as string)).toHaveProperty("category");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an unsupported --out extension", async () => {
+    const result = await runCli([
+      "run", Q20, "--schema", SCHEMA, "--out", "result.xlsx", ...DATA,
+    ]);
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain("--out must end in");
+  });
+});

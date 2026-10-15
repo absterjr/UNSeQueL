@@ -11,7 +11,7 @@ from pathlib import Path
 from . import __version__
 from .analyzer import analyze as analyze_unsequel_program
 from .codegen import emit_sql
-from .duckdb_backend import describe_source, run_sql
+from .duckdb_backend import copy_to_file, describe_source, run_sql
 from .engine import execute
 from .errors import ParseError, UnsequelError
 from .format import format_pipeline, is_formatted
@@ -254,6 +254,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="override inferred type: text, integer, number, or boolean; repeatable")
     run.add_argument("--sqlite", metavar="PATH",
                      help="SQLite database input; all tables and views become sources")
+    run.add_argument("--out", metavar="PATH",
+                     help="write results to a .csv, .parquet, or .json file instead "
+                          "of printing them")
     run.add_argument("--format", choices=("table", "csv", "json"), default="table")
 
     check = commands.add_parser("check", help="parse (and optionally schema-check) a query")
@@ -400,6 +403,36 @@ def _cmd_fmt(args) -> None:
     print(formatted, end="")
 
 
+def _emit_result(args, result, out_path, *, sql, data) -> bool:
+    """Handle --out; returns True when the results were written to a file."""
+    if out_path is None:
+        return False
+    target = Path(out_path)
+    suffix = target.suffix.lower()
+    if suffix in {".parquet", ".pq"}:
+        if sql is None:
+            raise UnsequelError(
+                "writing .parquet needs the DuckDB engine; add --engine duckdb "
+                "or write .csv/.json")
+        copy_to_file(sql, out_path, data, delimiter=args.delimiter,
+                     column_types={name: _column_types_for(args, name) for name in data})
+        print(f"wrote {out_path}")
+        return True
+    if suffix not in {".csv", ".json"}:
+        raise UnsequelError("--out must end in .csv, .parquet, or .json")
+    with target.open("w", encoding="utf-8", newline="") as handle:
+        if suffix == ".csv":
+            writer = csv.DictWriter(handle, fieldnames=result.columns,
+                                    lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(result.rows)
+        else:
+            for row in result.rows:
+                handle.write(json.dumps(row, default=str) + "\n")
+    print(f"wrote {out_path}")
+    return True
+
+
 def _cmd_run(args) -> None:
     if _wants_unsequel(args):
         if args.sqlite:
@@ -409,6 +442,7 @@ def _cmd_run(args) -> None:
         for name, path in args.data:
             data[name] = path
         program = parse_program(text)
+        sql = None
         if args.engine == "duckdb":
             schema = _unsequel_schema(args, data, args.schema or directive_schema)
             analyze_unsequel_program(program, schema)
@@ -433,9 +467,14 @@ def _cmd_run(args) -> None:
                     "directive, or supply --data sources to introspect")
             analyze_unsequel_program(program, schema)
             result = execute_program(program, tables, schema=schema)
-        _print_result(result, args.format)
+            if args.out and Path(args.out).suffix.lower() in {".parquet", ".pq"}:
+                sql = emit_unsequel_sql(program, schema)
+        if not _emit_result(args, result, args.out, sql=sql, data=data):
+            _print_result(result, args.format)
         return
     text = _read_query(args.query)
+    sql = None
+    data = {name: path for name, path in args.data}
     if args.engine == "duckdb":
         if not _wants_pipeline(args):
             raise UnsequelError("--engine duckdb requires --pipeline (or a .pusql file)")
@@ -445,7 +484,6 @@ def _cmd_run(args) -> None:
             raise UnsequelError("--engine duckdb reads --data sources, not --sqlite")
         stages = _pipeline_stages(text, args.schema)
         sql = emit_sql(stages, Schema.load(args.schema))
-        data = {name: path for name, path in args.data}
         column_types = {name: _column_types_for(args, name) for name in data}
         result = run_sql(sql, data, delimiter=args.delimiter, column_types=column_types)
     else:
@@ -456,7 +494,8 @@ def _cmd_run(args) -> None:
             if args.schema:
                 raise UnsequelError("--schema is only supported with --pipeline")
             result = execute(_parse_ordered_with_hint(text), _load_tables(args))
-    _print_result(result, args.format)
+    if not _emit_result(args, result, args.out, sql=sql, data=data):
+        _print_result(result, args.format)
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -130,6 +130,8 @@ describe("language server", () => {
     expect(result.capabilities.documentFormattingProvider).toBe(true);
     expect(result.capabilities.documentSymbolProvider).toBe(true);
     expect(result.capabilities.completionProvider).toBeTruthy();
+    expect(result.capabilities.definitionProvider).toBe(true);
+    expect(result.capabilities.codeActionProvider).toBe(true);
   });
 
   it("publishes parse diagnostics with the error position", async () => {
@@ -219,5 +221,66 @@ describe("language server", () => {
       "1 from", "2 filter", "3 select",
     ]);
     expect(symbols[1].range.start.line).toBe(2);
+  });
+
+  it("offers a quick fix that inserts the missing aggregate", async () => {
+    const server = await initialized();
+    const text = "# schema: schema.json\nfrom orders\ngroup by quantity\n";
+    const { uri } = workspace(text);
+    const diagnostics = await open(server, uri, text);
+    expect(diagnostics.diagnostics.length).toBe(1);
+    expect(diagnostics.diagnostics[0].message).toMatch(
+      /group by must be immediately followed by aggregate/);
+
+    const actions = (await server.request("textDocument/codeAction", {
+      textDocument: { uri },
+      range: diagnostics.diagnostics[0].range,
+      context: { diagnostics: diagnostics.diagnostics },
+    })) as any[];
+    expect(actions.length).toBe(1);
+    expect(actions[0].kind).toBe("quickfix");
+    const edit = actions[0].edit.changes[uri][0];
+    expect(edit.newText).toBe("\naggregate n = COUNT(*)");
+    expect(edit.range.start.line).toBe(2);
+  });
+
+  it("offers to backtick a reserved identifier", async () => {
+    const server = await initialized();
+    const text = "# schema: schema.json\nfrom orders\nselect order\n";
+    const { uri } = workspace(text);
+    const diagnostics = await open(server, uri, text);
+    expect(diagnostics.diagnostics.length).toBe(1);
+    expect(diagnostics.diagnostics[0].message).toMatch(
+      /unexpected keyword 'order' in expression/);
+
+    const actions = (await server.request("textDocument/codeAction", {
+      textDocument: { uri },
+      range: diagnostics.diagnostics[0].range,
+      context: { diagnostics: diagnostics.diagnostics },
+    })) as any[];
+    expect(actions.length).toBe(1);
+    const edit = actions[0].edit.changes[uri][0];
+    expect(edit.newText).toBe("`order`");
+    expect(edit.range.start).toEqual({ line: 2, character: 7 });
+  });
+
+  it("navigates to a with definition", async () => {
+    const server = await initialized();
+    const text = [
+      "# schema: schema.json",
+      "with recent = (from orders | take 1)",
+      "from recent",
+      "select order_id",
+      "",
+    ].join("\n");
+    const { uri } = workspace(text);
+    await open(server, uri, text);
+
+    const location = (await server.request("textDocument/definition", {
+      textDocument: { uri },
+      position: { line: 2, character: 6 },
+    })) as any;
+    expect(location.uri).toBe(uri);
+    expect(location.range.start.line).toBe(1);
   });
 });

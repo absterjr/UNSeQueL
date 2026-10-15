@@ -7,13 +7,51 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-
-import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 
 import { PlqError } from "./errors.js";
 import { parseSchema, type Schema } from "./schema.js";
 
-export type { DuckDBConnection };
+type DuckDBApi = typeof import("@duckdb/node-api");
+export type DuckDBConnection = import("@duckdb/node-api").DuckDBConnection;
+
+let cachedApi: DuckDBApi | null = null;
+
+/**
+ * The native addon loads lazily. Single-file run executables ship it in a
+ * `modules/` directory next to the binary; inside SEA a plain import cannot
+ * see the filesystem, so a `createRequire` anchored there is the fallback.
+ */
+function siblingAddon(): DuckDBApi | null {
+  try {
+    const modulesDir = join(dirname(process.execPath), "modules");
+    if (!existsSync(join(modulesDir, "node_modules", "@duckdb", "node-api"))) {
+      return null;
+    }
+    const anchor = createRequire(join(modulesDir, "index.js"));
+    return anchor("@duckdb/node-api") as DuckDBApi;
+  } catch {
+    return null;
+  }
+}
+
+async function duckdbApi(): Promise<DuckDBApi> {
+  if (cachedApi !== null) return cachedApi;
+  try {
+    cachedApi = await import("@duckdb/node-api");
+  } catch {
+    cachedApi = siblingAddon();
+  }
+  if (cachedApi === null) {
+    throw new PlqError(
+      "this command executes queries and needs the DuckDB native module; "
+      + "install it with `npm i @duckdb/node-api` "
+      + "(check, compile, and fmt work without it)",
+    );
+  }
+  return cachedApi;
+}
 
 export type Row = Record<string, unknown>;
 
@@ -179,6 +217,7 @@ export async function loadTableSource(connection: DuckDBConnection, name: string
 
 export async function connect(data: ReadonlyMap<string, string>,
                               options: SourceOptions = {}): Promise<DuckDBConnection> {
+  const { DuckDBInstance } = await duckdbApi();
   let connection: DuckDBConnection;
   try {
     const instance = await DuckDBInstance.create(":memory:");

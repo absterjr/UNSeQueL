@@ -16,12 +16,16 @@ jobs:
         include:
           - os: windows-latest
             asset: unsequel-compile-windows-x64.exe
+            suffix: windows-x64
           - os: ubuntu-22.04
             asset: unsequel-compile-linux-x64
+            suffix: linux-x64
           - os: macos-14
             asset: unsequel-compile-macos-arm64
+            suffix: macos-arm64
           - os: macos-15-intel
             asset: unsequel-compile-macos-x64
+            suffix: macos-x64
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -33,9 +37,9 @@ jobs:
           node-version: "22"
       - name: Install compiler dependencies
         run: npm ci
-      - name: Build the single-file compile exe (SEA)
-        run: node scripts/build-sea.mjs
-      - name: Name the release asset
+      - name: Build the compile exe and the run-capable bundle (SEA)
+        run: node scripts/build-sea.mjs --with-duckdb
+      - name: Name the compile exe
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
@@ -43,21 +47,40 @@ jobs:
           else
             mv dist/unsequel-compile "dist/${{ matrix.asset }}"
           fi
-      - name: Smoke test (version, check, compile)
+      - name: Package the run-capable bundle
+        shell: bash
+        run: tar -czf "dist/unsequel-run-${{ matrix.suffix }}.tar.gz" -C dist unsequel-run
+      - name: Smoke test (compile exe: version, check, compile)
         shell: bash
         run: |
           "dist/${{ matrix.asset }}" --version
           "dist/${{ matrix.asset }}" check examples/reference/q09_group_count.unsequel
           "dist/${{ matrix.asset }}" compile examples/reference/q09_group_count.unsequel \
             --schema ../examples/spec/schema.json > /dev/null
-      - name: Upload workflow artifact
+      - name: Smoke test (run bundle: query + output sink, no Node involved)
+        shell: bash
+        run: |
+          RUN_EXE=$([ "$RUNNER_OS" = "Windows" ] && echo unsequel.exe || echo unsequel)
+          "dist/unsequel-run/$RUN_EXE" run examples/reference/q09_group_count.unsequel \
+            --schema ../examples/spec/schema.json \
+            --data orders=../examples/spec/orders.csv > /dev/null
+          "dist/unsequel-run/$RUN_EXE" run examples/reference/q09_group_count.unsequel \
+            --schema ../examples/spec/schema.json \
+            --data orders=../examples/spec/orders.csv --out ../run-out.csv
+          head -n 1 ../run-out.csv
+      - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset }}
-          path: compiler/dist/${{ matrix.asset }}
+          name: unsequel-tools-${{ matrix.suffix }}
+          path: |
+            compiler/dist/${{ matrix.asset }}
+            compiler/dist/unsequel-run-${{ matrix.suffix }}.tar.gz
       - name: Attach to the release
         if: github.event_name == 'release'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" "dist/${{ matrix.asset }}" --clobber
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "dist/${{ matrix.asset }}" \
+            "dist/unsequel-run-${{ matrix.suffix }}.tar.gz" --clobber
