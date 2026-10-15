@@ -13,7 +13,8 @@ import unittest
 from decimal import Decimal
 from pathlib import Path
 
-from unsequel.grammar import parse_program
+from unsequel.errors import ExecutionError
+from unsequel.grammar import RawSqlStage, parse_program
 from unsequel.io import load_table
 from unsequel.memory_engine import execute_program
 from unsequel.schema import Schema
@@ -196,6 +197,13 @@ class MemoryParityTests(unittest.TestCase):
     def _assert_program_matches(self, text: str):
         program = parse_program(text)
         sql = emit_sql(program, self.schema)
+        if any(isinstance(stage, RawSqlStage) for stage in program):
+            # The hatch is DuckDB SQL; the memory engine refuses it instead of
+            # running it on a different engine with different semantics.
+            with self.assertRaisesRegex(ExecutionError, "sql hatch runs DuckDB SQL"):
+                execute_program(program, self.memory_tables, schema=self.schema)
+            self._duckdb_rows(sql)
+            return
         memory = execute_program(program, self.memory_tables, schema=self.schema)
         self.assertEqual(
             _row_set(memory.columns, memory.rows),

@@ -11,7 +11,7 @@ from pathlib import Path
 from . import __version__
 from .analyzer import analyze as analyze_unsequel_program
 from .codegen import emit_sql
-from .duckdb_backend import copy_to_file, describe_source, run_sql
+from .duckdb_backend import connect, copy_to_file, describe_database, fetch, run_sql
 from .engine import execute
 from .errors import ParseError, UnsequelError
 from .format import format_pipeline, is_formatted
@@ -99,6 +99,7 @@ def _read_query(path: str) -> str:
 _UNSEQUEL_SOURCE_DIRECTIVE = re.compile(
     r"^#\s*source\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.+)$")
 _UNSEQUEL_SCHEMA_DIRECTIVE = re.compile(r"^#\s*schema\s*:\s*(.+)$")
+_UNSEQUEL_DB_DIRECTIVE = re.compile(r"^#\s*db\s*:\s*(.+)$")
 
 _DUCKDB_TYPE_FAMILIES = {
     "BOOLEAN": "boolean",
@@ -116,8 +117,8 @@ def _resolve_relative(base: Path, raw: str) -> str:
     return str(path if path.is_absolute() else base / path)
 
 
-def _unsequel_directives(text: str, query_path: str) -> tuple[dict[str, str], str | None]:
-    """Leading `# source name: path` / `# schema: path` directives.
+def _unsequel_directives(text: str, query_path: str):
+    """Leading `# source name: path` / `# schema: path` / `# db: path` directives.
 
     Matches the compiler: directives must be the file's first lines, and an
     ordinary comment (or any other line) ends the directive block. Paths are
@@ -126,6 +127,7 @@ def _unsequel_directives(text: str, query_path: str) -> tuple[dict[str, str], st
     base = Path(query_path).resolve().parent if query_path != "-" else Path.cwd()
     sources: dict[str, str] = {}
     schema_path: str | None = None
+    database_path: str | None = None
     for line in text.replace("\r\n", "\n").split("\n"):
         trimmed = line.strip()
         if not trimmed.startswith("#"):
@@ -138,8 +140,12 @@ def _unsequel_directives(text: str, query_path: str) -> tuple[dict[str, str], st
         if match:
             schema_path = _resolve_relative(base, match.group(1).strip())
             continue
+        match = _UNSEQUEL_DB_DIRECTIVE.match(trimmed)
+        if match:
+            database_path = _resolve_relative(base, match.group(1).strip())
+            continue
         break
-    return sources, schema_path
+    return sources, schema_path, database_path
 
 
 def _family_from_duckdb_type(type_name: str) -> str:
@@ -147,23 +153,40 @@ def _family_from_duckdb_type(type_name: str) -> str:
     return _DUCKDB_TYPE_FAMILIES.get(base, "unknown")
 
 
-def _unsequel_schema(args, data: dict[str, str], schema_path: str | None) -> Schema:
+def _attach_specs(args) -> dict[str, str]:
+    attach: dict[str, str] = {}
+    for spec in getattr(args, "attach", None) or []:
+        if "=" not in spec:
+            raise UnsequelError("--attach must look like name=path.duckdb")
+        name, path = spec.split("=", 1)
+        if not name or not path:
+            raise UnsequelError("--attach must look like name=path.duckdb")
+        if name in attach:
+            raise UnsequelError(f"duplicate --attach name {name!r}")
+        attach[name] = path
+    return attach
+
+
+def _duckdb_available() -> bool:
+    try:
+        import duckdb  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _unsequel_schema_for(args, data, schema_path, database, attach) -> Schema:
     if schema_path:
         return Schema.load(schema_path)
-    if not data:
-        raise UnsequelError(
-            ".unsequel files need a schema: pass --schema, add a '# schema: path' "
-            "directive, or supply --data sources to introspect")
-    delimiter = getattr(args, "delimiter", None)
-    column_type_args = getattr(args, "column_type", [])
-    tables = {}
-    for name, path in data.items():
-        overrides = {column: type_name for table, column, type_name in column_type_args
-                     if table.casefold() == name.casefold()}
-        described = describe_source(path, delimiter=delimiter, column_types=overrides)
-        tables[name] = {"columns": {column: _family_from_duckdb_type(type_name)
-                                    for column, type_name in described}}
-    return Schema.from_dict({"tables": tables})
+    if database or attach or data:
+        con = connect(data, delimiter=getattr(args, "delimiter", None),
+                      column_types={name: _column_types_for(args, name)
+                                    for name in data},
+                      database_path=database, attach=attach)
+        return describe_database(con)
+    raise UnsequelError(
+        ".unsequel files need a schema: pass --schema, add a '# schema:' or "
+        "'# db:' directive, or supply --data sources to introspect")
 
 
 def _schema_from_tables(tables) -> Schema:
@@ -204,13 +227,16 @@ def _legacy_notice() -> None:
           ".unsequel is the language (see README)", file=sys.stderr)
 
 
-def _unsequel_inputs(args) -> tuple[str, dict[str, str], Schema]:
+def _unsequel_inputs(args):
     text = _read_query(args.query)
-    data, directive_schema = _unsequel_directives(text, args.query)
+    data, directive_schema, directive_db = _unsequel_directives(text, args.query)
     for name, path in getattr(args, "data", []):
         data[name] = path
-    schema = _unsequel_schema(args, data, args.schema or directive_schema)
-    return text, data, schema
+    database = getattr(args, "db", None) or directive_db
+    attach = _attach_specs(args)
+    schema = _unsequel_schema_for(args, data, args.schema or directive_schema,
+                                  database, attach)
+    return text, data, database, attach, schema
 
 
 def _load_tables(args):
@@ -247,6 +273,12 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--unsequel", action="store_true",
                          help="treat the input (including stdin '-') as canonical "
                               ".unsequel syntax")
+        sub.add_argument("--db", metavar="PATH",
+                         help="open a file-backed DuckDB database (read-only); "
+                              "'# source' files load as temporary tables")
+        sub.add_argument("--attach", action="append", default=[], metavar="NAME=PATH",
+                         help="ATTACH another DuckDB file for cross-database queries; "
+                              "repeatable")
         sub.add_argument("--schema", metavar="PATH",
                          help="JSON schema file; validate the pipeline against it")
 
@@ -277,6 +309,10 @@ def build_parser() -> argparse.ArgumentParser:
     compile_.add_argument("--unsequel", action="store_true",
                           help="treat the input (including stdin '-') as canonical "
                                ".unsequel syntax")
+    compile_.add_argument("--db", metavar="PATH",
+                          help="open a file-backed DuckDB database (read-only)")
+    compile_.add_argument("--attach", action="append", default=[], metavar="NAME=PATH",
+                          help="ATTACH another DuckDB file; repeatable")
     compile_.add_argument("--schema", metavar="PATH",
                           help="JSON schema file (required for .pusql; .unsequel files "
                                "may use a '# schema' directive or introspect --data)")
@@ -288,6 +324,10 @@ def build_parser() -> argparse.ArgumentParser:
     preview.add_argument("--unsequel", action="store_true",
                          help="treat the input (including stdin '-') as canonical "
                               ".unsequel syntax")
+    preview.add_argument("--db", metavar="PATH",
+                         help="open a file-backed DuckDB database (read-only)")
+    preview.add_argument("--attach", action="append", default=[], metavar="NAME=PATH",
+                         help="ATTACH another DuckDB file; repeatable")
     preview.add_argument("--schema", metavar="PATH",
                          help="JSON schema file (required for .pusql)")
     preview.add_argument("--stage", type=int, metavar="N", required=True,
@@ -348,7 +388,7 @@ def _parse_ordered_with_hint(text: str):
 def _cmd_check(args) -> None:
     text = _read_query(args.query)
     if _wants_unsequel(args):
-        _, data, schema = _unsequel_inputs(args)
+        _, data, database, attach, schema = _unsequel_inputs(args)
         program = parse_program(text)
         analyze_unsequel_program(program, schema)
         print("valid UNSeQueL program (schema OK)")
@@ -367,7 +407,7 @@ def _cmd_check(args) -> None:
 
 def _cmd_compile(args) -> None:
     if _wants_unsequel(args):
-        text, _, schema = _unsequel_inputs(args)
+        text, _, database, attach, schema = _unsequel_inputs(args)
         program = parse_program(text)
         print(emit_unsequel_sql(program, schema, stop_at=args.stage))
         return
@@ -380,15 +420,17 @@ def _cmd_compile(args) -> None:
 
 def _cmd_preview(args) -> None:
     if _wants_unsequel(args):
-        text, data, schema = _unsequel_inputs(args)
+        text, data, database, attach, schema = _unsequel_inputs(args)
         program = parse_program(text)
         total = len(program)
         if not 1 <= args.stage <= total:
             raise UnsequelError(f"--stage must be between 1 and {total} for this query")
         inner = emit_unsequel_sql(program, schema, stop_at=args.stage).rstrip().rstrip(";")
         sql = f"SELECT * FROM (\n{inner}\n) AS _preview LIMIT {args.limit}"
-        column_types = {name: _column_types_for(args, name) for name in data}
-        result = run_sql(sql, data, delimiter=args.delimiter, column_types=column_types)
+        con = connect(data, delimiter=args.delimiter,
+                      column_types={name: _column_types_for(args, name) for name in data},
+                      database_path=database, attach=attach)
+        result = fetch(con, sql)
         print(f"stage {args.stage}/{total}  ({program[args.stage - 1].keyword})")
         _print_result(result, args.format)
         return
@@ -423,7 +465,7 @@ def _cmd_fmt(args) -> None:
     print(formatted, end="")
 
 
-def _emit_result(args, result, out_path, *, sql, data) -> bool:
+def _emit_result(args, result, out_path, *, sql, data, database=None, attach=None) -> bool:
     """Handle --out; returns True when the results were written to a file."""
     if out_path is None:
         return False
@@ -435,7 +477,8 @@ def _emit_result(args, result, out_path, *, sql, data) -> bool:
                 "writing .parquet needs the DuckDB engine; add --engine duckdb "
                 "or write .csv/.json")
         copy_to_file(sql, out_path, data, delimiter=args.delimiter,
-                     column_types={name: _column_types_for(args, name) for name in data})
+                     column_types={name: _column_types_for(args, name) for name in data},
+                     database_path=database, attach=attach)
         print(f"wrote {out_path}")
         return True
     if suffix not in {".csv", ".json"}:
@@ -458,38 +501,62 @@ def _cmd_run(args) -> None:
         if args.sqlite:
             raise UnsequelError("--sqlite is not supported for .unsequel files")
         text = _read_query(args.query)
-        data, directive_schema = _unsequel_directives(text, args.query)
+        data, directive_schema, directive_db = _unsequel_directives(text, args.query)
         for name, path in args.data:
             data[name] = path
+        database = args.db or directive_db
+        attach = _attach_specs(args)
+        engine = args.engine or (
+            "duckdb" if (database or attach or _duckdb_available()) else "memory")
+        if engine == "memory" and (database or attach):
+            raise UnsequelError(
+                "databases need DuckDB; drop --engine memory and install the "
+                "duckdb extra (`pip install \"unsequel[duckdb]\"`) if needed")
+        schema_path = args.schema or directive_schema
         program = parse_program(text)
         sql = None
-        if args.engine == "duckdb":
-            schema = _unsequel_schema(args, data, args.schema or directive_schema)
+        if engine == "duckdb":
+            if not (schema_path or database or attach or data):
+                raise UnsequelError(
+                    ".unsequel files need a schema: pass --schema, add a "
+                    "'# schema:' or '# db:' directive, or supply --data sources "
+                    "to introspect")
+            con = connect(data, delimiter=args.delimiter,
+                          column_types={name: _column_types_for(args, name)
+                                        for name in data},
+                          database_path=database, attach=attach)
+            schema = Schema.load(schema_path) if schema_path else describe_database(con)
             analyze_unsequel_program(program, schema)
             sql = emit_unsequel_sql(program, schema)
-            column_types = {name: _column_types_for(args, name) for name in data}
-            result = run_sql(sql, data, delimiter=args.delimiter,
-                             column_types=column_types)
+            if args.out and Path(args.out).suffix.lower() in {".parquet", ".pq"}:
+                copy_to_file(sql, args.out, data, delimiter=args.delimiter,
+                             column_types={name: _column_types_for(args, name)
+                                           for name in data},
+                             database_path=database, attach=attach)
+                print(f"wrote {args.out}")
+                return
+            result = fetch(con, sql)
         else:
             tables = {
                 name: load_table(name, path, delimiter=args.delimiter,
                                  column_types=_column_types_for(args, name))
                 for name, path in data.items()
             }
-            schema_path = args.schema or directive_schema
             if schema_path:
                 schema = Schema.load(schema_path)
             elif tables:
                 schema = _schema_from_tables(tables)
             else:
                 raise UnsequelError(
-                    ".unsequel files need a schema: pass --schema, add a '# schema: path' "
-                    "directive, or supply --data sources to introspect")
+                    ".unsequel files need a schema: pass --schema, add a "
+                    "'# schema:' or '# db:' directive, or supply --data sources "
+                    "to introspect")
             analyze_unsequel_program(program, schema)
             result = execute_program(program, tables, schema=schema)
             if args.out and Path(args.out).suffix.lower() in {".parquet", ".pq"}:
                 sql = emit_unsequel_sql(program, schema)
-        if not _emit_result(args, result, args.out, sql=sql, data=data):
+        if not _emit_result(args, result, args.out, sql=sql, data=data,
+                            database=database, attach=attach):
             _print_result(result, args.format)
         return
     _legacy_notice()

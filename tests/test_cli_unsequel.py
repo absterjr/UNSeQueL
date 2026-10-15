@@ -50,12 +50,64 @@ class UnsequelCliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("schema", out)
 
-    def test_default_engine_is_the_memory_engine(self):
+    def test_default_engine_is_duckdb_when_available(self):
         default_out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA)
-        memory_out, code2 = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
+        duckdb_out, code2 = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
+                                    "--engine", "duckdb")
+        memory_out, code3 = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
                                     "--engine", "memory")
-        self.assertEqual((code, code2), (0, 0))
-        self.assertEqual(default_out, memory_out)
+        self.assertEqual((code, code2, code3), (0, 0, 0))
+        self.assertEqual(sorted(default_out.splitlines()),
+                         sorted(duckdb_out.splitlines()))
+        self.assertEqual(sorted(default_out.splitlines()),
+                         sorted(memory_out.splitlines()))
+
+    def test_date_functions_agree_across_engines(self):
+        query = "compiler/examples/real/r04_monthly_revenue.unsequel"
+        memory_out, code1 = run_cli("run", query, "--engine", "memory")
+        duckdb_out, code2 = run_cli("run", query, "--engine", "duckdb")
+        self.assertEqual((code1, code2), (0, 0))
+        self.assertEqual(memory_out, duckdb_out)
+
+    @unittest.skipUnless(HAS_DUCKDB, "duckdb is not installed")
+    def test_db_attach_and_directives(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            database = directory / "library.duckdb"
+            import duckdb
+            connection = duckdb.connect(str(database))
+            connection.execute(
+                "CREATE TABLE books AS SELECT * FROM "
+                "(VALUES (1, 'Dune'), (2, 'Emma')) AS t(id, title)")
+            connection.close()
+
+            attached = directory / "attached.unsequel"
+            attached.write_text("from library.books\nselect title\nsort title\n",
+                                encoding="utf-8")
+            out, code = run_cli("run", str(attached), "--attach", f"library={database}")
+            self.assertEqual((code, "Dune" in out, "Emma" in out), (0, True, True))
+
+            directive = directory / "directive.unsequel"
+            directive.write_text(f"# db: {database}\nfrom books\nselect title\nsort title\n",
+                                 encoding="utf-8")
+            out2, code2 = run_cli("run", str(directive))
+            self.assertEqual((code2, "Dune" in out2), (0, True))
+
+            out3, code3 = run_cli("run", str(directive), "--engine", "memory")
+            self.assertEqual(code3, 1)
+            self.assertIn("databases need DuckDB", out3)
+
+    def test_missing_database_is_reported(self):
+        query = "compiler/examples/real/r06_composition.unsequel"
+        out, code = run_cli("run", query, "--db", "missing_directory/missing.duckdb")
+        self.assertEqual(code, 1)
+        self.assertIn("database not found", out)
+
+    def test_memory_engine_refuses_the_sql_hatch(self):
+        query = "compiler/examples/reference/q21_sql_hatch.unsequel"
+        out, code = run_cli("run", query, "--schema", SCHEMA, *DATA, "--engine", "memory")
+        self.assertEqual(code, 1)
+        self.assertIn("sql hatch runs DuckDB SQL", out)
 
     def test_memory_and_duckdb_engines_agree(self):
         memory_out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,

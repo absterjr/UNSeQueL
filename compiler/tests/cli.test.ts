@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -306,15 +306,84 @@ describe("cli: databases", () => {
 
       // Aggregation over the attached table works too.
       writeFileSync(query, "from library.books\ngroup by id\naggregate n = COUNT(*)\nsort id\n");
-      const counted = await runCli(["run", query, "--attach", `library=${dbPath}`]);
+      const counted = await runCli([
+        "run", query, "--attach", `library=${dbPath}`, "--format", "json",
+      ]);
       expect(counted.code).toBe(0);
-      expect(counted.stdout).toContain("1");
+      expect(JSON.parse(counted.stdout)).toEqual([
+        { id: 1, n: 1 },
+        { id: 2, n: 1 },
+      ]);
     } finally {
       try {
         rmSync(directory, { recursive: true, force: true });
       } catch {
         // the database lock may outlive the test on Windows
       }
+    }
+  });
+
+  it("reports a missing database instead of creating one", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-nodb-"));
+    try {
+      const missing = join(directory, "typo.duckdb");
+      const query = join(directory, "query.unsequel");
+      writeFileSync(query, "from keep\nselect x\n");
+      const result = await runCli(["run", query, "--db", missing]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("database not found");
+      expect(existsSync(missing)).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("writes a schema snapshot for editors", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-snapshot-"));
+    try {
+      const dbPath = join(directory, "library.duckdb");
+      const instance = await DuckDBInstance.create(dbPath);
+      const connection = await instance.connect();
+      await connection.run("CREATE TABLE books AS SELECT 1 AS id, 'Dune' AS title");
+      connection.closeSync();
+      instance.closeSync();
+
+      const result = await runCli(["schema", "--db", dbPath]);
+      expect(result.code).toBe(0);
+      const snapshotPath = `${dbPath}.schema.json`;
+      expect(result.stdout).toContain(snapshotPath);
+      expect(existsSync(snapshotPath)).toBe(true);
+      const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8")) as {
+        tables: Record<string, { columns: Record<string, string> }>;
+      };
+      expect(snapshot.tables["books"]?.columns).toEqual({ id: "INTEGER", title: "VARCHAR" });
+    } finally {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch {
+        // the database lock may outlive the test on Windows
+      }
+    }
+  });
+
+  it("loads CSVs larger than the sampling window", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-bigcsv-"));
+    try {
+      const large = join(directory, "big.csv");
+      const lines = ["id,label"];
+      for (let index = 0; index < 120_000; index += 1) {
+        lines.push(`${index},label_${index}`);
+      }
+      writeFileSync(large, `${lines.join("\n")}\n`);
+      const query = join(directory, "query.unsequel");
+      writeFileSync(query, "# source big: big.csv\nfrom big\nselect id\nsort id\ntake 5\n");
+      const result = await runCli(["run", query, "--format", "json"]);
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual([
+        { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+      ]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
     }
   });
 

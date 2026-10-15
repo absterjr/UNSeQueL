@@ -41,14 +41,20 @@ jobs:
             chmod +x dist/unsequel
             mv dist/unsequel "dist/${{ matrix.asset }}"
           fi
-      - name: Smoke test the packaged CLI (version, composition, sink)
+      - name: Smoke test the packaged CLI (composition, engine diff, sink)
         shell: bash
         run: |
-          "dist/${{ matrix.asset }}" --version
-          "dist/${{ matrix.asset }}" run compiler/examples/real/r06_composition.unsequel > /dev/null
-          "dist/${{ matrix.asset }}" run compiler/examples/real/r06_composition.unsequel \
-            --engine duckdb > /dev/null
-          "dist/${{ matrix.asset }}" run compiler/examples/real/r06_composition.unsequel \
+          BIN="dist/${{ matrix.asset }}"
+          "$BIN" --version
+          # DuckDB is bundled, so it is the default engine; the memory engine
+          # must agree with it on the composing query and on date functions.
+          "$BIN" run compiler/examples/real/r06_composition.unsequel > "$RUNNER_TEMP/r06-duckdb.txt"
+          "$BIN" run compiler/examples/real/r06_composition.unsequel --engine memory > "$RUNNER_TEMP/r06-memory.txt"
+          diff "$RUNNER_TEMP/r06-memory.txt" "$RUNNER_TEMP/r06-duckdb.txt"
+          "$BIN" run compiler/examples/real/r04_monthly_revenue.unsequel > "$RUNNER_TEMP/r04-duckdb.txt"
+          "$BIN" run compiler/examples/real/r04_monthly_revenue.unsequel --engine memory > "$RUNNER_TEMP/r04-memory.txt"
+          diff "$RUNNER_TEMP/r04-memory.txt" "$RUNNER_TEMP/r04-duckdb.txt"
+          "$BIN" run compiler/examples/real/r06_composition.unsequel \
             --out "$RUNNER_TEMP/out.parquet"
           head -c 4 "$RUNNER_TEMP/out.parquet" | grep -q PAR1
       - name: Upload workflow artifact

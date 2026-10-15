@@ -83,6 +83,18 @@ export function createUnsequelServer(connection: Connection): void {
       }
       return null;
     }
+    if (directives.databasePath !== null) {
+      // Databases are read-only and DuckDB-free here: read the snapshot that
+      // `unsequel schema --db <db>` writes next to the database.
+      const snapshot = `${documentPath(document, directives.databasePath)}.schema.json`;
+      if (existsSync(snapshot)) {
+        try {
+          return loadSchema(snapshot);
+        } catch {
+          return null;
+        }
+      }
+    }
     if (settings.schemaPath !== null && existsSync(settings.schemaPath)) {
       try {
         return loadSchema(settings.schemaPath);

@@ -81,7 +81,14 @@ contain placeholder tokens.
   `unsequel-vscode-0.1.0.vsix` (VS Code extension); all package versions
   started at 0.1.0, and the four standalone executables were backfilled onto
   it.
-- GitHub release `v0.2.0` adds the Python port of the canonical language
+- GitHub release `v0.3.0` ships the language server extension, the SEA run
+  bundle (`unsequel-run-<platform>.tar.gz`, DuckDB in `modules/`, no Node
+  needed), the PyInstaller executables with DuckDB as the default engine,
+  `--out` sinks, file-backed databases (`--db`, `--attach`, `# db:`), and the
+  `schema` snapshot command the LSP reads; assets: `unsequel-0.3.0.tgz`,
+  `unsequel-0.3.0-py3-none-any.whl`, `unsequel-vscode-0.3.0.vsix`, plus the
+  platform binaries from both workflows.
+- GitHub release `v0.2.0` added the Python port of the canonical language
   (front-end, analyzer, DuckDB codegen, CLI wiring), the standalone packaging,
   and the legacy-surface retirement notices; assets: `unsequel-0.2.0.tgz`,
   `unsequel-0.2.0-py3-none-any.whl`, `unsequel-vscode-0.2.0.vsix`, plus the
@@ -96,9 +103,9 @@ contain placeholder tokens.
   accounts/tokens; see [CONTRIBUTING.md](../CONTRIBUTING.md) and the package
   metadata.
 - Publishing prep verified from this machine: `npm publish --dry-run` packs
-  `unsequel@0.2.0` cleanly (auth still required for the real upload), the
-  Python wheel builds as `unsequel-0.2.0-py3-none-any.whl`, and the VSIX
-  builds as `unsequel-vscode-0.2.0.vsix`. Owner commands after login:
+  `unsequel@0.3.0` cleanly (auth still required for the real upload), the
+  Python wheel builds as `unsequel-0.3.0-py3-none-any.whl`, and the VSIX
+  builds as `unsequel-vscode-0.3.0.vsix`. Owner commands after login:
   `npm login` then `npm publish` in `compiler/`; `python -m pip install build
   twine` then `python -m twine upload dist/*` for PyPI; `npx @vscode/vsce
   publish` for the Marketplace (choose the editor after feedback).

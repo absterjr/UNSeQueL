@@ -13,6 +13,9 @@ from .model import Table
 
 
 _LEADING_ZERO_INTEGER = re.compile(r"^[+-]?0\d+$")
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_ISO_TIMESTAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
 _TYPE_ALIASES = {
     "text": "text", "string": "text", "varchar": "text", "char": "text",
     "int": "integer", "integer": "integer",
@@ -156,6 +159,14 @@ def infer_csv_types(path: str | Path, delimiter: str | None = None,
                 "text": "VARCHAR", "integer": "BIGINT", "number": "DOUBLE",
                 "boolean": "BOOLEAN",
             }[override]
+            continue
+        raw = [str(value).strip() for value in (_blank_to_null(row[index]) for row in rows)
+               if value is not None]
+        if raw and all(_ISO_DATE.fullmatch(value) for value in raw):
+            types[column] = "DATE"
+            continue
+        if raw and all(_ISO_TIMESTAMP.fullmatch(value) for value in raw):
+            types[column] = "TIMESTAMP"
             continue
         inferred = _infer_column([_blank_to_null(row[index]) for row in rows])
         non_null = [value for value in inferred if value is not None]

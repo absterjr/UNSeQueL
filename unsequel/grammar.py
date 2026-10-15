@@ -1446,7 +1446,7 @@ def _parse_name_or_call(reader: _TokenReader, context: _ExprContext) -> Expr:
         reader.fail(
             f"unknown function '{name_token.value}'; supported functions: "
             "COUNT, SUM, AVG, MIN, MAX, COALESCE, NULLIF, LOWER, UPPER, ABS, ROUND, "
-            "LENGTH, TRIM, CONCAT",
+            "LENGTH, TRIM, CONCAT, STRFTIME, DATE_TRUNC",
             name_token,
         )
     if not context.in_aggregate and lowered in _AGGREGATES:

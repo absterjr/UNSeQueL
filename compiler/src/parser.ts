@@ -1035,7 +1035,7 @@ function parseNameOrCall(reader: TokenReader, context: ExprContext): Expr {
   if (!AGGREGATES.has(lowered) && !SCALAR_FUNCTIONS.has(lowered)) {
     reader.fail(
       `unknown function '${nameToken.value}'; supported functions: `
-      + `COUNT, SUM, AVG, MIN, MAX, COALESCE, NULLIF, LOWER, UPPER, ABS, ROUND, LENGTH, TRIM, CONCAT`,
+      + `COUNT, SUM, AVG, MIN, MAX, COALESCE, NULLIF, LOWER, UPPER, ABS, ROUND, LENGTH, TRIM, CONCAT, STRFTIME, DATE_TRUNC`,
       nameToken);
   }
   if (!context.inAggregate && AGGREGATES.has(lowered)) {

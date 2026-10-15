@@ -23,19 +23,12 @@ import { loadSchema, type Schema } from "./schema.js";
 import { analyze } from "./semantics.js";
 
 /**
- * The DuckDB native addon loads lazily: `check`, `compile`, and `fmt` work
- * without it, and `run`/`preview`/`repl` report a clear install hint.
+ * The DuckDB native addon loads lazily inside duckdb.ts: `check`, `fmt`, and
+ * `compile` without sources work without it, and execution commands report a
+ * clear install hint (including the no-npm run-bundle path) when it is absent.
  */
 export async function loadDuckDB(): Promise<typeof import("./duckdb.js")> {
-  try {
-    return await import("./duckdb.js");
-  } catch {
-    throw new PlqError(
-      "this command executes queries and needs the DuckDB native module; "
-      + "install it with `npm i @duckdb/node-api` "
-      + "(check, compile, and fmt work without it)",
-    );
-  }
+  return await import("./duckdb.js");
 }
 
 export interface CliResult {
@@ -44,7 +37,7 @@ export interface CliResult {
   stderr: string;
 }
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 const USAGE = `unsequel ${VERSION}
 UNSeQueL query language compiler
@@ -72,6 +65,9 @@ commands:
            [--delimiter C] [--column-type table.column=type]
            interactive session; a query runs on a blank line or ';'
   lsp      run the language server on stdio (used by editor integrations)
+  schema   --db mydb.duckdb [--attach name=path] [--data name=path] [--out f.json]
+           write a schema snapshot (JSON) for editors; with --db and no --out,
+           '<db>.schema.json' is written next to the database
   (bare 'unsequel' opens the repl on a terminal)
 
 query files can declare their own connection, so no flags are needed:
@@ -473,6 +469,35 @@ function cmdFmt(args: Args): string {
   return formatted;
 }
 
+async function cmdSchema(args: Args): Promise<string> {
+  const database = flag(args, "db");
+  const sources = dataSources(args, true);
+  const attach = attachSources(args);
+  const outPath = flag(args, "out");
+  if (database === undefined && attach.size === 0 && sources.size === 0) {
+    throw new UsageError("schema needs --db, --attach, or --data sources");
+  }
+  const { connect, introspectDatabase } = await loadDuckDB();
+  const connection = await connect(sources, connectOptions(args, sources, database));
+  const schema = await introspectDatabase(connection);
+  const tables: Record<string, { columns: Record<string, string> }> = {};
+  for (const [name, table] of schema.tables) {
+    tables[name] = { columns: Object.fromEntries(table.columns) };
+  }
+  const text = `${JSON.stringify({ tables }, null, 2)}\n`;
+  if (outPath === "-") return text;
+  if (outPath !== undefined) {
+    writeFileSync(outPath, text, "utf8");
+    return `wrote ${outPath}\n`;
+  }
+  if (database !== undefined) {
+    const snapshot = `${database}.schema.json`;
+    writeFileSync(snapshot, text, "utf8");
+    return `wrote ${snapshot}\n`;
+  }
+  return text;
+}
+
 async function cmdRepl(args: Args): Promise<string> {
   const sources = dataSources(args, true);
   const session = new ReplSession({
@@ -508,7 +533,7 @@ function errorResult(error: unknown): CliResult {
   return { code: 1, stdout: "", stderr: `error: ${message}\n` };
 }
 
-const KNOWN_COMMANDS = ["check", "compile", "preview", "run", "fmt", "repl"] as const;
+const KNOWN_COMMANDS = ["check", "compile", "preview", "run", "fmt", "repl", "schema"] as const;
 
 const ALLOWED_FLAGS: Record<string, readonly string[]> = {
   check: ["schema", "lines"],
@@ -519,6 +544,7 @@ const ALLOWED_FLAGS: Record<string, readonly string[]> = {
         "db", "attach"],
   fmt: ["write", "check"],
   repl: ["schema", "data", "format", "delimiter", "column-type"],
+  schema: ["db", "attach", "data", "delimiter", "column-type", "out"],
 };
 
 function commandArgs(command: string, argv: readonly string[]): Args {
@@ -562,6 +588,7 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
     else if (command === "preview") stdout = await cmdPreview(args);
     else if (command === "fmt") stdout = cmdFmt(args);
     else if (command === "repl") stdout = await cmdRepl(args);
+    else if (command === "schema") stdout = await cmdSchema(args);
     else stdout = await cmdRun(args);
     return { code: 0, stdout, stderr: "" };
   } catch (error) {

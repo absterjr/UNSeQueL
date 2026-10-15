@@ -3,9 +3,12 @@
 Walks the same stage list and state model as `unsequel.sqlgen` (one relation
 per lowering unit, the same column-lookup and join-naming rules, the same
 hidden sort ordinal), but evaluates directly in Python, so `.unsequel`
-programs run without DuckDB. `tests/test_memory_parity.py` pins every
-reference query against DuckDB execution; the behaviors probed against DuckDB
-are encoded here: float division and division-by-zero infinity,
+programs run without DuckDB. The `sql` hatch is refused here rather than
+executed on SQLite, because the hatch is DuckDB SQL and running it on another
+engine silently changes answers (integer division, LIKE case sensitivity,
+QUALIFY, date functions). `tests/test_memory_parity.py` pins every reference
+query against DuckDB execution; the behaviors probed against DuckDB are
+encoded here: float division and division-by-zero infinity,
 half-away-from-zero casts and rounding, three-valued logic, NULLS LAST
 ordering, RANGE-peer window aggregates, and implicit text/number coercion in
 comparisons.
@@ -58,7 +61,6 @@ from .grammar import (
 )
 from .model import Table
 from .schema import Schema, type_family
-from .sql_runtime import run_sql_stage
 from .sqlgen import _internal_order_names, _number_text
 
 __all__ = ["StageExecutionError", "execute_program"]
@@ -818,13 +820,10 @@ def _execute_chain(
                 state = _set_stage(stage, rows, lookup, live, inner)
                 order = None
             elif isinstance(stage, RawSqlStage):
-                current = Table("__input__", list(live),
-                                [{column: row.get(column) for column in live}
-                                 for row in rows])
-                result = run_sql_stage(stage.text, context.tables, current)
-                state = _State([dict(row) for row in result.rows],
-                               _Lookup({}, opaque=True), list(result.columns), None)
-                order = None
+                raise ExecutionError(
+                    "the sql hatch runs DuckDB SQL and needs the DuckDB engine; "
+                    "run with --engine duckdb (or install the duckdb extra, which "
+                    "also makes it the default)")
             else:  # pragma: no cover - defensive
                 raise ExecutionError(f"cannot execute stage '{stage.keyword}'")
         except StageExecutionError:

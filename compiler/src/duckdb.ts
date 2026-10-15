@@ -6,7 +6,7 @@
  * this module; parse, analyze, and compile stay pure.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
@@ -62,16 +62,20 @@ function siblingAddon(): DuckDBApi | null {
 
 async function duckdbApi(): Promise<DuckDBApi> {
   if (cachedApi !== null) return cachedApi;
+  let reason = "";
   try {
     cachedApi = await import("@duckdb/node-api");
-  } catch {
+  } catch (error) {
+    reason = error instanceof Error ? error.message : String(error);
     cachedApi = siblingAddon();
   }
   if (cachedApi === null) {
     throw new PlqError(
-      "this command executes queries and needs the DuckDB native module; "
-      + "install it with `npm i @duckdb/node-api` "
-      + "(check, compile, and fmt work without it)",
+      "run, preview, repl, and database features need the DuckDB engine. "
+      + "With npm: `npm i @duckdb/node-api`. Without npm: use the run bundle "
+      + "from the releases (unsequel-run-<platform>.tar.gz ships the module in "
+      + "modules/ next to the executable). check, fmt, and compile without "
+      + `sources work without it. Details: ${reason}`,
     );
   }
   return cachedApi;
@@ -139,9 +143,28 @@ function csvRecords(text: string, delimiter: string): string[][] {
   return rows;
 }
 
+const SAMPLE_BYTES = 1 << 20;
+
+/**
+ * Type inference reads only a sample (up to 1 MiB) so arbitrarily large CSVs
+ * stay loadable — Node caps strings at ~512 MiB, and DuckDB streams the file
+ * itself. A record cut off by the sample boundary is dropped; ragged rows
+ * past the sample surface as DuckDB's own read error.
+ */
 function inferredCsvTypes(path: string, delimiter: string,
                           overrides: ReadonlyMap<string, string>): Map<string, string> {
-  const rows = csvRecords(readFileSync(path, "utf8"), delimiter);
+  const descriptor = openSync(path, "r");
+  let sample: Buffer;
+  try {
+    sample = Buffer.alloc(SAMPLE_BYTES);
+    const bytes = readSync(descriptor, sample, 0, SAMPLE_BYTES, 0);
+    sample = sample.subarray(0, bytes);
+  } finally {
+    closeSync(descriptor);
+  }
+  const truncated = sample.length === SAMPLE_BYTES;
+  let rows = csvRecords(sample.toString("utf8"), delimiter);
+  if (truncated && rows.length > 1) rows = rows.slice(0, -1);
   const header = rows[0];
   if (header === undefined || header.length === 0) {
     throw new PlqError(`CSV file has no header: ${path}`);
@@ -253,9 +276,17 @@ export async function loadTableSource(connection: DuckDBConnection, name: string
 export async function connect(data: ReadonlyMap<string, string>,
                               options: ConnectOptions = {}): Promise<DuckDBConnection> {
   const { DuckDBInstance } = await duckdbApi();
+  if (options.databasePath !== undefined && !existsSync(options.databasePath)) {
+    throw new PlqError(
+      `database not found: ${options.databasePath} `
+      + "(databases are read-only until `create table = (...)` ships)");
+  }
   let connection: DuckDBConnection;
   try {
-    const instance = await DuckDBInstance.create(options.databasePath ?? ":memory:");
+    const instance = await DuckDBInstance.create(
+      options.databasePath ?? ":memory:",
+      options.databasePath === undefined ? {} : { access_mode: "READ_ONLY" },
+    );
     openInstances.push(instance);
     connection = await instance.connect();
     openConnections.push(connection);
@@ -267,7 +298,8 @@ export async function connect(data: ReadonlyMap<string, string>,
       throw new PlqError(`database to attach not found: ${path}`);
     }
     try {
-      await connection.run(`ATTACH ${quoted(path)} AS ${quotedIdent(name)}`);
+      await connection.run(
+        `ATTACH ${quoted(path)} AS ${quotedIdent(name)} (READ_ONLY)`);
     } catch (error) {
       throw new PlqError(`could not attach database ${path}: ${(error as Error).message}`);
     }
@@ -320,19 +352,34 @@ export async function introspectDatabase(connection: DuckDBConnection): Promise<
     const reader = await connection.runAndReadAll("SHOW ALL TABLES");
     const rows = reader.getRowObjectsJS() as Array<{
       database: string;
+      schema: string;
       name: string;
       column_names: string[];
       column_types: string[];
+      temporary: boolean;
     }>;
     const currentReader = await connection.runAndReadAll(
       "SELECT current_database() AS name");
     const current = String(
       (currentReader.getRowObjectsJS()[0] as { name: unknown } | undefined)?.name ?? "");
     const tables: Record<string, { columns: Record<string, string> }> = {};
+    const temporaryNames = new Set(
+      rows.filter((row) => row.temporary).map((row) => row.name));
     for (const row of rows) {
-      const key = row.database === current || row.database === "temp"
-        ? row.name
-        : `${row.database}.${row.name}`;
+      if (!row.temporary && row.database === current && row.schema === "main"
+          && temporaryNames.has(row.name)) {
+        continue; // the temporary source shadows the persistent table
+      }
+      let key: string;
+      if (row.temporary) {
+        key = row.name;
+      } else if (row.database === current) {
+        key = row.schema === "main" ? row.name : `${row.schema}.${row.name}`;
+      } else {
+        key = row.schema === "main"
+          ? `${row.database}.${row.name}`
+          : `${row.database}.${row.schema}.${row.name}`;
+      }
       tables[key] = {
         columns: Object.fromEntries(
           row.column_names.map((column, index) => [column, row.column_types[index] as string]),

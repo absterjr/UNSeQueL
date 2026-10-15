@@ -1,7 +1,31 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-15
 
+- Engine agreement: the Python CLI now defaults to DuckDB whenever it is
+  bundled (the release executables always have it), so the two binary tracks
+  behave identically by default; the memory engine **refuses** `sql` hatches
+  instead of running them on SQLite (where integer division, LIKE case
+  sensitivity, and QUALIFY silently diverge); DuckDB errors surface as clean
+  `error:` lines instead of raw tracebacks; and the Python CSV sniffer now
+  infers `DATE`/`TIMESTAMP` like the TypeScript one. CI diffs the memory and
+  DuckDB outputs for the composing query and a date-function query on every
+  platform.
+- Databases (TypeScript hardening + Python parity): `--db` requires an
+  existing file (no silent empty databases) and opens READ_ONLY, `--attach`
+  uses READ_ONLY too, catalog keys respect temporary-table shadowing and
+  non-main schemas, and `unsequel schema --db x.duckdb` writes a
+  `<db>.schema.json` snapshot that the language server reads for `# db:`
+  files. The Python CLI gains `--db`/`--attach`/`# db:` with the same
+  semantics.
+- Large CSVs: TypeScript type inference reads a 1 MiB sample instead of the
+  whole file (Node strings cap at ~512 MiB), and DuckDB streams the file.
+- Error messages: the missing-DuckDB hint explains the no-npm run-bundle path
+  and includes the underlying load error; the unknown-function list includes
+  `STRFTIME` and `DATE_TRUNC` (TypeScript and Python).
+- The language server, the SEA run bundle, `--out` sinks, and the database
+  slice from `Unreleased` are all included in this release — the first to
+  publish the run bundle and the LanguageClient extension.
 - Databases, first slice: `--db mydb.duckdb` (and the `# db:` directive) opens
   a file-backed database; `--attach name=path.duckdb` opens other DuckDB files
   for cross-database queries (`<name>.<table>`). `# source`/`--data` files load
