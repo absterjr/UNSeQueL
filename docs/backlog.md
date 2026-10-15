@@ -23,16 +23,20 @@ identifiers, explicit delimiter/type overrides, and non-blocking stdin tests.
    `unsequel-windows-x64.exe`, `unsequel-linux-x64`, `unsequel-macos-x64`,
    and `unsequel-macos-arm64`, smoke-tests each, and attaches them to GitHub
    releases automatically.
-3. [x] `.unsequel` execution inside the packaged CLI: the analyzer
-   (`unsequel/analyzer.py`), DuckDB code generator (`unsequel/sqlgen.py`), and
-   CLI wiring are ported, so `run`/`check`/`compile`/`preview` work on
-   `.unsequel` files (DuckDB-backed). The memory engine for the canonical
-   grammar is still to come.
-4. [ ] PyPI publish (`unsequel` + console scripts) so `pip install unsequel`
+3. [x] Dependency-free npm core + single-file compile exe: `check`, `compile`,
+   `fmt`, and `lsp` run without the DuckDB addon; SEA builds
+   `unsequel-compile-{platform}` (workflow `Compile exe`, attached to
+   releases).
+4. [x] `.unsequel` execution inside the packaged CLI: analyzer, DuckDB code
+   generator, CLI wiring, and the in-memory engine
+   (`unsequel/memory_engine.py`, parity-tested) are ported; `run` works on
+   either engine.
+5. [ ] PyPI publish (`unsequel` + console scripts) so `pip install unsequel`
    is a first-class path; owner token required.
-5. [ ] VS Code: point the extension at the standalone executable (bundled
-   download or PATH detection); Marketplace publish.
-6. [ ] Windows code signing so SmartScreen does not flag the unsigned exe
+6. [x] VS Code: the extension is a language client over `unsequel lsp`
+   (diagnostics, completion, hover, formatting, outline); Marketplace publish
+   remains.
+7. [ ] Windows code signing so SmartScreen does not flag the unsigned exe
    (owner certificate).
 
 ## P0 — convergence (October 2026 review)

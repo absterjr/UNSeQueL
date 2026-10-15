@@ -1,15 +1,45 @@
-// UNSeQueL for VS Code: run .unsequel files like SQL clients run .sql files.
-// Commands pipe `unsequel run <file> [--lines A:B]` into a terminal, so the file's
-// own `# source` directives supply the connection and no flags are needed.
+// UNSeQueL for VS Code: language support for .unsequel files.
+//
+// A language server (`unsequel lsp`) provides diagnostics, completion, hover
+// (the SQL a stage compiles to), formatting, and the outline; run commands
+// pipe `unsequel run <file> [--lines A:B]` into a terminal so the file's own
+// `# source` directives supply the connection.
 
 const path = require("path");
 const vscode = require("vscode");
+const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
 
 function executable() {
   return vscode.workspace.getConfiguration("unsequel").get("executable", "unsequel");
 }
 
+function schemaSetting() {
+  const value = vscode.workspace.getConfiguration("unsequel").get("schemaPath", "");
+  return value === "" ? null : value;
+}
+
 let terminal = null;
+let client = null;
+
+function startLanguageClient() {
+  const serverOptions = {
+    command: executable(),
+    args: ["lsp"],
+    transport: TransportKind.stdio,
+  };
+  const clientOptions = {
+    documentSelector: [{ language: "unsequel" }],
+    initializationOptions: { schemaPath: schemaSetting() },
+  };
+  client = new LanguageClient("unsequel", "UNSeQueL", serverOptions, clientOptions);
+  client.start().catch((error) => {
+    void vscode.window.showWarningMessage(
+      "UNSeQueL: language features need the 'unsequel' CLI (npm i -g unsequel, "
+      + "or the standalone compile exe). Set unsequel.executable to its path. "
+      + `Details: ${error.message}`,
+    );
+  });
+}
 
 function unsequelTerminal() {
   if (terminal === null || terminal.exitStatus !== undefined) {
@@ -74,12 +104,17 @@ function activate(context) {
     vscode.commands.registerCommand("unsequel.runFile", () => runCommand(false)),
     vscode.commands.registerCommand("unsequel.openRepl", () => openRepl()),
   );
+  startLanguageClient();
 }
 
-function deactivate() {
+async function deactivate() {
   if (terminal !== null) {
     terminal.dispose();
     terminal = null;
+  }
+  if (client !== null) {
+    await client.stop();
+    client = null;
   }
 }
 

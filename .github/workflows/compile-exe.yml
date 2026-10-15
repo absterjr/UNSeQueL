@@ -1,0 +1,63 @@
+name: Compile exe
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: unsequel-compile-windows-x64.exe
+          - os: ubuntu-22.04
+            asset: unsequel-compile-linux-x64
+          - os: macos-14
+            asset: unsequel-compile-macos-arm64
+          - os: macos-15-intel
+            asset: unsequel-compile-macos-x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: compiler
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install compiler dependencies
+        run: npm ci
+      - name: Build the single-file compile exe (SEA)
+        run: node scripts/build-sea.mjs
+      - name: Name the release asset
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            mv dist/unsequel-compile.exe "dist/${{ matrix.asset }}"
+          else
+            mv dist/unsequel-compile "dist/${{ matrix.asset }}"
+          fi
+      - name: Smoke test (version, check, compile)
+        shell: bash
+        run: |
+          "dist/${{ matrix.asset }}" --version
+          "dist/${{ matrix.asset }}" check examples/reference/q09_group_count.unsequel
+          "dist/${{ matrix.asset }}" compile examples/reference/q09_group_count.unsequel \
+            --schema ../examples/spec/schema.json > /dev/null
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: compiler/dist/${{ matrix.asset }}
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "dist/${{ matrix.asset }}" --clobber

@@ -1,8 +1,8 @@
 {
   "name": "unsequel-vscode",
   "displayName": "UNSeQueL",
-  "description": "UNSeQueL syntax highlighting and run commands for .unsequel query files, powered by DuckDB.",
-  "version": "0.2.0",
+  "description": "Language support for .unsequel query files: diagnostics, completion, hover (generated SQL), formatting, syntax highlighting, and run commands, powered by the unsequel CLI.",
+  "version": "0.3.0",
   "publisher": "unsequel",
   "license": "MIT",
   "repository": {
@@ -11,7 +11,10 @@
     "directory": "compiler/editors/vscode"
   },
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.82.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   },
   "categories": [
     "Programming Languages"
@@ -81,7 +84,12 @@
         "unsequel.executable": {
           "type": "string",
           "default": "unsequel",
-          "description": "The UNSeQueL executable to run. Use an absolute path if it is not on PATH."
+          "description": "The UNSeQueL executable to run (also used for `unsequel lsp`). Use an absolute path if it is not on PATH."
+        },
+        "unsequel.schemaPath": {
+          "type": "string",
+          "default": "",
+          "description": "Schema JSON used for diagnostics, completion, and hover when a query has no '# schema:' directive. Leave empty to rely on directives."
         }
       }
     }

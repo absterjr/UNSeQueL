@@ -11,6 +11,7 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
     "declaration": true,
     "sourceMap": true
   },

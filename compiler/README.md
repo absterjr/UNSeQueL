@@ -69,17 +69,42 @@ example transcripts can be copied wholesale.
 
 ## Use it from your editor
 
-`compiler/editors/vscode/` ships the UNSeQueL VS Code extension (syntax highlighting
-for `.unsequel` files, plus `UNSeQueL: Run Selection`,
-`UNSeQueL: Run File`, `UNSeQueL: Open REPL`).
-Install it with F5
-in that folder or from a VSIX — see
-[editors/vscode/README.md](editors/vscode/README.md). Run Selection executes
-`unsequel run <file> --lines A:B`, so select a query, run it, done.
+`compiler/editors/vscode/` ships the UNSeQueL VS Code extension backed by the
+language server built into the CLI (`unsequel lsp`): inline diagnostics,
+completion (stage keywords, tables, live columns), hover that shows the SQL a
+stage compiles to, the canonical formatter, and an outline of stages — plus
+`UNSeQueL: Run Selection`, `UNSeQueL: Run File`, and `UNSeQueL: Open REPL`.
+Install it from a VSIX — see
+[editors/vscode/README.md](editors/vscode/README.md). Any other editor with a
+language client can spawn `unsequel lsp` over stdio.
 
 In any editor that can send text to a terminal: open `unsequel repl` and use
 "Run Selected Text in Active Terminal"; the selected stages execute on a
 blank line.
+
+## Tools: the no-native core, the compile exe, and the library
+
+DuckDB loads lazily: `check`, `compile`, `fmt`, and `lsp` run without the
+native addon (the optional dependency), so the compiler works in npm-locked
+environments, and `run`/`preview`/`repl` print an install hint when DuckDB is
+absent.
+
+That core also bundles into a true single-file executable — no Node, no npm,
+no DuckDB — via SEA (Node's single-executable support):
+
+```bash
+npm install
+node scripts/build-sea.mjs     # dist/unsequel-compile.exe (or dist/unsequel-compile)
+dist/unsequel-compile check examples/reference/q09_group_count.unsequel
+```
+
+CI builds `unsequel-compile-{windows,linux,macos}-*` on every release. The
+run-capable distribution (with DuckDB bundled) is the Python package's
+standalone executable; see the repository releases.
+
+The compiler is also a library: `import { parseProgram, analyze, emitSql,
+formatProgram } from "unsequel"` — nothing there loads DuckDB either
+(`src/index.ts`).
 
 ## Locked decisions
 
@@ -112,6 +137,7 @@ targets DuckDB only today; a second SQL target remains a backlog decision.
 | 7 — stage-preview CLI (`src/cli.ts`, `src/duckdb.ts`) | done |
 | 8 — sql hatch + canonical formatter (`src/format.ts`) | done |
 | 9 — dogfood + external feedback (`examples/real/`, `docs/`) | done |
+| 10 — no-native core, library entry, language server, compile exe | done |
 
 All nine plan steps are complete; see the repository changelog for release
 notes and [docs/backlog.md](docs/backlog.md) for what comes next.
@@ -146,4 +172,5 @@ npm run build         # dist/main.js
 npm run fmt:check     # formatter fixtures stay canonical
 npm run editors:check # VS Code extension JSON + regexes
 npm run smoke         # node dist/main.js run examples/real/r01_top_products.unsequel
+node scripts/build-sea.mjs   # single-file compile exe (check/compile/fmt/lsp)
 ```

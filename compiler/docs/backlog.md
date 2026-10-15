@@ -41,14 +41,14 @@ whole-relation windows for those queries.
 
 ## P2 — tooling
 
-9. VS Code extension polish: remember the UNSeQueL terminal's working directory
-   per workspace, optionally run `unsequel fmt` on save, and publish the extension
-   to the Marketplace.
-10. Standalone binaries for the npm compiler — the Python implementation now
-    ships PyInstaller one-file executables (see
-    [../../docs/backlog.md](../../docs/backlog.md), Distribution); a Node
-    SEA or `bun build --compile` build remains an option if the npm CLI
-    needs the same.
+9. VS Code extension: the language server (diagnostics, completion, hover
+   with generated SQL, formatting, outline) ships in `unsequel lsp` and the
+   extension is a language client. Remaining: publish to the Marketplace,
+   plus go-to-definition, semantic tokens, and code actions.
+10. Standalone binaries for the npm side: a dependency-free compile exe
+    (check/compile/fmt/lsp) builds via SEA (`scripts/build-sea.mjs`) and CI
+    attaches it to releases; a run-capable Node exe stays optional because
+    the Python package ships the bundled-DuckDB executable.
 11. `--data` globs/directories and per-source delimiter settings (the current
     delimiter option applies to all loaded CSVs).
 12. **Zero-install WASM playground** on the Pages site: an editor running
@@ -57,6 +57,13 @@ whole-relation windows for those queries.
 13. Integer-division helper (`FLOOR` or an explicit truncating operator) for
     SQL ported from PostgreSQL/Redshift/SQLite, where `/` truncates; the
     current float semantics are documented in [semantics.md](semantics.md).
+14. **Real connections**: `ATTACH` an existing `.duckdb` file, DuckDB's
+    Postgres/MySQL/SQLite scanners, and `httpfs` for S3/HTTP, so `# source`
+    can name a connection instead of a file reloaded every run.
+15. **Output sinks**: `--out results.parquet` or an `into` target so query
+    results can feed pipelines instead of only printing.
+16. `--json` diagnostics mode for non-VS-Code tooling, and documented exit
+    codes / shell completions.
 
 Shipped since the original dogfood pass: `strftime`/`date_trunc`, `over ()`,
 `select *, expression = ...`, right/full/cross joins, repeated group/aggregate

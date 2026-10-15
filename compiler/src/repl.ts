@@ -9,10 +9,7 @@
  */
 
 import { emitSql } from "./codegen.js";
-import {
-  connect, introspectSchema, loadTableSource, runSql,
-  type DuckDBConnection, type SourceOptions,
-} from "./duckdb.js";
+import type { DuckDBConnection, SourceOptions } from "./duckdb.js";
 import { PlqError } from "./errors.js";
 import { OUTPUT_FORMATS, formatResult } from "./output.js";
 import { parseProgram } from "./parser.js";
@@ -59,6 +56,20 @@ export class ReplSession {
   private format: string;
   private buffer: string[] = [];
   private quitting = false;
+  private duckdbModule: Promise<typeof import("./duckdb.js")> | null = null;
+
+  /** DuckDB loads lazily so the REPL starts (and reports) without it. */
+  private async duckdb(): Promise<typeof import("./duckdb.js")> {
+    if (this.duckdbModule === null) {
+      this.duckdbModule = import("./duckdb.js").catch(() => {
+        throw new PlqError(
+          "the repl executes queries and needs the DuckDB native module; "
+          + "install it with `npm i @duckdb/node-api`",
+        );
+      });
+    }
+    return this.duckdbModule;
+  }
 
   constructor(options: ReplOptions = {}) {
     for (const [name, path] of options.sources ?? []) this.sources.set(name, path);
@@ -167,6 +178,7 @@ export class ReplSession {
         const path = argument.slice(equals + 1).trim();
         try {
           if (this.connection !== null) {
+            const { loadTableSource } = await this.duckdb();
             await loadTableSource(this.connection, table, path, this.sourceOptions);
             this.sources.set(table, path);
             await this.refreshIntrospectedSchema();
@@ -187,17 +199,21 @@ export class ReplSession {
 
   private async ensureReady(): Promise<DuckDBConnection> {
     if (this.connection === null) {
+      const { connect, loadTableSource, introspectSchema } = await this.duckdb();
       this.connection = await connect(new Map(), this.sourceOptions);
       for (const [table, path] of this.sources) {
         await loadTableSource(this.connection, table, path, this.sourceOptions);
       }
-      await this.refreshIntrospectedSchema();
+      if (this.explicitSchema === null) {
+        this.schema = await introspectSchema(this.connection, [...this.sources.keys()]);
+      }
     }
     return this.connection;
   }
 
   private async refreshIntrospectedSchema(): Promise<void> {
     if (this.explicitSchema !== null || this.connection === null) return;
+    const { introspectSchema } = await this.duckdb();
     this.schema = await introspectSchema(this.connection, [...this.sources.keys()]);
   }
 
@@ -206,6 +222,7 @@ export class ReplSession {
     try {
       const program = parseProgram(text);
       const connection = await this.ensureReady();
+      const { introspectSchema, runSql } = await this.duckdb();
       const schema = this.schema ?? await introspectSchema(connection, [...this.sources.keys()]);
       analyze(program, schema);
       const result = await runSql(connection, emitSql(program, schema));

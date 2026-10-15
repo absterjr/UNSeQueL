@@ -13,9 +13,7 @@ import { createInterface } from "node:readline";
 
 import { emitSql } from "./codegen.js";
 import { splitDirectives, type Directives } from "./directives.js";
-import {
-  connect, introspectSchema, runSql, type DuckDBConnection, type SourceOptions,
-} from "./duckdb.js";
+import type { DuckDBConnection, SourceOptions } from "./duckdb.js";
 import { PlqError } from "./errors.js";
 import { formatProgram, isFormatted } from "./format.js";
 import { OUTPUT_FORMATS, formatResult } from "./output.js";
@@ -23,6 +21,22 @@ import { parseProgram } from "./parser.js";
 import { ReplSession } from "./repl.js";
 import { loadSchema, type Schema } from "./schema.js";
 import { analyze } from "./semantics.js";
+
+/**
+ * The DuckDB native addon loads lazily: `check`, `compile`, and `fmt` work
+ * without it, and `run`/`preview`/`repl` report a clear install hint.
+ */
+export async function loadDuckDB(): Promise<typeof import("./duckdb.js")> {
+  try {
+    return await import("./duckdb.js");
+  } catch {
+    throw new PlqError(
+      "this command executes queries and needs the DuckDB native module; "
+      + "install it with `npm i @duckdb/node-api` "
+      + "(check, compile, and fmt work without it)",
+    );
+  }
+}
 
 export interface CliResult {
   code: number;
@@ -55,6 +69,7 @@ commands:
   repl     [--data name=path] [--schema s.json] [--format table|json|csv]
            [--delimiter C] [--column-type table.column=type]
            interactive session; a query runs on a blank line or ';'
+  lsp      run the language server on stdio (used by editor integrations)
   (bare 'unsequel' opens the repl on a terminal)
 
 query files can declare their own connection, so no flags are needed:
@@ -265,6 +280,7 @@ function readQueryInput(args: Args): QueryInput {
 
 async function introspectFromSources(sources: ReadonlyMap<string, string>,
                                      options: SourceOptions): Promise<Schema> {
+  const { connect, introspectSchema } = await loadDuckDB();
   const connection = await connect(sources, options);
   return introspectSchema(connection, [...sources.keys()]);
 }
@@ -272,8 +288,10 @@ async function introspectFromSources(sources: ReadonlyMap<string, string>,
 async function schemaForConnection(args: Args, directives: Directives, queryPath: string,
                                    connection: DuckDBConnection,
                                    sources: ReadonlyMap<string, string>): Promise<Schema> {
-  return declaredSchema(args, directives, queryPath)
-    ?? introspectSchema(connection, [...sources.keys()]);
+  const declared = declaredSchema(args, directives, queryPath);
+  if (declared !== null) return declared;
+  const { introspectSchema } = await loadDuckDB();
+  return introspectSchema(connection, [...sources.keys()]);
 }
 
 function validateFormat(value: string): string {
@@ -328,6 +346,7 @@ async function cmdPreview(args: Args): Promise<string> {
     throw new UsageError(
       "preview needs --data name=path or a '# source' directive at the top of the file");
   }
+  const { connect } = await loadDuckDB();
   const connection = await connect(sources, sourceOptions(args, sources));
   const schema = await schemaForConnection(args, directives, path, connection, sources);
   analyze(program, schema);
@@ -344,6 +363,7 @@ async function cmdPreview(args: Args): Promise<string> {
   }
   const inner = emitSql(program, schema, { stopAt: stage }).trimEnd().replace(/;$/, "");
   const sql = `SELECT * FROM (\n${inner}\n) AS _preview LIMIT ${limit}`;
+  const { runSql } = await loadDuckDB();
   const result = await runSql(connection, sql);
   const label = `stage ${stage}/${program.length}  (${program[stage - 1]?.keyword})`;
   return `${label}\n${formatResult(result, "table")}\n`;
@@ -357,6 +377,7 @@ async function cmdRun(args: Args): Promise<string> {
       "run needs --data name=path or a '# source' directive at the top of the file");
   }
   const format = validateFormat(flag(args, "format") ?? "table");
+  const { connect, runSql } = await loadDuckDB();
   const connection = await connect(sources, sourceOptions(args, sources));
   const schema = await schemaForConnection(args, directives, path, connection, sources);
   analyze(program, schema);

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Adoption tooling: the compiler core is now dependency-free — `check`,
+  `compile`, `fmt`, and the new `lsp` command run without the DuckDB native
+  addon (now an optional dependency), and `src/index.ts` exports the library
+  (`parseProgram`, `analyze`, `emitSql`, `formatProgram`, `loadSchema`).
+  A single-file compile executable builds via SEA
+  (`node scripts/build-sea.mjs`, no Node/npm/DuckDB needed at runtime), and
+  the new `Compile exe` workflow attaches
+  `unsequel-compile-{windows,linux,macos}-*` to releases. The VS Code
+  extension (0.3.0) is now a language client over `unsequel lsp`: inline
+  parse/schema diagnostics, completion (stage keywords, tables, live
+  columns), hover showing each stage's generated SQL, formatting
+  (format-on-save ready), and a document outline — alongside the existing
+  run/REPL commands.
 - The Python package executes canonical `.unsequel` programs on a built-in
   in-memory engine (`unsequel/memory_engine.py`) when DuckDB is not wanted or
   not installed: `--engine memory` is the default for `.unsequel` files and
