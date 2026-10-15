@@ -194,7 +194,9 @@ export type StageKind =
   | "skip"
   | "take"
   | "distinct"
-  | "sql";
+  | "sql"
+  | "create"
+  | "into";
 
 export interface StageBase {
   /** 1-based grammar stage ordinal (docs/grammar.md §1.1). */
@@ -334,6 +336,21 @@ export interface RawSqlStage extends StageBase {
   text: string;
 }
 
+/** `create table|view name = (program)` — writes the program's result. */
+export interface CreateStage extends StageBase {
+  kind: "create";
+  object: "table" | "view";
+  name: string;
+  program: Program;
+}
+
+/** `into name (program)` — appends the program's rows to an existing table. */
+export interface IntoStage extends StageBase {
+  kind: "into";
+  name: string;
+  program: Program;
+}
+
 export type Stage =
   | FromStage
   | WithStage
@@ -350,7 +367,9 @@ export type Stage =
   | SkipStage
   | TakeStage
   | DistinctStage
-  | RawSqlStage;
+  | RawSqlStage
+  | CreateStage
+  | IntoStage;
 
 export type Program = readonly Stage[];
 

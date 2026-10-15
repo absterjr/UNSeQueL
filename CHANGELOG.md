@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 — 2026-10-15
+
+- Grammar v1.4 — write statements: `create table|view name = (pipeline)`
+  writes a persistent table/view (`CREATE OR REPLACE ... AS`, rerunnable) and
+  `into name (pipeline)` appends rows to an existing table (target existence
+  and column-count are validated). Both are top-level-only, need a database
+  (`# db:`/`--db`), open it read-write (read programs stay read-only), and
+  create a missing database file. Shipped in the TypeScript compiler and the
+  Python package together, with matching tests.
+- `unsequel import data.csv --into warehouse.duckdb [--table name]` (TS and
+  Python): materialize a CSV/JSON/Parquet file as a persistent table — the
+  no-grammar-needed way to create tables.
+- Language server: semantic tokens (keyword/function/variable/number/string/
+  operator roles) and `create table`/`create view`/`into` in stage
+  completion. Documented in `compiler/docs/grammar.md` v1.4.
+
 ## 0.3.0 — 2026-10-15
 
 - Engine agreement: the Python CLI now defaults to DuckDB whenever it is

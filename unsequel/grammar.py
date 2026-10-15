@@ -1,4 +1,4 @@
-"""The `.unsequel` grammar v1.3 front-end: lexer, AST, and parser.
+﻿"""The `.unsequel` grammar v1.3 front-end: lexer, AST, and parser.
 
 This is a Python port of the TypeScript compiler's front-end
 (``compiler/src/lexer.ts``, ``ast.ts``, and ``parser.ts``) so the Python
@@ -62,6 +62,8 @@ __all__ = [
     "TakeStage",
     "DistinctStage",
     "RawSqlStage",
+    "CreateStage",
+    "IntoStage",
     "Stage",
     "Program",
     "expression_name",
@@ -88,7 +90,7 @@ KEYWORDS: frozenset[str] = frozenset(
         "from", "join", "left", "right", "full", "cross", "filter", "derive",
         "group", "by", "aggregate", "having", "window", "select", "sort",
         "skip", "take", "distinct", "sql", "with", "union", "intersect",
-        "except",
+        "except", "create", "table", "view", "into",
         # clauses and modifiers
         "on", "as", "over", "partition", "order", "asc", "desc", "all",
         # expression keywords
@@ -580,6 +582,21 @@ class RawSqlStage(Stage):
     kind: str = field(default="sql", init=False)
 
 
+@dataclass(frozen=True)
+class CreateStage(Stage):
+    object: str = "table"
+    name: str = ""
+    program: "Program" = field(default_factory=list)
+    kind: str = field(default="create", init=False)
+
+
+@dataclass(frozen=True)
+class IntoStage(Stage):
+    name: str = ""
+    program: "Program" = field(default_factory=list)
+    kind: str = field(default="into", init=False)
+
+
 Program = list[Stage]
 
 
@@ -592,7 +609,7 @@ _STAGE_STARTS = frozenset(
         "from", "with", "union", "intersect", "except",
         "join", "left", "right", "full", "cross", "filter", "derive", "group",
         "aggregate", "having", "window", "select", "sort", "skip", "take",
-        "distinct", "sql",
+        "distinct", "sql", "create", "into",
     ]
 )
 
@@ -617,7 +634,7 @@ _MAX_SAFE_INTEGER = 2**53 - 1
 
 
 def parse_program(source: str) -> Program:
-    return program_from_tokens(tokenize(source))
+    return program_from_tokens(tokenize(source), False)
 
 
 def _describe(token: Token) -> str:
@@ -820,7 +837,7 @@ class _ExprContext:
     in_aggregate: bool
 
 
-def program_from_tokens(tokens: list[Token]) -> Program:
+def program_from_tokens(tokens: list[Token], nested: bool = False) -> Program:
     raw_stages = _split_stages(tokens)
     if not raw_stages:
         eof = tokens[-1]
@@ -833,6 +850,7 @@ def program_from_tokens(tokens: list[Token]) -> Program:
 
     stages: Program = []
     saw_from = False
+    saw_statement = False
     grouped = False
     aggregated = False
     group_pending = False
@@ -853,8 +871,16 @@ def program_from_tokens(tokens: list[Token]) -> Program:
 
         next_keyword = entries[position + 1][1] if position + 1 < len(entries) else None
 
-        if index == 1 and keyword not in {"from", "with"}:
-            fail("a pipeline must start with 'with' or 'from'")
+        if index == 1 and keyword not in {"from", "with", "create", "into"}:
+            fail("a pipeline must start with 'with', 'from', 'create', or 'into'")
+        if nested and keyword in {"create", "into"}:
+            fail(f"'{keyword}' can only appear in the top-level program")
+        if keyword in {"create", "into"} and saw_from:
+            fail(f"'{keyword}' cannot be combined with 'from'; "
+                 "write statements in their own program")
+        if saw_statement and keyword not in {"with", "create", "into"}:
+            fail(f"'{keyword}' cannot be combined with create/into; "
+                 "write statements in their own program")
         if keyword == "with" and saw_from:
             fail("'with' definitions must appear before 'from'")
         if keyword in {"union", "intersect", "except"} and not saw_from:
@@ -887,6 +913,8 @@ def program_from_tokens(tokens: list[Token]) -> Program:
             with_names.add(stage.name)
         if keyword == "from":
             saw_from = True
+        if keyword in {"create", "into"}:
+            saw_statement = True
         if keyword == "group by":
             group_pending = True
         if keyword == "aggregate":
@@ -924,7 +952,7 @@ def _parse_stage_body(
         inner = reader.read_balanced_parens("the with program")
         reader.expect_end()
         return WithStage(**_base(index, keyword, span), name=name.value,
-                         program=program_from_tokens(inner))
+                         program=program_from_tokens(inner, True))
     if keyword in {"union", "intersect", "except"}:
         op = keyword
         if keyword == "union" and reader.match_keyword("all"):
@@ -932,7 +960,7 @@ def _parse_stage_body(
         inner = reader.read_balanced_parens(f"the {op} program")
         reader.expect_end()
         return SetStage(**_base(index, keyword, span), op=op,
-                        program=program_from_tokens(inner))
+                        program=program_from_tokens(inner, True))
     if keyword in {"join", "left join", "right join", "full join", "cross join"}:
         source = _parse_source(reader, "join source")
         if keyword == "cross join":
@@ -1044,6 +1072,26 @@ def _parse_stage_body(
     if keyword == "distinct":
         reader.expect_end()
         return DistinctStage(**_base(index, keyword, span))
+    if keyword == "create":
+        object_token = reader.peek()
+        if object_token is None or object_token.type != "keyword" \
+                or object_token.value not in {"table", "view"}:
+            reader.fail("create needs 'table' or 'view': create table name = (program)",
+                        object_token)
+        reader.advance()
+        name = reader.expect_identifier(
+            "create needs a name: create table name = (program)")
+        reader.expect_operator("=", "after the create name")
+        inner = reader.read_balanced_parens("the create program")
+        reader.expect_end()
+        return CreateStage(**_base(index, keyword, span), object=object_token.value,
+                           name=name.value, program=program_from_tokens(inner, True))
+    if keyword == "into":
+        name = reader.expect_identifier("into needs a table name: into name (program)")
+        inner = reader.read_balanced_parens("the into program")
+        reader.expect_end()
+        return IntoStage(**_base(index, keyword, span), name=name.value,
+                         program=program_from_tokens(inner, True))
     if keyword == "sql":
         token = reader.peek()
         if token is None or token.type != "string":
@@ -1079,7 +1127,7 @@ def _parse_source(reader: _TokenReader, what: str) -> SourceRef:
                 f"a {what} subquery requires an alias: (...) as name", reader.peek()
             )
         return SourceRef("", alias, _span_from(reader, start),
-                         program=program_from_tokens(inner))
+                         program=program_from_tokens(inner, True))
     if not _is_identifier_token(start):
         reader.fail(f"expected a table name for the {what}", start)
     reader.advance()

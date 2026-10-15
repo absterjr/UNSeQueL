@@ -76,14 +76,15 @@ def _reader(path: str, *, delimiter: str | None = None,
 def connect(data: dict[str, str], *, delimiter: str | None = None,
             column_types: dict[str, dict[str, str]] | None = None,
             database_path: str | None = None,
-            attach: dict[str, str] | None = None):
+            attach: dict[str, str] | None = None,
+            writable: bool = False):
     duckdb = _import_duckdb()
     if database_path is not None:
-        if not Path(database_path).exists():
+        if not writable and not Path(database_path).exists():
             raise UnsequelError(
                 f"database not found: {database_path} "
                 "(databases are read-only until `create table = (...)` ships)")
-        con = duckdb.connect(database_path, read_only=True)
+        con = duckdb.connect(database_path, read_only=not writable)
     else:
         con = duckdb.connect()
     for name, path in (attach or {}).items():
@@ -147,6 +148,27 @@ def describe_database(con) -> Schema:
                 else f"{database}.{schema}.{name}"
         tables[key] = {"columns": dict(zip(columns, column_types))}
     return Schema.from_dict({"tables": tables})
+
+
+def import_table(con, name: str, path: str, *, delimiter: str | None = None,
+                 column_types: dict[str, str] | None = None) -> None:
+    """Materialize a file as a persistent table (the `import` command)."""
+    if not Path(path).exists():
+        raise UnsequelError(f"data file not found: {path}")
+    try:
+        con.execute(
+            f"CREATE OR REPLACE TABLE {_ident(name)} AS SELECT * FROM "
+            f"{_reader(str(path), delimiter=delimiter, column_types=column_types)}")
+    except Exception as exc:
+        raise UnsequelError(f"could not import {path}: {exc}") from exc
+
+
+def run_script(con, sql: str) -> None:
+    """Execute a (possibly multi-statement) script for create/into programs."""
+    try:
+        con.execute(sql)
+    except Exception as exc:
+        raise UnsequelError(f"DuckDB error: {exc}") from exc
 
 
 def fetch(con, sql: str) -> Table:

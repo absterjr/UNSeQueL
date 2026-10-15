@@ -7,7 +7,7 @@
  * feature: run a program truncated at any grammar stage.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -37,7 +37,7 @@ export interface CliResult {
   stderr: string;
 }
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.4.0";
 
 const USAGE = `unsequel ${VERSION}
 UNSeQueL query language compiler
@@ -68,6 +68,10 @@ commands:
   schema   --db mydb.duckdb [--attach name=path] [--data name=path] [--out f.json]
            write a schema snapshot (JSON) for editors; with --db and no --out,
            '<db>.schema.json' is written next to the database
+  import   <data.csv|.json|.parquet> --into mydb.duckdb [--table name]
+           [--delimiter C] [--column-type table.column=type]
+           materialize a file as a persistent table (creates the database
+           if needed; replaces an existing table of the same name)
   (bare 'unsequel' opens the repl on a terminal)
 
 query files can declare their own connection, so no flags are needed:
@@ -372,6 +376,10 @@ function cmdCheck(args: Args): string {
 
 async function cmdCompile(args: Args): Promise<string> {
   const { path, program, directives } = readQueryInput(args);
+  if (program.some((stage) => stage.kind === "create" || stage.kind === "into")
+      && flag(args, "stage") !== undefined) {
+    throw new UsageError("--stage does not apply to create/into programs");
+  }
   const sources = mergeSources(directives, args, path);
   const database = databasePath(args, directives, path);
   const attach = attachSources(args);
@@ -397,6 +405,9 @@ async function cmdCompile(args: Args): Promise<string> {
 
 async function cmdPreview(args: Args): Promise<string> {
   const { path, program, directives } = readQueryInput(args);
+  if (program.some((stage) => stage.kind === "create" || stage.kind === "into")) {
+    throw new PlqError("preview does not apply to create/into programs");
+  }
   const sources = mergeSources(directives, args, path);
   const database = databasePath(args, directives, path);
   const attachCount = attachSources(args).size;
@@ -432,6 +443,29 @@ async function cmdRun(args: Args): Promise<string> {
   const sources = mergeSources(directives, args, path);
   const database = databasePath(args, directives, path);
   const attachCount = attachSources(args).size;
+
+  const isStatementProgram = program.some(
+    (stage) => stage.kind === "create" || stage.kind === "into");
+  if (isStatementProgram) {
+    if (database === undefined) {
+      throw new PlqError(
+        "create/into write to a database: add '# db: warehouse.duckdb' to the file "
+        + "or pass --db");
+    }
+    if (flag(args, "out") !== undefined) {
+      throw new UsageError("--out does not apply to create/into programs");
+    }
+    const { connect, introspectDatabase, runStatements } = await loadDuckDB();
+    const connection = await connect(
+      sources, { ...connectOptions(args, sources, database), writable: true });
+    const schema = declaredSchema(args, directives, path) ?? await introspectDatabase(connection);
+    analyze(program, schema);
+    await runStatements(connection, emitSql(program, schema));
+    const count = program.filter(
+      (stage) => stage.kind === "create" || stage.kind === "into").length;
+    return `applied ${count} statement(s)\n`;
+  }
+
   if (sources.size === 0 && database === undefined && attachCount === 0) {
     throw new UsageError(
       "run needs --data name=path, a '# source' directive, --db, or --attach");
@@ -498,6 +532,34 @@ async function cmdSchema(args: Args): Promise<string> {
   return text;
 }
 
+async function cmdImport(args: Args): Promise<string> {
+  const file = args.positionals[0];
+  if (file === undefined) {
+    throw new UsageError(
+      "import needs a data file: import data.csv --into warehouse.duckdb [--table name]");
+  }
+  if (!existsSync(file)) throw new PlqError(`data file not found: ${file}`);
+  const target = flag(args, "into");
+  if (target === undefined) {
+    throw new UsageError("import needs --into warehouse.duckdb");
+  }
+  const explicitName = flag(args, "table");
+  const derived = file.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? "";
+  const name = explicitName ?? derived;
+  if (name === "" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new UsageError(`cannot derive a table name from '${file}'; pass --table name`);
+  }
+  const options = sourceOptions(args, new Map([[name, file]]));
+  const { connect, importTableSource } = await loadDuckDB();
+  const connection = await connect(new Map(), {
+    ...options,
+    databasePath: target,
+    writable: true,
+  });
+  await importTableSource(connection, name, file, options);
+  return `imported ${file} into ${target} as ${name}\n`;
+}
+
 async function cmdRepl(args: Args): Promise<string> {
   const sources = dataSources(args, true);
   const session = new ReplSession({
@@ -533,7 +595,7 @@ function errorResult(error: unknown): CliResult {
   return { code: 1, stdout: "", stderr: `error: ${message}\n` };
 }
 
-const KNOWN_COMMANDS = ["check", "compile", "preview", "run", "fmt", "repl", "schema"] as const;
+const KNOWN_COMMANDS = ["check", "compile", "preview", "run", "fmt", "repl", "schema", "import"] as const;
 
 const ALLOWED_FLAGS: Record<string, readonly string[]> = {
   check: ["schema", "lines"],
@@ -545,6 +607,7 @@ const ALLOWED_FLAGS: Record<string, readonly string[]> = {
   fmt: ["write", "check"],
   repl: ["schema", "data", "format", "delimiter", "column-type"],
   schema: ["db", "attach", "data", "delimiter", "column-type", "out"],
+  import: ["into", "table", "delimiter", "column-type"],
 };
 
 function commandArgs(command: string, argv: readonly string[]): Args {
@@ -589,6 +652,7 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
     else if (command === "fmt") stdout = cmdFmt(args);
     else if (command === "repl") stdout = await cmdRepl(args);
     else if (command === "schema") stdout = await cmdSchema(args);
+    else if (command === "import") stdout = await cmdImport(args);
     else stdout = await cmdRun(args);
     return { code: 0, stdout, stderr: "" };
   } catch (error) {

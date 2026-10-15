@@ -284,6 +284,138 @@ describe("cli: output sinks", () => {
   });
 });
 
+describe("cli: create/into and import (v1.4)", () => {
+  const ordersCsv = join(ROOT, "examples", "spec", "orders.csv").replace(/\\/g, "/");
+
+  it("creates a persistent table from a pipeline and reads it back", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-create-"));
+    try {
+      const dbPath = join(directory, "warehouse.duckdb");
+      const create = join(directory, "create.unsequel");
+      writeFileSync(create,
+        `# source orders: ${ordersCsv}\n`
+        + "create table summary = (from orders | group by country | aggregate n = COUNT(*))\n");
+      const created = await runCli(["run", create, "--db", dbPath]);
+      expect(created.code).toBe(0);
+      expect(created.stdout).toContain("applied 1 statement(s)");
+      expect(existsSync(dbPath)).toBe(true);
+
+      const readback = join(directory, "readback.unsequel");
+      writeFileSync(readback, "from summary\nsort country\n");
+      const read = await runCli(["run", readback, "--db", dbPath, "--format", "json"]);
+      expect(read.code).toBe(0);
+      expect(JSON.parse(read.stdout)).toEqual([
+        { country: "Netherlands", n: 1 },
+        { country: "United Kingdom", n: 7 },
+        { country: "United States", n: 7 },
+      ]);
+
+      const compiled = await runCli(["compile", readback, "--db", dbPath]);
+      expect(compiled.code).toBe(0);
+      expect(compiled.stdout).toContain("SELECT * FROM summary");
+    } finally {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch {
+        // the database lock may outlive the test on Windows
+      }
+    }
+  });
+
+  it("appends rows with into and validates the target", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-into-"));
+    try {
+      const dbPath = join(directory, "warehouse.duckdb");
+      const create = join(directory, "create.unsequel");
+      writeFileSync(create,
+        `# source orders: ${ordersCsv}\n`
+        + "create table summary = (from orders | group by country | aggregate n = COUNT(*))\n");
+      expect((await runCli(["run", create, "--db", dbPath])).code).toBe(0);
+
+      const append = join(directory, "append.unsequel");
+      writeFileSync(append,
+        `# source orders: ${ordersCsv}\n`
+        + "into summary (from orders | group by country | aggregate n = COUNT(*))\n");
+      const appended = await runCli(["run", append, "--db", dbPath]);
+      expect(appended.code).toBe(0);
+      expect(appended.stdout).toContain("applied 1 statement(s)");
+
+      const readback = join(directory, "readback.unsequel");
+      writeFileSync(readback, "from summary\ngroup by country\naggregate total = SUM(n)\nsort country\n");
+      const read = await runCli(["run", readback, "--db", dbPath, "--format", "json"]);
+      expect(JSON.parse(read.stdout)).toEqual([
+        { country: "Netherlands", total: 2 },
+        { country: "United Kingdom", total: 14 },
+        { country: "United States", total: 14 },
+      ]);
+
+      writeFileSync(append,
+        `# source orders: ${ordersCsv}\n`
+        + "into missing (from orders | select country)\n");
+      const missing = await runCli(["run", append, "--db", dbPath]);
+      expect(missing.code).toBe(1);
+      expect(missing.stderr).toContain("needs an existing table");
+
+      writeFileSync(append,
+        `# source orders: ${ordersCsv}\n`
+        + "into summary (from orders | select country)\n");
+      const mismatch = await runCli(["run", append, "--db", dbPath]);
+      expect(mismatch.code).toBe(1);
+      expect(mismatch.stderr).toContain("expects 2 columns, got 1");
+    } finally {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch {
+        // the database lock may outlive the test on Windows
+      }
+    }
+  });
+
+  it("requires a database and rejects nested or mixed statements", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-statements-"));
+    try {
+      const file = join(directory, "query.unsequel");
+      writeFileSync(file, "create table x = (from orders | select order_id)\n");
+      const noDb = await runCli(["run", file]);
+      expect(noDb.code).toBe(1);
+      expect(noDb.stderr).toContain("create/into write to a database");
+
+      writeFileSync(file, "with inner = (create table y = (from orders))\nfrom inner\n");
+      const nested = await runCli(["run", file]);
+      expect(nested.code).toBe(1);
+      expect(nested.stderr).toContain("can only appear in the top-level program");
+
+      writeFileSync(file, "from orders\ncreate table x = (from orders)\n");
+      const mixed = await runCli(["run", file, "--db", join(directory, "w.duckdb")]);
+      expect(mixed.code).toBe(1);
+      expect(mixed.stderr).toContain("cannot be combined with 'from'");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("imports a CSV as a persistent table", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-import-"));
+    try {
+      const dbPath = join(directory, "warehouse.duckdb");
+      const imported = await runCli(["import", ordersCsv, "--into", dbPath, "--table", "orders"]);
+      expect(imported.code).toBe(0);
+      expect(imported.stdout).toContain(`imported ${ordersCsv} into ${dbPath} as orders`);
+
+      const query = join(directory, "query.unsequel");
+      writeFileSync(query, "from orders\nselect order_id\nsort order_id\ntake 1\n");
+      const read = await runCli(["run", query, "--db", dbPath, "--format", "json"]);
+      expect(read.code).toBe(0);
+      expect(JSON.parse(read.stdout)).toEqual([{ order_id: 5001 }]);
+    } finally {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch {
+        // the database lock may outlive the test on Windows
+      }
+    }
+  });
+});
 describe("cli: databases", () => {
   it("attaches an existing .duckdb file and queries it", async () => {
     const directory = mkdtempSync(join(tmpdir(), "unsequel-attach-"));

@@ -190,6 +190,82 @@ class UnsequelCliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("--out must end in", out)
 
+    @unittest.skipUnless(HAS_DUCKDB, "duckdb is not installed")
+    def test_create_into_and_import(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            database = directory / "warehouse.duckdb"
+            orders = (SPEC / "orders.csv").resolve()
+
+            create = directory / "create.unsequel"
+            create.write_text(
+                f"# source orders: {orders}\n"
+                "create table summary = (from orders | group by country | "
+                "aggregate n = COUNT(*))\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(create), "--db", str(database))
+            self.assertEqual((code, "applied 1 statement(s)" in out), (0, True))
+            self.assertTrue(database.exists())
+
+            readback = directory / "readback.unsequel"
+            readback.write_text("from summary\nsort country\n", encoding="utf-8")
+            out, code = run_cli("run", str(readback), "--db", str(database),
+                                "--format", "json")
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(out), [
+                {"country": "Netherlands", "n": 1},
+                {"country": "United Kingdom", "n": 7},
+                {"country": "United States", "n": 7},
+            ])
+
+            append = directory / "append.unsequel"
+            append.write_text(
+                f"# source orders: {orders}\n"
+                "into summary (from orders | group by country | aggregate n = COUNT(*))\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(append), "--db", str(database))
+            self.assertEqual((code, "applied 1 statement(s)" in out), (0, True))
+
+            readback.write_text(
+                "from summary\ngroup by country\naggregate total = SUM(n)\nsort country\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(readback), "--db", str(database),
+                                "--format", "json")
+            self.assertEqual(json.loads(out)[1],
+                             {"country": "United Kingdom", "total": 14})
+
+            append.write_text(
+                f"# source orders: {orders}\n"
+                "into missing (from orders | select country)\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(append), "--db", str(database))
+            self.assertEqual(code, 1)
+            self.assertIn("needs an existing table", out)
+
+            create.write_text("create table x = (from orders | select order_id)\n",
+                              encoding="utf-8")
+            out, code = run_cli("run", str(create))
+            self.assertEqual(code, 1)
+            self.assertIn("write to a database", out)
+
+            nested = directory / "nested.unsequel"
+            nested.write_text(
+                "with inner = (create table y = (from orders))\nfrom inner\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(nested))
+            self.assertEqual(code, 1)
+            self.assertIn("only appear in the top-level program", out)
+
+            imported = directory / "imported.duckdb"
+            out, code = run_cli("import", str(orders), "--into", str(imported),
+                                "--table", "orders")
+            self.assertEqual((code, "imported" in out), (0, True))
+            readback.write_text("from orders\nselect order_id\nsort order_id\ntake 1\n",
+                                encoding="utf-8")
+            out, code = run_cli("run", str(readback), "--db", str(imported),
+                                "--format", "json")
+            self.assertEqual(json.loads(out), [{"order_id": 5001}])
+
     def test_check_reports_schema_ok(self):
         out, code = run_cli("check", QUERY, "--schema", SCHEMA)
         self.assertEqual(code, 0)

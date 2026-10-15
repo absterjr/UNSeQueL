@@ -287,7 +287,7 @@ describe("lexer: keyword contract", () => {
     const specWords = [
       "from", "join", "left", "right", "full", "cross", "filter", "derive", "group", "by", "aggregate",
       "having", "window", "select", "sort", "skip", "take", "distinct", "sql",
-      "with", "union", "intersect", "except",
+      "with", "union", "intersect", "except", "create", "table", "view", "into",
       "on", "as", "over", "partition", "order", "asc", "desc", "all",
       "and", "or", "not", "in", "like", "between", "is", "null",
       "case", "when", "then", "else", "end", "cast", "true", "false",

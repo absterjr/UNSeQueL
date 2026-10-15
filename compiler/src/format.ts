@@ -252,6 +252,15 @@ function formatStage(stage: Stage): string {
       const set = stage as SetStage;
       return `${set.op} (${renderInline(set.program)})`;
     }
+    case "create": {
+      const create = stage as { object: string; name: string; program: Program };
+      return `create ${create.object} ${renderIdentifierPart(create.name)} `
+        + `= (${renderInline(create.program)})`;
+    }
+    case "into": {
+      const into = stage as { name: string; program: Program };
+      return `into ${renderIdentifierPart(into.name)} (${renderInline(into.program)})`;
+    }
     case "join": {
       const join = stage as JoinStage;
       const keyword = join.joinKind === "left" ? "left join" : "join";

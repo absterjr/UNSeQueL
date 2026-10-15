@@ -132,6 +132,7 @@ describe("language server", () => {
     expect(result.capabilities.completionProvider).toBeTruthy();
     expect(result.capabilities.definitionProvider).toBe(true);
     expect(result.capabilities.codeActionProvider).toBe(true);
+    expect(result.capabilities.semanticTokensProvider).toBeTruthy();
   });
 
   it("publishes parse diagnostics with the error position", async () => {
@@ -262,6 +263,22 @@ describe("language server", () => {
     const edit = actions[0].edit.changes[uri][0];
     expect(edit.newText).toBe("`order`");
     expect(edit.range.start).toEqual({ line: 2, character: 7 });
+  });
+
+  it("provides semantic tokens for stages and columns", async () => {
+    const server = await initialized();
+    const { uri } = workspace();
+    await open(server, uri, QUERY);
+
+    const result = (await server.request("textDocument/semanticTokens/full", {
+      textDocument: { uri },
+    })) as any;
+    const data: number[] = result.data;
+    expect(data.length).toBeGreaterThan(0);
+    expect(data.length % 5).toBe(0);
+    const types = Array.from({ length: data.length / 5 }, (_, i) => data[i * 5 + 3]);
+    expect(types).toContain(0); // keyword ("from", "filter", ...)
+    expect(types).toContain(2); // variable (column names)
   });
 
   it("navigates to a with definition", async () => {

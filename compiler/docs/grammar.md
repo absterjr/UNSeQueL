@@ -1,4 +1,4 @@
-# UNSeQueL Pipeline Language Specification v1.3
+# UNSeQueL Pipeline Language Specification v1.4
 
 Status: **frozen for v1.3**. Changes require a version bump and re-validation of the
 reference queries in [`examples/reference/`](../examples/reference/).
@@ -24,6 +24,12 @@ reference queries in [`examples/reference/`](../examples/reference/).
   prefixed CTE blocks (`<outer>_with_<g>_stage_<u>`, `..._sub_...`,
   `..._set_...`); a trailing sort's internal ordinal is stripped at the
   nested boundary.
+
+- **v1.4** — write statements: `create table|view name = (program)` and
+  `into name (program)` (append rows to an existing table). Statements appear
+  only in the top-level program, never combine with `from`, and require a
+  database target (`# db:`/`--db`); they compile to
+  `CREATE OR REPLACE TABLE/VIEW ... AS` and `INSERT INTO ...` statements.
 
 Stack decisions are locked: TypeScript/Node compiler, DuckDB first target,
 hand-written recursive descent parser, one CTE per pipeline stage.
@@ -96,7 +102,7 @@ collisions (`order_id` is a distinct identifier from the keyword `order`).
 
 | Group | Words |
 | --- | --- |
-| stages | `from` `join` `left` `right` `full` `cross` `filter` `derive` `group` `by` `aggregate` `having` `window` `select` `sort` `skip` `take` `distinct` `sql` `with` `union` `intersect` `except` |
+| stages | `from` `join` `left` `right` `full` `cross` `filter` `derive` `group` `by` `aggregate` `having` `window` `select` `sort` `skip` `take` `distinct` `sql` `with` `union` `intersect` `except` `create` `table` `view` `into` |
 | clauses / modifiers | `on` `as` `over` `partition` `order` `asc` `desc` `all` |
 | expressions | `and` `or` `not` `in` `like` `between` `is` `null` `case` `when` `then` `else` `end` `cast` `true` `false` |
 
@@ -401,7 +407,42 @@ set_stage = ( "union" , [ "all" ] | "intersect" | "except" ) ,
 - **IR:** `SetStage { op: "union" | "union all" | "intersect" | "except", program }`
 - **SQL:** `stage_u AS (SELECT * FROM stage_{u-1} UNION [ALL|INTERSECT|EXCEPT] SELECT * FROM <nested last CTE>)`
 
-## 4. Ordering and composition rules (v1.3)
+### 3.16 `create` — write statements (v1.4)
+
+```ebnf
+create_stage = "create" , ( "table" | "view" ) , identifier , "=" ,
+               "(" , program , ")" ;
+```
+
+- Writes the nested program's result: `CREATE OR REPLACE TABLE/VIEW <name> AS ...`
+  (rerunnable; an existing table/view of the same name is replaced).
+- Top-level only: a `create` inside a nested program is a parse error, and a
+  program containing `create`/`into` cannot also contain `from` (write
+  statements form their own program).
+- Requires a database target: `# db: warehouse.duckdb` or `--db`. The
+  database is opened read-write for write programs (read paths stay
+  read-only), and a missing database file is created by write programs.
+- Statements do not consume or alter a current relation; the program result
+  is the list of applied statements (the CLI reports `applied N statement(s)`).
+- **IR:** `CreateStage { object: "table" | "view", name, program }`
+- **SQL:** the nested chain is embedded per statement:
+  `CREATE OR REPLACE TABLE <name> AS WITH <nested ctes> SELECT * FROM <last>;`
+
+### 3.17 `into` — append rows (v1.4)
+
+```ebnf
+into_stage = "into" , identifier , "(" , program , ")" ;
+```
+
+- Appends the nested program's rows to an existing table:
+  `INSERT INTO <name> WITH <nested ctes> SELECT * FROM <last>;`
+- The analyzer requires the target table to exist and (unless the program is
+  `sql`-opaque) the same column count as the program's output; names and
+  order follow the target table.
+- Same placement and database rules as `create`.
+- **IR:** `IntoStage { name, program }`
+
+## 4. Ordering and composition rules (v1.4)
 
 1. Zero or more `with` definitions may open the program; each defines one name
    and must appear before `from`. Names are unique per program.
@@ -434,6 +475,9 @@ set_stage = ( "union" , [ "all" ] | "intersect" | "except" ) ,
     not contain aggregate calls; `DISTINCT` and `*` are COUNT-only (`COUNT(*)`).
 11. Backtick-quoted identifiers can name reserved, spaced, and digit-leading
     columns; dots separate qualified components and must be quoted separately.
+12. `create` and `into` (v1.4) are top-level-only write statements: they
+    cannot appear inside nested programs, cannot combine with `from` stages in
+    the same program, and require a database target (`# db:`/`--db`).
 
 ## 5. Expression grammar
 

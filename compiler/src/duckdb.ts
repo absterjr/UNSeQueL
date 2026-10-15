@@ -253,13 +253,16 @@ export interface ConnectOptions extends SourceOptions {
   databasePath?: string;
   /** `ATTACH` existing `.duckdb` files under these names. */
   attach?: ReadonlyMap<string, string>;
+  /**
+   * Open the database read-write (for `create`/`into`/`import` programs) and
+   * allow creating a missing file. Read-only remains the default.
+   */
+  writable?: boolean;
 }
 
-/**
- * Load one CSV/JSON/Parquet file into the connection as a **temporary
+/** Load one CSV/JSON/Parquet file into the connection as a **temporary
  * table**, so file sources never clobber or persist over tables in a
- * file-backed database.
- */
+ * file-backed database. */
 export async function loadTableSource(connection: DuckDBConnection, name: string,
                                       path: string, options: SourceOptions = {}): Promise<void> {
   if (!existsSync(path)) throw new PlqError(`data file not found: ${path}`);
@@ -273,10 +276,34 @@ export async function loadTableSource(connection: DuckDBConnection, name: string
   }
 }
 
+/** Materialize a file as a **persistent** table (the `import` command). */
+export async function importTableSource(connection: DuckDBConnection, name: string,
+                                        path: string, options: SourceOptions = {}): Promise<void> {
+  if (!existsSync(path)) throw new PlqError(`data file not found: ${path}`);
+  try {
+    const overrides = options.columnTypes?.get(name) ?? new Map<string, string>();
+    await connection.run(
+      `CREATE OR REPLACE TABLE ${quotedIdent(name)} AS SELECT * FROM `
+      + `${readerFor(path, options.delimiter, overrides)}`);
+  } catch (error) {
+    throw new PlqError(`could not import ${path}: ${(error as Error).message}`);
+  }
+}
+
+/** Execute a (possibly multi-statement) script for create/into programs. */
+export async function runStatements(connection: DuckDBConnection, sql: string): Promise<void> {
+  try {
+    await connection.run(sql);
+  } catch (error) {
+    throw new PlqError(`DuckDB error: ${(error as Error).message}`);
+  }
+}
+
 export async function connect(data: ReadonlyMap<string, string>,
                               options: ConnectOptions = {}): Promise<DuckDBConnection> {
   const { DuckDBInstance } = await duckdbApi();
-  if (options.databasePath !== undefined && !existsSync(options.databasePath)) {
+  if (options.databasePath !== undefined && !options.writable
+      && !existsSync(options.databasePath)) {
     throw new PlqError(
       `database not found: ${options.databasePath} `
       + "(databases are read-only until `create table = (...)` ships)");
@@ -285,7 +312,8 @@ export async function connect(data: ReadonlyMap<string, string>,
   try {
     const instance = await DuckDBInstance.create(
       options.databasePath ?? ":memory:",
-      options.databasePath === undefined ? {} : { access_mode: "READ_ONLY" },
+      options.databasePath === undefined || options.writable
+        ? {} : { access_mode: "READ_ONLY" },
     );
     openInstances.push(instance);
     connection = await instance.connect();

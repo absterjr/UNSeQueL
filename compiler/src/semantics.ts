@@ -22,8 +22,7 @@
  * As a side effect `analyze` returns the per-stage column lineage.
  */
 
-import { expressionName, type Expr, type Program, type SelectItemNode, type SourceRef, type Stage, type WindowCall } from "./ast.js";
-import { SemanticError } from "./errors.js";
+import { expressionName, type Expr, type Program, type SelectItemNode, type SourceRef, type Stage, type WindowCall } from "./ast.js";import { SemanticError } from "./errors.js";
 import { type Schema, type TypeFamily, typeFamily } from "./schema.js";
 
 export { SemanticError };
@@ -426,6 +425,29 @@ function analyzeProgram(stages: Program, schema: Schema,
           }
         }
         break;
+      }
+      case "create": {
+        const inner = analyzeProgram(
+          (stage as { kind: "create"; program: Program }).program, schema, new Map());
+        lineage.push({ index: stage.index, keyword: stage.keyword, columns: inner.columns });
+        continue;
+      }
+      case "into": {
+        const into = stage as { kind: "into"; name: string; program: Program };
+        const inner = analyzeProgram(into.program, schema, new Map());
+        const table = schema.tables.get(into.name);
+        if (table === undefined) {
+          throw semanticError(stage,
+            `into '${into.name}' needs an existing table; create it first `
+            + "(create table ...)");
+        }
+        const target = [...table.columns.keys()].length;
+        if (!inner.opaque && target !== inner.columns.length) {
+          throw semanticError(stage,
+            `into '${into.name}' expects ${target} columns, got ${inner.columns.length}`);
+        }
+        lineage.push({ index: stage.index, keyword: stage.keyword, columns: inner.columns });
+        continue;
       }
       case "sql": {
         opaque = true;

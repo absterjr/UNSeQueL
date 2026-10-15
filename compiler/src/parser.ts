@@ -1,9 +1,9 @@
-/**
+﻿/**
  * UNSeQueL parser (plan step 4, audit batch B6).
  *
  * Hand-written recursive descent over the token stream from `tokenize`,
- * implementing docs/grammar.md v1.2: the stage grammar (§3), the ordering
- * rules (§4), and the expression grammar with its binding rules (§5).
+ * implementing docs/grammar.md v1.2: the stage grammar (Â§3), the ordering
+ * rules (Â§4), and the expression grammar with its binding rules (Â§5).
  *
  * Errors are located: syntax errors inside a stage are re-wrapped as a
  * stage-located `PipelineError`, so every failure names the stage ordinal,
@@ -20,6 +20,7 @@ import {
   type BinaryOperator,
   type CaseExpr,
   type CastExpr,
+  type CreateStage,
   type DeriveStage,
   type DistinctStage,
   type Expr,
@@ -29,6 +30,7 @@ import {
   type GroupByStage,
   type HavingStage,
   type InExpr,
+  type IntoStage,
   type IsNullExpr,
   type JoinStage,
   type LikeExpr,
@@ -58,7 +60,7 @@ import { tokenize, type Token } from "./lexer.js";
 const STAGE_STARTS = new Set([
   "from", "with", "union", "intersect", "except",
   "join", "left", "right", "full", "cross", "filter", "derive", "group", "aggregate", "having",
-  "window", "select", "sort", "skip", "take", "distinct", "sql",
+  "window", "select", "sort", "skip", "take", "distinct", "sql", "create", "into",
 ]);
 
 const AGGREGATES = new Set(["count", "sum", "avg", "min", "max"]);
@@ -77,11 +79,11 @@ const COMPARISONS = new Set(["=", "==", "!=", "<>", "<", "<=", ">", ">="]);
 const NEGATABLE_TAILS = new Set(["in", "like", "between"]);
 
 export function parseProgram(source: string): Program {
-  return programFromTokens(tokenize(source));
+  return programFromTokens(tokenize(source), false);
 }
 
 /** Parse a program from an existing token list (used for nested programs). */
-function programFromTokens(tokens: readonly Token[]): Program {
+function programFromTokens(tokens: readonly Token[], nested: boolean): Program {
   const rawStages = splitStages(tokens);
   if (rawStages.length === 0) {
     const eof = tokens[tokens.length - 1] as Token;
@@ -95,6 +97,7 @@ function programFromTokens(tokens: readonly Token[]): Program {
 
   const stages: Stage[] = [];
   let sawFrom = false;
+  let sawStatement = false;
   let grouped = false;
   let aggregated = false;
   let groupPending = false;
@@ -116,8 +119,20 @@ function programFromTokens(tokens: readonly Token[]): Program {
 
     const nextKeyword = entries[position + 1]?.keyword;
 
-    if (index === 1 && keyword !== "from" && keyword !== "with") {
-      throw fail("a pipeline must start with 'with' or 'from'");
+    if (index === 1 && keyword !== "from" && keyword !== "with"
+        && keyword !== "create" && keyword !== "into") {
+      throw fail("a pipeline must start with 'with', 'from', 'create', or 'into'");
+    }
+    if (nested && (keyword === "create" || keyword === "into")) {
+      throw fail(`'${keyword}' can only appear in the top-level program`);
+    }
+    if ((keyword === "create" || keyword === "into") && sawFrom) {
+      throw fail(
+        `'${keyword}' cannot be combined with 'from'; write statements in their own program`);
+    }
+    if (sawStatement && keyword !== "with" && keyword !== "create" && keyword !== "into") {
+      throw fail(
+        `'${keyword}' cannot be combined with create/into; write statements in their own program`);
     }
     if (keyword === "with") {
       if (sawFrom) throw fail("'with' definitions must appear before 'from'");
@@ -167,6 +182,7 @@ function programFromTokens(tokens: readonly Token[]): Program {
       withNames.add(named.name);
     }
     if (keyword === "from") sawFrom = true;
+    if (keyword === "create" || keyword === "into") sawStatement = true;
     if (keyword === "group by") groupPending = true;
     if (keyword === "aggregate") {
       groupPending = false;
@@ -445,8 +461,34 @@ function parseStageBody(
       reader.expectEnd();
       return {
         ...base(index, keyword, span), kind: "with",
-        name: name.value, program: programFromTokens(inner),
+        name: name.value, program: programFromTokens(inner, true),
       } satisfies WithStage;
+    }
+    case "create": {
+      const objectToken = reader.peek();
+      if (!objectToken || objectToken.type !== "keyword"
+          || (objectToken.value !== "table" && objectToken.value !== "view")) {
+        reader.fail("create needs 'table' or 'view': create table name = (program)", objectToken);
+      }
+      reader.advance();
+      const name = reader.expectIdentifier("create needs a name: create table name = (program)");
+      reader.expectOperator("=", "after the create name");
+      const inner = reader.readBalancedParens("the create program");
+      reader.expectEnd();
+      return {
+        ...base(index, keyword, span), kind: "create",
+        object: objectToken.value as "table" | "view",
+        name: name.value, program: programFromTokens(inner, true),
+      } satisfies CreateStage;
+    }
+    case "into": {
+      const name = reader.expectIdentifier("into needs a table name: into name (program)");
+      const inner = reader.readBalancedParens("the into program");
+      reader.expectEnd();
+      return {
+        ...base(index, keyword, span), kind: "into",
+        name: name.value, program: programFromTokens(inner, true),
+      } satisfies IntoStage;
     }
     case "union":
     case "intersect":
@@ -457,7 +499,7 @@ function parseStageBody(
       reader.expectEnd();
       return {
         ...base(index, keyword, span), kind: "set",
-        op, program: programFromTokens(inner),
+        op, program: programFromTokens(inner, true),
       } satisfies SetStage;
     }
     case "join":
@@ -624,7 +666,7 @@ function parseSource(reader: TokenReader, what: string): SourceRef {
     } else {
       reader.fail(`a ${what} subquery requires an alias: (...) as name`, reader.peek() ?? undefined);
     }
-    return { name: "", alias, span: spanFrom(reader, start), program: programFromTokens(inner) };
+    return { name: "", alias, span: spanFrom(reader, start), program: programFromTokens(inner, true) };
   }
   if (!isIdentifierToken(start)) {
     reader.fail(`expected a table name for the ${what}`, start);
@@ -795,7 +837,7 @@ function parseCount(reader: TokenReader, keyword: string): number {
 }
 
 // --------------------------------------------------------------------------- //
-// Expressions (grammar §5)
+// Expressions (grammar Â§5)
 // --------------------------------------------------------------------------- //
 
 function parseExpression(reader: TokenReader, context: ExprContext): Expr {

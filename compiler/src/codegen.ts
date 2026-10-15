@@ -763,17 +763,13 @@ function buildChain(stages: Program, context: ChainContext, prefix: string,
   return state;
 }
 
-export function emitSql(program: Program, schema: Schema, options: EmitOptions = {}): string {
-  const stages = truncate(program, options.stopAt);
-  if (stages.length === 0) {
-    throw new CodegenError("a program cannot be empty");
-  }
-
+function orderNameFactory(program: Program, schema: Schema): () => string {
   const reservedNames = internalOrderNames(program, schema);
-  const rawSqlTexts = program.filter((stage): stage is RawSqlStage => stage.kind === "sql")
+  const rawSqlTexts = program
+    .filter((stage): stage is RawSqlStage => stage.kind === "sql")
     .map((stage) => stage.text.toLowerCase());
   let orderOrdinal = 0;
-  const nextOrderName = (): string => {
+  return (): string => {
     let candidate: string;
     do {
       orderOrdinal += 1;
@@ -783,7 +779,18 @@ export function emitSql(program: Program, schema: Schema, options: EmitOptions =
     reservedNames.add(candidate.toLowerCase());
     return candidate;
   };
+}
 
+export function emitSql(program: Program, schema: Schema, options: EmitOptions = {}): string {
+  if (program.some((stage) => stage.kind === "create" || stage.kind === "into")) {
+    return emitStatements(program, schema);
+  }
+  const stages = truncate(program, options.stopAt);
+  if (stages.length === 0) {
+    throw new CodegenError("a program cannot be empty");
+  }
+
+  const nextOrderName = orderNameFactory(program, schema);
   const context: ChainContext = { schema, ctes: [], nextOrderName };
   const state = buildChain(stages, context, "", false, new Map());
   const body = context.ctes
@@ -794,4 +801,40 @@ export function emitSql(program: Program, schema: Schema, options: EmitOptions =
     : `SELECT * EXCLUDE (${ident(state.orderColumn)}) FROM ${state.lastCte} `
       + `ORDER BY ${ident(state.orderColumn)};`;
   return `WITH ${body}\n${finalOrder}`;
+}
+
+/**
+ * Statement programs (`create`/`into`) emit one complete statement per write
+ * stage; each nested program becomes an inline `WITH` block, so the whole
+ * program is a multi-statement script. `stopAt` does not apply — there are no
+ * pipeline units to truncate.
+ */
+function emitStatements(program: Program, schema: Schema): string {
+  const nextOrderName = orderNameFactory(program, schema);
+  const statements: string[] = [];
+  for (const stage of program) {
+    if (stage.kind !== "create" && stage.kind !== "into") continue;
+    const context: ChainContext = { schema, ctes: [], nextOrderName };
+    const withNames = new Map<string, ChainState>();
+    for (const candidate of program) {
+      if (candidate.kind !== "with") continue;
+      const inner = buildChain(candidate.program, context, `with_${candidate.index}_`,
+                               true, withNames);
+      withNames.set(candidate.name, inner);
+    }
+    const inner = buildChain(stage.program, context, `${stage.kind}_${stage.index}_`,
+                             true, withNames);
+    const body = context.ctes
+      .map((cte) => `${cte.name} AS (\n  ${cte.sql}\n)`)
+      .join(",\n");
+    const select = `SELECT * FROM ${inner.lastCte}`;
+    if (stage.kind === "create") {
+      statements.push(
+        `CREATE OR REPLACE ${stage.object.toUpperCase()} ${ident(stage.name)} AS\n`
+        + `WITH ${body}\n${select};`);
+    } else {
+      statements.push(`INSERT INTO ${ident(stage.name)}\nWITH ${body}\n${select};`);
+    }
+  }
+  return statements.join("\n");
 }

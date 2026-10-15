@@ -41,15 +41,21 @@ import { emitSql } from "./codegen.js";
 import { splitDirectives } from "./directives.js";
 import { PlqError } from "./errors.js";
 import { formatProgram } from "./format.js";
+import { tokenize, type Token } from "./lexer.js";
 import { parseProgram } from "./parser.js";
 import { loadSchema, type Schema } from "./schema.js";
 import { analyze } from "./semantics.js";
+
+/** Semantic token legend; roles follow the lexer's token kinds. */
+const SEMANTIC_TOKEN_TYPES = [
+  "keyword", "function", "variable", "number", "string", "operator",
+] as const;
 
 const STAGE_KEYWORDS: readonly string[] = [
   "from", "join", "left join", "right join", "full join", "cross join",
   "filter", "derive", "group by", "aggregate", "having", "window", "select",
   "sort", "skip", "take", "distinct", "union", "union all", "intersect",
-  "except", "sql", "with",
+  "except", "sql", "with", "create table", "create view", "into",
 ];
 
 const SOURCE_PREFIX = /^(?:(?:left|right|full|cross)\s+join|join|from)\s+[A-Za-z_`]*$/;
@@ -174,6 +180,10 @@ export function createUnsequelServer(connection: Connection): void {
         documentSymbolProvider: true,
         definitionProvider: true,
         codeActionProvider: true,
+        semanticTokensProvider: {
+          legend: { tokenTypes: [...SEMANTIC_TOKEN_TYPES], tokenModifiers: [] },
+          full: true,
+        },
       },
     };
   });
@@ -385,6 +395,61 @@ export function createUnsequelServer(connection: Connection): void {
       }
     }
     return actions;
+  });
+
+  const semanticTokens = (document: TextDocument): { data: number[] } => {
+    let tokens: Token[];
+    try {
+      tokens = tokenize(document.getText());
+    } catch {
+      return { data: [] };
+    }
+    const typeIndex = (token: Token, next: Token | undefined): number => {
+      switch (token.type) {
+        case "keyword":
+          return 0;
+        case "number":
+          return 3;
+        case "string":
+          return 4;
+        case "operator":
+          return 5;
+        case "identifier":
+          if (next !== undefined && next.type === "punctuation" && next.value === "(") {
+            return 1;
+          }
+          return 2;
+        case "quoted_identifier":
+          return 2;
+        default:
+          return -1;
+      }
+    };
+    const data: number[] = [];
+    let previousLine = 0;
+    let previousColumn = 0;
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index] as Token;
+      const next = tokens[index + 1];
+      const type = typeIndex(token, next);
+      if (type < 0) continue;
+      const length = token.endColumn - token.column;
+      if (length <= 0 || token.endLine !== token.line) continue;
+      const line = token.line - 1;
+      const column = token.column - 1;
+      data.push(line - previousLine,
+        line === previousLine ? column - previousColumn : column,
+        length, type, 0);
+      previousLine = line;
+      previousColumn = column;
+    }
+    return { data };
+  };
+
+  connection.languages.semanticTokens.on((params) => {
+    const document = documents.get(params.textDocument.uri);
+    if (document === undefined) return { data: [] };
+    return semanticTokens(document);
   });
 
   documents.onDidOpen((change) => validate(change.document));

@@ -113,19 +113,31 @@ unsequel run query.unsequel --out results.csv
 
 ## Databases
 
-Queries can read local DuckDB databases:
+Queries can read local DuckDB databases, and write statements can create or
+append tables:
 
 ```bash
 unsequel run query.unsequel --db warehouse.duckdb       # file-backed, created if missing
 unsequel run query.unsequel --attach legacy=old.duckdb  # from legacy.orders, legacy.people, ...
+unsequel run create.unsequel                            # '# db: warehouse.duckdb'
+unsequel import orders.csv --into warehouse.duckdb --table orders
 ```
 
-`# db: path.duckdb` works as a directive. `# source`/`--data` files load as
-**temporary tables**, so they never overwrite database contents, and schemas
-resolve from the live catalog (persistent tables, attached databases, and the
-temporary file sources). Creating and populating tables from a pipeline
-(`create table = (...)`, `into <table>`) is the next step
-([docs/backlog.md](docs/backlog.md) #14).
+```text
+# db: warehouse.duckdb
+# source orders: ../data/orders.csv
+create table summary = (from orders | group by country | aggregate n = COUNT(*))
+```
+
+`create table|view name = (pipeline)` writes `CREATE OR REPLACE ... AS`
+(rerunnable); `into name (pipeline)` appends rows to an existing table and
+validates the column count. Write programs need a `# db:`/`--db` target and
+open it read-write; read programs stay read-only. `# source`/`--data` files
+load as **temporary tables**, so they never overwrite database contents, and
+schemas resolve from the live catalog (persistent tables, attached databases,
+and the temporary file sources). Grammar v1.4: [create](docs/grammar.md#316-create--write-statements-v14)
+and [into](docs/grammar.md#317-into--append-rows-v14). Postgres/SQLite
+scanners and `httpfs` remain on the backlog (#14).
 
 The compiler is also a library: `import { parseProgram, analyze, emitSql,
 formatProgram } from "unsequel"` — nothing there loads DuckDB either

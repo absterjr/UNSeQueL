@@ -11,11 +11,12 @@ from pathlib import Path
 from . import __version__
 from .analyzer import analyze as analyze_unsequel_program
 from .codegen import emit_sql
-from .duckdb_backend import connect, copy_to_file, describe_database, fetch, run_sql
+from .duckdb_backend import (connect, copy_to_file, describe_database, fetch,
+                             import_table, run_sql, run_script)
 from .engine import execute
 from .errors import ParseError, UnsequelError
 from .format import format_pipeline, is_formatted
-from .grammar import parse_program
+from .grammar import CreateStage, IntoStage, parse_program
 from .io import load_sqlite_tables, load_table
 from .memory_engine import execute_program
 from .parser import parse_query
@@ -348,6 +349,17 @@ def build_parser() -> argparse.ArgumentParser:
     fmt.add_argument("--write", action="store_true", help="rewrite the file in place")
     fmt.add_argument("--check", action="store_true",
                      help="exit 1 if the file is not already in canonical form")
+
+    imp = commands.add_parser("import", help="materialize a data file as a persistent table")
+    imp.add_argument("data", help="CSV/JSON/Parquet file")
+    imp.add_argument("--into", metavar="PATH", required=True,
+                     help="database file (created if needed)")
+    imp.add_argument("--table", metavar="NAME", help="table name (default: the file stem)")
+    imp.add_argument("--delimiter", type=_delimiter_arg,
+                     help="one-character CSV delimiter (default: comma)")
+    imp.add_argument("--column-type", action="append", default=[], type=_column_type_spec,
+                     metavar="TABLE.COLUMN=TYPE",
+                     help="override inferred type; repeatable")
     return parser
 
 
@@ -409,6 +421,9 @@ def _cmd_compile(args) -> None:
     if _wants_unsequel(args):
         text, _, database, attach, schema = _unsequel_inputs(args)
         program = parse_program(text)
+        if args.stage is not None and any(
+                isinstance(stage, (CreateStage, IntoStage)) for stage in program):
+            raise UnsequelError("--stage does not apply to create/into programs")
         print(emit_unsequel_sql(program, schema, stop_at=args.stage))
         return
     _legacy_notice()
@@ -422,6 +437,8 @@ def _cmd_preview(args) -> None:
     if _wants_unsequel(args):
         text, data, database, attach, schema = _unsequel_inputs(args)
         program = parse_program(text)
+        if any(isinstance(stage, (CreateStage, IntoStage)) for stage in program):
+            raise UnsequelError("preview does not apply to create/into programs")
         total = len(program)
         if not 1 <= args.stage <= total:
             raise UnsequelError(f"--stage must be between 1 and {total} for this query")
@@ -515,6 +532,24 @@ def _cmd_run(args) -> None:
         schema_path = args.schema or directive_schema
         program = parse_program(text)
         sql = None
+        if any(isinstance(stage, (CreateStage, IntoStage)) for stage in program):
+            if database is None:
+                raise UnsequelError(
+                    "create/into write to a database: add '# db: warehouse.duckdb' "
+                    "to the file or pass --db")
+            if args.out:
+                raise UnsequelError("--out does not apply to create/into programs")
+            con = connect(data, delimiter=args.delimiter,
+                          column_types={name: _column_types_for(args, name)
+                                        for name in data},
+                          database_path=database, attach=attach, writable=True)
+            schema = Schema.load(schema_path) if schema_path else describe_database(con)
+            analyze_unsequel_program(program, schema)
+            run_script(con, emit_unsequel_sql(program, schema))
+            count = sum(1 for stage in program
+                        if isinstance(stage, (CreateStage, IntoStage)))
+            print(f"applied {count} statement(s)")
+            return
         if engine == "duckdb":
             if not (schema_path or database or attach or data):
                 raise UnsequelError(
@@ -586,6 +621,20 @@ def _cmd_run(args) -> None:
         _print_result(result, args.format)
 
 
+def _cmd_import(args) -> None:
+    source = Path(args.data)
+    if not source.exists():
+        raise UnsequelError(f"data file not found: {args.data}")
+    name = args.table or source.stem
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name or ""):
+        raise UnsequelError(
+            f"cannot derive a table name from {args.data!r}; pass --table name")
+    con = connect({}, database_path=args.into, writable=True)
+    import_table(con, name, str(source), delimiter=args.delimiter,
+                 column_types=_column_types_for(args, name))
+    print(f"imported {args.data} into {args.into} as {name}")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -595,6 +644,7 @@ def main(argv: list[str] | None = None) -> None:
         "compile": _cmd_compile,
         "preview": _cmd_preview,
         "fmt": _cmd_fmt,
+        "import": _cmd_import,
     }
     try:
         handlers[args.command](args)

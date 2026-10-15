@@ -29,6 +29,7 @@ from .grammar import (
     Call,
     Case,
     Cast,
+    CreateStage,
     DeriveStage,
     DistinctStage,
     Expr,
@@ -37,6 +38,7 @@ from .grammar import (
     GroupByStage,
     HavingStage,
     InExpr,
+    IntoStage,
     IsNull,
     JoinStage,
     Like,
@@ -423,6 +425,26 @@ def _analyze_program(
                         f"'{stage.op}' requires the same number of columns on both sides "
                         f"(left {left}, right {len(inner.columns)})",
                     )
+        elif isinstance(stage, CreateStage):
+            inner = _analyze_program(stage.program, schema, {})
+            lineage.append(StageLineage(stage.index, stage.keyword, tuple(inner.columns)))
+            continue
+        elif isinstance(stage, IntoStage):
+            inner = _analyze_program(stage.program, schema, {})
+            table = schema.tables.get(stage.name)
+            if table is None:
+                raise _semantic_error(
+                    stage,
+                    f"into '{stage.name}' needs an existing table; create it first "
+                    "(create table ...)")
+            target = len(table.columns)
+            if not inner.opaque and target != len(inner.columns):
+                raise _semantic_error(
+                    stage,
+                    f"into '{stage.name}' expects {target} columns, "
+                    f"got {len(inner.columns)}")
+            lineage.append(StageLineage(stage.index, stage.keyword, tuple(inner.columns)))
+            continue
         elif isinstance(stage, RawSqlStage):
             opaque = True
             scope = _Scope()

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+﻿import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type {
@@ -232,7 +232,7 @@ describe("parser: ordering rules", () => {
   it("rejects a pipeline that does not start with from or with", () => {
     const error = expectPipelineError("select country\nfrom orders");
     expect(error.stageIndex).toBe(1);
-    expect(error.message).toContain("must start with 'with' or 'from'");
+    expect(error.message).toContain("must start with 'with', 'from', 'create', or 'into'");
   });
 
   it("rejects group by without a following aggregate", () => {
@@ -354,7 +354,7 @@ describe("parser: ordering rules", () => {
 
   it("rejects set operators before from", () => {
     const error = expectPipelineError("union (from orders take 1)");
-    expect(error.message).toContain("must start with 'with' or 'from'");
+    expect(error.message).toContain("must start with 'with', 'from', 'create', or 'into'");
   });
 
   it("rejects joins after a sql stage", () => {

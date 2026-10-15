@@ -1,6 +1,6 @@
 {
   "name": "unsequel",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "UNSeQueL query language compiler: write SQL-like queries in execution order and compile composable stages to DuckDB SQL.",
   "license": "MIT",
   "repository": {

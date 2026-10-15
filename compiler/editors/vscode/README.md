@@ -1,4 +1,4 @@
-# UNSeQueL for VS Code
+﻿# UNSeQueL for VS Code
 
 Language support for `.unsequel` files — write and run queries like SQL clients
 run `.sql` files.
@@ -53,12 +53,12 @@ and press `F5` — a second VS Code window opens with the extension loaded.
 cd compiler/editors/vscode
 npm install
 npx @vscode/vsce package
-code --install-extension unsequel-vscode-0.3.0.vsix
+code --install-extension unsequel-vscode-0.4.0.vsix
 ```
 
 **Manual copy:** copy `editors/vscode/` into your extensions directory
-(`%USERPROFILE%\.vscode\extensions\unsequel-vscode-0.3.0` on Windows,
-`~/.vscode/extensions/unsequel-vscode-0.3.0` elsewhere) and restart VS Code.
+(`%USERPROFILE%\.vscode\extensions\unsequel-vscode-0.4.0` on Windows,
+`~/.vscode/extensions/unsequel-vscode-0.4.0` elsewhere) and restart VS Code.
 
 ## Without the extension
 

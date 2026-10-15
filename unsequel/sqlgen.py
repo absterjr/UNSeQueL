@@ -21,6 +21,7 @@ from .grammar import (
     Call,
     Case,
     Cast,
+    CreateStage,
     DeriveStage,
     DistinctStage,
     Expr,
@@ -29,6 +30,7 @@ from .grammar import (
     GroupByStage,
     HavingStage,
     InExpr,
+    IntoStage,
     IsNull,
     JoinStage,
     Like,
@@ -771,14 +773,10 @@ def _build_chain(
     return state
 
 
-def emit_sql(program: Program, schema: Schema, stop_at: "int | None" = None) -> str:
-    """Lower a program to a DuckDB `WITH` chain (compiler/src/codegen.ts)."""
-    stages = _truncate(program, stop_at)
-    if not stages:
-        raise CodegenError("a program cannot be empty")
-
+def _order_name_factory(program: Program, schema: Schema):
     reserved_names = _internal_order_names(program, schema)
-    raw_sql_texts = [stage.text.lower() for stage in program if isinstance(stage, RawSqlStage)]
+    raw_sql_texts = [stage.text.lower() for stage in program
+                     if isinstance(stage, RawSqlStage)]
     counter = {"ordinal": 0}
 
     def next_order_name() -> str:
@@ -794,7 +792,48 @@ def emit_sql(program: Program, schema: Schema, stop_at: "int | None" = None) -> 
         reserved_names.add(candidate.lower())
         return candidate
 
-    context = _ChainContext(schema, [], next_order_name)
+    return next_order_name
+
+
+def _emit_statements(program: Program, schema: Schema) -> str:
+    """Statement programs (`create`/`into`): one complete statement per write
+    stage, each nested program embedded as an inline `WITH` block."""
+    next_order_name = _order_name_factory(program, schema)
+    statements: list[str] = []
+    for stage in program:
+        if not isinstance(stage, (CreateStage, IntoStage)):
+            continue
+        context = _ChainContext(schema, [], next_order_name)
+        with_names: dict = {}
+        for candidate in program:
+            if not isinstance(candidate, WithStage):
+                continue
+            inner = _build_chain(candidate.program, context,
+                                 f"with_{candidate.index}_", True, with_names)
+            with_names[candidate.name] = inner
+        kind = "create" if isinstance(stage, CreateStage) else "into"
+        inner = _build_chain(stage.program, context, f"{kind}_{stage.index}_",
+                             True, with_names)
+        body = ",\n".join(f"{name} AS (\n  {sql}\n)" for name, sql in context.ctes)
+        select = f"SELECT * FROM {inner.last_cte}"
+        if isinstance(stage, CreateStage):
+            statements.append(
+                f"CREATE OR REPLACE {stage.object.upper()} {_ident(stage.name)} AS\n"
+                f"WITH {body}\n{select};")
+        else:
+            statements.append(f"INSERT INTO {_ident(stage.name)}\nWITH {body}\n{select};")
+    return "\n".join(statements)
+
+
+def emit_sql(program: Program, schema: Schema, stop_at: "int | None" = None) -> str:
+    """Lower a program to a DuckDB `WITH` chain (compiler/src/codegen.ts)."""
+    if any(isinstance(stage, (CreateStage, IntoStage)) for stage in program):
+        return _emit_statements(program, schema)
+    stages = _truncate(program, stop_at)
+    if not stages:
+        raise CodegenError("a program cannot be empty")
+
+    context = _ChainContext(schema, [], _order_name_factory(program, schema))
     state = _build_chain(stages, context, "", False, {})
     body = ",\n".join(f"{name} AS (\n  {sql}\n)" for name, sql in context.ctes)
     if state.order_column is None:

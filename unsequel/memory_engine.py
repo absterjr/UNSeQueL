@@ -31,6 +31,7 @@ from .grammar import (
     Call,
     Case,
     Cast,
+    CreateStage,
     DeriveStage,
     DistinctStage,
     Expr,
@@ -39,6 +40,7 @@ from .grammar import (
     GroupByStage,
     HavingStage,
     InExpr,
+    IntoStage,
     IsNull,
     JoinStage,
     Like,
@@ -824,6 +826,10 @@ def _execute_chain(
                     "the sql hatch runs DuckDB SQL and needs the DuckDB engine; "
                     "run with --engine duckdb (or install the duckdb extra, which "
                     "also makes it the default)")
+            elif isinstance(stage, (CreateStage, IntoStage)):
+                raise ExecutionError(
+                    f"{stage.keyword} writes to a database and needs the DuckDB "
+                    "engine; run with --engine duckdb")
             else:  # pragma: no cover - defensive
                 raise ExecutionError(f"cannot execute stage '{stage.keyword}'")
         except StageExecutionError:
