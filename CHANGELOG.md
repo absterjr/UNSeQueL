@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Duplicate output names in `SELECT` are rejected everywhere now: the ordered
+  `.usql` parser and engine raise `SELECT projects 'x' more than once; add an
+  alias to one of them` (the compiler already did), and the `.pusql` select
+  check is case-insensitive. Previously the later column silently replaced the
+  earlier one in the Python engine.
+- Division semantics are documented in `docs/semantics.md`,
+  `compiler/docs/semantics.md`, and the site: `/` follows DuckDB and returns a
+  number (`7 / 2` is `3.5`); PostgreSQL/Redshift/SQLite truncate integer
+  division instead.
+
 ## 0.1.0 — 2026-10-15
 
 First release. The compiler (npm), the Python prototype, and the VS Code

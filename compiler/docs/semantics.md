@@ -70,6 +70,15 @@ order lists every internal SQL evaluation phase.
 Native scalar date helpers include `strftime` and `date_trunc`. The supported
 function set remains smaller than DuckDB's full function catalog.
 
+## Division and numeric types
+
+`/` returns a number (float) when its operands are numeric, matching DuckDB:
+`7 / 2` is `3.5`, not `3`. PostgreSQL, Redshift, and SQLite truncate integer
+division instead, so porting a query that relied on truncation requires an
+explicit conversion; there is no integer-division operator yet. The shared
+[semantics page](https://github.com/absterjr/UNSeQueL/blob/main/docs/semantics.md)
+lists the documented boundaries.
+
 ## CSV loading
 
 CSV headers and all values are scanned before DuckDB loads a file. Inference is

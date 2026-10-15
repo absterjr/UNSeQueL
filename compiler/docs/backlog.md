@@ -4,9 +4,10 @@ This is the backlog for the **TypeScript compiler**. The Python prototype has
 its own at [../../docs/backlog.md](../../docs/backlog.md).
 
 Prioritised gaps found while migrating the five real queries in
-[`examples/real/`](../examples/real/) through the CLI (steps 6-9). The first
-version needed the SQL hatch for monthly dates and share-of-total; v1.2 adds
-native functions and whole-relation windows for those queries.
+[`examples/real/`](../examples/real/) through the CLI (steps 6-9), extended by
+the October 2026 external review. The first version needed the SQL hatch for
+monthly dates and share-of-total; v1.2 adds native functions and
+whole-relation windows for those queries.
 
 ## P0 — next for everyday analysis
 
@@ -15,6 +16,12 @@ native functions and whole-relation windows for those queries.
    rather than a dedicated date-literal syntax.
 2. **More scalar and aggregate functions** needed for everyday analysis, with
    type families and DuckDB parity tests for each addition.
+3. **Stage-by-stage execution trace.** `run --trace` prints the relation after
+   every stage — row count plus a few rows at `from`, after each
+   filter/join/derive, at the group, and so on. This is the project's thesis
+   made visible (execution order, not asserted) and the clearest
+   differentiator from PRQL, Malloy, and pipe SQL, which sell conciseness
+   rather than pedagogy.
 
 ## P1 — language completeness
 
@@ -24,16 +31,29 @@ native functions and whole-relation windows for those queries.
    until external feedback; DuckDB remains the locked first target, and
    cross-target SQL text is a portability project rather than a bug fix.
 6. More aggregate functions (`MEDIAN`, `STDDEV`, `STRING_AGG`).
+7. **Reverse transpiler (SQL → UNSeQueL).** Paste a `SELECT` query and get it
+   reordered into execution order; the natural on-ramp for people who already
+   know SQL, and a strong playground/discovery hook for the site
+   ("paste your SQL, see the order it actually runs in").
+8. **SELECT-first input suggestion.** Detect `SELECT ... FROM ...` input and
+   offer the reordered rewrite ("UNSeQueL starts from the data: ...") instead
+   of a bare "must start with from" error.
 
 ## P2 — tooling
 
-7. VS Code extension polish: remember the UNSeQueL terminal's working directory
+9. VS Code extension polish: remember the UNSeQueL terminal's working directory
    per workspace, optionally run `unsequel fmt` on save, and publish the extension
    to the Marketplace.
-8. Standalone binaries — spike `bun build --compile` or Node SEA with the
-   DuckDB native addon so users need neither Node nor npm.
-9. `--data` globs/directories and per-source delimiter settings (the current
-   delimiter option applies to all loaded CSVs).
+10. Standalone binaries — spike `bun build --compile` or Node SEA with the
+    DuckDB native addon so users need neither Node nor npm.
+11. `--data` globs/directories and per-source delimiter settings (the current
+    delimiter option applies to all loaded CSVs).
+12. **Zero-install WASM playground** on the Pages site: an editor running
+    DuckDB-WASM in the browser, which also sidesteps the pip/npm barrier in
+    locked-down environments and doubles as the best discovery surface.
+13. Integer-division helper (`FLOOR` or an explicit truncating operator) for
+    SQL ported from PostgreSQL/Redshift/SQLite, where `/` truncates; the
+    current float semantics are documented in [semantics.md](semantics.md).
 
 Shipped since the original dogfood pass: `strftime`/`date_trunc`, `over ()`,
 `select *, expression = ...`, right/full/cross joins, repeated group/aggregate
@@ -41,8 +61,9 @@ units, relational stages after projections/joins/pagination, stable sort order
 through later stages, backtick identifiers, strict ambiguous-column errors,
 nested programs (v1.3: `with` definitions, subquery sources, and
 `union`/`union all`/`intersect`/`except`), stdin (`unsequel run -`), file
-directives, line selections, interactive `repl`, source introspection, and the
-VS Code extension in [`../editors/vscode/`](../editors/vscode/).
+directives, line selections, interactive `repl`, source introspection, the
+VS Code extension in [`../editors/vscode/`](../editors/vscode/), and
+duplicate-output-name rejection.
 
 ## Intentionally out of scope
 

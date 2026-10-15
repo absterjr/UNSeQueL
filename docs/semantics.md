@@ -66,6 +66,11 @@ one-based output-column ordinal; zero and out-of-range ordinals are errors.
   `'abc' * 2` is rejected rather than inheriting Python's string behavior.
   Comparisons of incompatible value types and mixed-type `SUM`/sorts produce a
   user-facing error, not a Python traceback.
+- `/` returns a number (float) for numeric operands, following DuckDB:
+  `7 / 2` is `3.5` (and `-7 / 2` is `-3.5`). PostgreSQL, Redshift, and SQLite
+  truncate integer division to `3` instead, so SQL ported from those engines
+  needs an explicit conversion when truncation matters. UNSeQueL has no
+  integer-division operator yet.
 - The table renderer prints NULL as `NULL`; JSON renders it as `null`.
 
 ## CSV input and inferred types (Python prototype)

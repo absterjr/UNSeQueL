@@ -39,6 +39,7 @@
         <li><a href="semantics.html" aria-current="page">Semantics and data rules</a>
           <ul class="sidebar-sub">
             <li><a href="#nulls">NULLs and logic</a></li>
+            <li><a href="#division">Division and numeric types</a></li>
             <li><a href="#csv">CSV loading</a></li>
             <li><a href="#naming">Column naming</a></li>
             <li><a href="#ordering">Sort order</a></li>
@@ -69,6 +70,14 @@
       <li><code>and</code>/<code>or</code> follow SQL three-valued logic (<code>null and false</code> is <code>false</code>, <code>null or true</code> is <code>true</code>).</li>
       <li><code>COUNT(*)</code> counts rows; <code>COUNT(expr)</code> counts non-NULL values. <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, and <code>MAX</code> ignore NULL inputs and return NULL for an empty aggregate input.</li>
       <li>Sorting NULLs follows DuckDB: they order as the largest values (last when ascending, first when descending).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2 id="division">Division and numeric types</h2>
+    <ul>
+      <li><code>/</code> returns a number (float) for numeric operands, matching DuckDB: <code>7 / 2</code> is <code>3.5</code> (and <code>-7 / 2</code> is <code>-3.5</code>); <code>%</code> is integer remainder for integer operands.</li>
+      <li>PostgreSQL, Redshift, and SQLite truncate integer division to <code>3</code>; when porting SQL that relied on truncation, convert explicitly — there is no integer-division operator yet.</li>
     </ul>
   </section>
 
