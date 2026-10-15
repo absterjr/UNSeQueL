@@ -38,6 +38,12 @@ identifiers, explicit delimiter/type overrides, and non-blocking stdin tests.
    remains.
 7. [ ] Windows code signing so SmartScreen does not flag the unsigned exe
    (owner certificate).
+8. Note (October 2026): both released binary tracks — the SEA run bundle
+   (`unsequel-run-<platform>.tar.gz`) and the PyInstaller executables — run
+   the canonical `.unsequel` grammar; `r06_composition.unsequel` (with,
+   group/aggregate, post-aggregate join, set operator, top-N) is the CI smoke
+   test for both. The legacy `.usql`/`.pusql` surfaces remain only in the
+   Python CLI for now and print a deprecation notice.
 
 ## P0 — convergence (October 2026 review)
 

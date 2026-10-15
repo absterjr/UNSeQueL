@@ -1,0 +1,13 @@
+# source orders: ../spec/orders.csv
+# source customers: ../spec/customers.csv
+# Real UNSeQueL query: composition — with, group/aggregate, post-aggregate join,
+# union all, and top-N (the exercise the run smoke tests use).
+with big = (from orders | filter quantity >= 3 | select order_id, customer, quantity)
+from big
+group by person = customer
+aggregate orders = COUNT(*), total = SUM(quantity)
+join customers on person = customers.customer
+select person, orders, total, segment
+union all (from customers | select person = customer, orders = 0, total = 0, segment)
+sort -total, person
+take 3

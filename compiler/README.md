@@ -111,6 +111,22 @@ unsequel run query.unsequel --out results.parquet
 unsequel run query.unsequel --out results.csv
 ```
 
+## Databases
+
+Queries can read local DuckDB databases:
+
+```bash
+unsequel run query.unsequel --db warehouse.duckdb       # file-backed, created if missing
+unsequel run query.unsequel --attach legacy=old.duckdb  # from legacy.orders, legacy.people, ...
+```
+
+`# db: path.duckdb` works as a directive. `# source`/`--data` files load as
+**temporary tables**, so they never overwrite database contents, and schemas
+resolve from the live catalog (persistent tables, attached databases, and the
+temporary file sources). Creating and populating tables from a pipeline
+(`create table = (...)`, `into <table>`) is the next step
+([docs/backlog.md](docs/backlog.md) #14).
+
 The compiler is also a library: `import { parseProgram, analyze, emitSql,
 formatProgram } from "unsequel"` — nothing there loads DuckDB either
 (`src/index.ts`).

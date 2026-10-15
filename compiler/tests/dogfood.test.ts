@@ -30,13 +30,14 @@ const EXPECTED_ROWS: Record<string, number> = {
   r03_repeat_customers: 4,
   r04_monthly_revenue: 6,
   r05_share_of_total: 3,
+  r06_composition: 3,
 };
 
 const files = readdirSync(REAL).filter((f) => f.endsWith(".unsequel")).sort();
 
 describe("dogfood: real queries", () => {
-  it("ships the five migrated queries", () => {
-    expect(files).toHaveLength(5);
+  it("ships the migrated queries", () => {
+    expect(files).toHaveLength(6);
     expect(files.map((f) => f.replace(/\.unsequel$/, ""))).toEqual(Object.keys(EXPECTED_ROWS));
   });
 

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Databases, first slice: `--db mydb.duckdb` (and the `# db:` directive) opens
+  a file-backed database; `--attach name=path.duckdb` opens other DuckDB files
+  for cross-database queries (`<name>.<table>`). `# source`/`--data` files load
+  as temporary tables, so they never clobber or persist over database
+  contents, and schemas resolve from the live catalog (`SHOW ALL TABLES`).
+  Creating and populating tables from a pipeline (`create table = (...)`,
+  `into`) remains the next step (compiler backlog #14).
+- Convergence guards: the Python CLI prints a deprecation notice when running
+  the legacy `.usql`/`.pusql` surfaces, and a new `--unsequel` flag routes
+  stdin or unrecognized files to the canonical grammar. The composing dogfood
+  query `compiler/examples/real/r06_composition.unsequel` (with, group/aggregate,
+  post-aggregate join, union all, top-N) produces identical results on all
+  three runtimes and is now the CI smoke test for **both** released binary
+  tracks (SEA run bundle and PyInstaller), along with a Parquet sink check.
 - Run-capable executable and output sinks: the SEA build stages a
   per-platform run bundle (`node scripts/build-sea.mjs --with-duckdb`) whose
   executable resolves the DuckDB module from `modules/` next to the binary —

@@ -194,7 +194,14 @@ def _schema_from_tables(tables) -> Schema:
 
 
 def _wants_unsequel(args) -> bool:
+    if getattr(args, "unsequel", False):
+        return True
     return args.query != "-" and args.query.lower().endswith(".unsequel")
+
+
+def _legacy_notice() -> None:
+    print("note: .usql and .pusql are legacy surfaces being retired; "
+          ".unsequel is the language (see README)", file=sys.stderr)
 
 
 def _unsequel_inputs(args) -> tuple[str, dict[str, str], Schema]:
@@ -237,6 +244,9 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("query", help="query file, or '-' to read from stdin")
         sub.add_argument("--pipeline", action="store_true",
                          help="treat the query as pipeline syntax instead of ordered syntax")
+        sub.add_argument("--unsequel", action="store_true",
+                         help="treat the input (including stdin '-') as canonical "
+                              ".unsequel syntax")
         sub.add_argument("--schema", metavar="PATH",
                          help="JSON schema file; validate the pipeline against it")
 
@@ -264,6 +274,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     compile_ = commands.add_parser("compile", help="print the SQL a query compiles to")
     compile_.add_argument("query", help="query file, or '-' for stdin")
+    compile_.add_argument("--unsequel", action="store_true",
+                          help="treat the input (including stdin '-') as canonical "
+                               ".unsequel syntax")
     compile_.add_argument("--schema", metavar="PATH",
                           help="JSON schema file (required for .pusql; .unsequel files "
                                "may use a '# schema' directive or introspect --data)")
@@ -272,6 +285,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     preview = commands.add_parser("preview", help="run a query truncated at a stage")
     preview.add_argument("query", help="query file, or '-' for stdin")
+    preview.add_argument("--unsequel", action="store_true",
+                         help="treat the input (including stdin '-') as canonical "
+                              ".unsequel syntax")
     preview.add_argument("--schema", metavar="PATH",
                          help="JSON schema file (required for .pusql)")
     preview.add_argument("--stage", type=int, metavar="N", required=True,
@@ -337,10 +353,12 @@ def _cmd_check(args) -> None:
         analyze_unsequel_program(program, schema)
         print("valid UNSeQueL program (schema OK)")
     elif _wants_pipeline(args):
+        _legacy_notice()
         _pipeline_stages(text, args.schema)
         suffix = " (schema OK)" if args.schema else ""
         print(f"valid UNSeQueL query{suffix}")
     else:
+        _legacy_notice()
         if args.schema:
             raise UnsequelError("--schema is only supported with --pipeline")
         _parse_ordered_with_hint(text)
@@ -353,6 +371,7 @@ def _cmd_compile(args) -> None:
         program = parse_program(text)
         print(emit_unsequel_sql(program, schema, stop_at=args.stage))
         return
+    _legacy_notice()
     if not args.schema:
         raise UnsequelError("--schema is required to compile a .pusql query")
     stages = _pipeline_stages(_read_query(args.query), args.schema)
@@ -373,6 +392,7 @@ def _cmd_preview(args) -> None:
         print(f"stage {args.stage}/{total}  ({program[args.stage - 1].keyword})")
         _print_result(result, args.format)
         return
+    _legacy_notice()
     if not args.schema:
         raise UnsequelError("--schema is required to preview a .pusql query")
     stages = _pipeline_stages(_read_query(args.query), args.schema)
@@ -472,6 +492,7 @@ def _cmd_run(args) -> None:
         if not _emit_result(args, result, args.out, sql=sql, data=data):
             _print_result(result, args.format)
         return
+    _legacy_notice()
     text = _read_query(args.query)
     sql = None
     data = {name: path for name, path in args.data}

@@ -13,7 +13,7 @@ import { createInterface } from "node:readline";
 
 import { emitSql } from "./codegen.js";
 import { splitDirectives, type Directives } from "./directives.js";
-import type { DuckDBConnection, SourceOptions } from "./duckdb.js";
+import type { ConnectOptions, DuckDBConnection, SourceOptions } from "./duckdb.js";
 import { PlqError } from "./errors.js";
 import { formatProgram, isFormatted } from "./format.js";
 import { OUTPUT_FORMATS, formatResult } from "./output.js";
@@ -55,13 +55,14 @@ commands:
   check    <query.unsequel> [--schema s.json] [--lines A:B]
            parse a program; --schema (or a '# schema:' directive) validates it
   compile  <query.unsequel> [--schema s.json] [--stage N] [--lines A:B]
-           [--data name=path] [--delimiter C] [--column-type table.column=type]
+           [--data name=path] [--db mydb.duckdb] [--attach name=path] [--delimiter C]
+           [--column-type table.column=type]
            print the generated DuckDB SQL (optionally truncated at stage N)
-  preview  <query.unsequel> --stage N [--limit K] [--data name=path] [--lines A:B]
-           [--delimiter C] [--column-type table.column=type]
+  preview  <query.unsequel> --stage N [--limit K] [--data name=path] [--db mydb.duckdb]
+           [--attach name=path] [--lines A:B] [--delimiter C] [--column-type t.c=type]
            run the program truncated at grammar stage N and show sample rows
-  run      <query.unsequel | -> [--data name=path] [--schema s.json]
-           [--format table|json|csv] [--out results.csv|.parquet|.json]
+  run      <query.unsequel | -> [--data name=path] [--schema s.json] [--db mydb.duckdb]
+           [--attach name=path] [--format table|json|csv] [--out results.csv|.parquet|.json]
            [--lines A:B] [--delimiter C] [--column-type table.column=type]
            execute the whole program ('-' reads the query from stdin);
            --out writes the results instead of printing them
@@ -75,6 +76,7 @@ commands:
 
 query files can declare their own connection, so no flags are needed:
 
+  # db: ../data/warehouse.duckdb
   # source orders: ../data/orders.csv
   # source products: ../data/products.csv
   # schema: ../data/schema.json
@@ -83,7 +85,10 @@ query files can declare their own connection, so no flags are needed:
 
 --data overrides a directive with the same name; --schema overrides
 '# schema:'. Without any schema, tables loaded from the sources are
-introspected automatically.
+introspected automatically. A '# source' file loads as a temporary table, so
+it never clobbers or persists over tables in a '# db:'/--db database;
+--attach name=path opens other DuckDB files for cross-database queries
+('<name>.<table>').
 `;
 
 class UsageError extends Error {}
@@ -196,6 +201,41 @@ function mergeSources(directives: Directives, args: Args, queryPath: string): Ma
   return merged;
 }
 
+/** `--attach name=path` databases, in order. */
+function attachSources(args: Args): Map<string, string> {
+  const attach = new Map<string, string>();
+  for (const spec of args.flags.get("attach") ?? []) {
+    const equals = spec.indexOf("=");
+    if (equals <= 0 || equals === spec.length - 1) {
+      throw new UsageError("--attach must look like name=path.duckdb");
+    }
+    const name = spec.slice(0, equals);
+    if (attach.has(name)) throw new UsageError(`duplicate --attach name '${name}'`);
+    attach.set(name, spec.slice(equals + 1));
+  }
+  return attach;
+}
+
+/** The connection target: --db flag, then the `# db:` directive. */
+function databasePath(args: Args, directives: Directives, queryPath: string): string | undefined {
+  const flagPath = flag(args, "db");
+  if (flagPath !== undefined) return flagPath;
+  if (directives.databasePath !== null) {
+    return resolveQueryPath(queryPath, directives.databasePath);
+  }
+  return undefined;
+}
+
+function connectOptions(args: Args, sources: ReadonlyMap<string, string>,
+                        database: string | undefined): ConnectOptions {
+  const attach = attachSources(args);
+  return {
+    ...sourceOptions(args, sources),
+    ...(database === undefined ? {} : { databasePath: database }),
+    ...(attach.size === 0 ? {} : { attach }),
+  };
+}
+
 function normalizeColumnType(typeName: string): string {
   const key = typeName.trim().toLowerCase();
   const aliases: Readonly<Record<string, string>> = {
@@ -280,10 +320,10 @@ function readQueryInput(args: Args): QueryInput {
 }
 
 async function introspectFromSources(sources: ReadonlyMap<string, string>,
-                                     options: SourceOptions): Promise<Schema> {
-  const { connect, introspectSchema } = await loadDuckDB();
+                                     options: ConnectOptions): Promise<Schema> {
+  const { connect, introspectDatabase } = await loadDuckDB();
   const connection = await connect(sources, options);
-  return introspectSchema(connection, [...sources.keys()]);
+  return introspectDatabase(connection);
 }
 
 async function schemaForConnection(args: Args, directives: Directives, queryPath: string,
@@ -291,8 +331,8 @@ async function schemaForConnection(args: Args, directives: Directives, queryPath
                                    sources: ReadonlyMap<string, string>): Promise<Schema> {
   const declared = declaredSchema(args, directives, queryPath);
   if (declared !== null) return declared;
-  const { introspectSchema } = await loadDuckDB();
-  return introspectSchema(connection, [...sources.keys()]);
+  const { introspectDatabase } = await loadDuckDB();
+  return introspectDatabase(connection);
 }
 
 function validateFormat(value: string): string {
@@ -337,13 +377,14 @@ function cmdCheck(args: Args): string {
 async function cmdCompile(args: Args): Promise<string> {
   const { path, program, directives } = readQueryInput(args);
   const sources = mergeSources(directives, args, path);
-  const options = sourceOptions(args, sources);
+  const database = databasePath(args, directives, path);
+  const attach = attachSources(args);
   const schema = declaredSchema(args, directives, path)
-    ?? (sources.size > 0
-      ? await introspectFromSources(sources, options)
+    ?? (sources.size > 0 || database !== undefined || attach.size > 0
+      ? await introspectFromSources(sources, connectOptions(args, sources, database))
       : (() => {
         throw new PlqError(
-          "no schema available: pass --schema, add '# schema:' to the file, "
+          "no schema available: pass --schema, add '# schema:'/'# db:' to the file, "
           + "or provide data sources");
       })());
   analyze(program, schema);
@@ -361,12 +402,14 @@ async function cmdCompile(args: Args): Promise<string> {
 async function cmdPreview(args: Args): Promise<string> {
   const { path, program, directives } = readQueryInput(args);
   const sources = mergeSources(directives, args, path);
-  if (sources.size === 0) {
+  const database = databasePath(args, directives, path);
+  const attachCount = attachSources(args).size;
+  if (sources.size === 0 && database === undefined && attachCount === 0) {
     throw new UsageError(
-      "preview needs --data name=path or a '# source' directive at the top of the file");
+      "preview needs --data name=path, a '# source' directive, --db, or --attach");
   }
   const { connect } = await loadDuckDB();
-  const connection = await connect(sources, sourceOptions(args, sources));
+  const connection = await connect(sources, connectOptions(args, sources, database));
   const schema = await schemaForConnection(args, directives, path, connection, sources);
   analyze(program, schema);
   const stageText = flag(args, "stage");
@@ -391,14 +434,16 @@ async function cmdPreview(args: Args): Promise<string> {
 async function cmdRun(args: Args): Promise<string> {
   const { path, program, directives } = readQueryInput(args);
   const sources = mergeSources(directives, args, path);
-  if (sources.size === 0) {
+  const database = databasePath(args, directives, path);
+  const attachCount = attachSources(args).size;
+  if (sources.size === 0 && database === undefined && attachCount === 0) {
     throw new UsageError(
-      "run needs --data name=path or a '# source' directive at the top of the file");
+      "run needs --data name=path, a '# source' directive, --db, or --attach");
   }
   const format = validateFormat(flag(args, "format") ?? "table");
   const outPath = flag(args, "out");
   const { connect, runSql } = await loadDuckDB();
-  const connection = await connect(sources, sourceOptions(args, sources));
+  const connection = await connect(sources, connectOptions(args, sources, database));
   const schema = await schemaForConnection(args, directives, path, connection, sources);
   analyze(program, schema);
   const compiled = emitSql(program, schema);
@@ -467,9 +512,11 @@ const KNOWN_COMMANDS = ["check", "compile", "preview", "run", "fmt", "repl"] as 
 
 const ALLOWED_FLAGS: Record<string, readonly string[]> = {
   check: ["schema", "lines"],
-  compile: ["schema", "stage", "lines", "data", "delimiter", "column-type"],
-  preview: ["schema", "stage", "limit", "data", "lines", "delimiter", "column-type"],
-  run: ["schema", "data", "format", "out", "lines", "delimiter", "column-type"],
+  compile: ["schema", "stage", "lines", "data", "delimiter", "column-type", "db", "attach"],
+  preview: ["schema", "stage", "limit", "data", "lines", "delimiter", "column-type",
+            "db", "attach"],
+  run: ["schema", "data", "format", "out", "lines", "delimiter", "column-type",
+        "db", "attach"],
   fmt: ["write", "check"],
   repl: ["schema", "data", "format", "delimiter", "column-type"],
 };
@@ -483,6 +530,15 @@ function commandArgs(command: string, argv: readonly string[]): Args {
     }
   }
   return args;
+}
+
+async function closeDuckDBQuietly(): Promise<void> {
+  try {
+    const module = await import("./duckdb.js");
+    module.closeDuckDB();
+  } catch {
+    // DuckDB was never loaded; nothing to close.
+  }
 }
 
 export async function runCli(argv: readonly string[]): Promise<CliResult> {
@@ -510,6 +566,8 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
     return { code: 0, stdout, stderr: "" };
   } catch (error) {
     return errorResult(error);
+  } finally {
+    await closeDuckDBQuietly();
   }
 }
 
@@ -553,5 +611,6 @@ export async function startInteractiveRepl(argv: readonly string[]): Promise<Cli
     terminal.on("close", () => resolveClose());
   });
 
+  await closeDuckDBQuietly();
   return { code: 0, stdout: "", stderr: "" };
 }

@@ -27,6 +27,13 @@ def _nums(rows):
              for k, v in row.items()} for row in rows]
 
 
+def _without_notices(text: str) -> str:
+    """Drop stderr deprecation notices merged into the captured output."""
+    lines = [line for line in text.splitlines() if not line.startswith("note: ")]
+    result = "\n".join(lines)
+    return f"{result}\n" if text.endswith("\n") else result
+
+
 def run_cli(*argv) -> tuple[str, int]:
     out = io.StringIO()
     code = 0
@@ -35,7 +42,7 @@ def run_cli(*argv) -> tuple[str, int]:
             main(list(argv))
     except SystemExit as exit_:
         code = exit_.code or 0
-    return out.getvalue(), code
+    return _without_notices(out.getvalue()), code
 
 
 class CompileTests(unittest.TestCase):

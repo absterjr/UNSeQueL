@@ -58,9 +58,12 @@ whole-relation windows for those queries.
 13. Integer-division helper (`FLOOR` or an explicit truncating operator) for
     SQL ported from PostgreSQL/Redshift/SQLite, where `/` truncates; the
     current float semantics are documented in [semantics.md](semantics.md).
-14. **Real connections**: `ATTACH` an existing `.duckdb` file, DuckDB's
-    Postgres/MySQL/SQLite scanners, and `httpfs` for S3/HTTP, so `# source`
-    can name a connection instead of a file reloaded every run.
+14. **Connections** (started October 2026): `--db`/`# db:` file-backed
+    databases and `--attach name=path` cross-database queries are shipped;
+    file sources load as temporary tables and schemas come from the live
+    catalog. Remaining: `create table/view = (pipeline)`, `into <table>`
+    (grammar v1.4 — stage kinds plus analyzer/codegen/formatter/LSP updates),
+    Postgres/MySQL/SQLite scanners, and `httpfs` for S3/HTTP.
 15. ~~**Output sinks**~~ **Done (October 2026):** `run --out
     results.csv|.parquet|.json` writes results via DuckDB COPY (both CLIs).
     An `into <table>` stage for persisting results remains with the

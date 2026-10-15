@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DuckDBInstance } from "@duckdb/node-api";
 import { VERSION, runCli, type CliResult } from "../src/cli.js";
 
 /**
@@ -280,5 +281,82 @@ describe("cli: output sinks", () => {
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain("--out must end in");
+  });
+});
+
+describe("cli: databases", () => {
+  it("attaches an existing .duckdb file and queries it", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-attach-"));
+    try {
+      const dbPath = join(directory, "library.duckdb");
+      const instance = await DuckDBInstance.create(dbPath);
+      const connection = await instance.connect();
+      await connection.run(
+        "CREATE TABLE books AS SELECT * FROM "
+        + "(VALUES (1, 'Dune'), (2, 'Emma')) AS t(id, title)");
+      connection.closeSync();
+      instance.closeSync();
+
+      const query = join(directory, "query.unsequel");
+      writeFileSync(query, "from library.books\nselect title\nsort title\n");
+      const result = await runCli(["run", query, "--attach", `library=${dbPath}`]);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain("Dune");
+      expect(result.stdout).toContain("Emma");
+
+      // Aggregation over the attached table works too.
+      writeFileSync(query, "from library.books\ngroup by id\naggregate n = COUNT(*)\nsort id\n");
+      const counted = await runCli(["run", query, "--attach", `library=${dbPath}`]);
+      expect(counted.code).toBe(0);
+      expect(counted.stdout).toContain("1");
+    } finally {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch {
+        // the database lock may outlive the test on Windows
+      }
+    }
+  });
+
+  it("keeps a file-backed database and never clobbers persistent tables", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-db-"));
+    try {
+      const dbPath = join(directory, "work.duckdb");
+      const instance = await DuckDBInstance.create(dbPath);
+      const connection = await instance.connect();
+      await connection.run("CREATE TABLE keep AS SELECT 7 AS x");
+      connection.closeSync();
+      instance.closeSync();
+
+      const persistent = join(directory, "persistent.unsequel");
+      writeFileSync(persistent, "from keep\nselect x\n");
+      const first = await runCli(["run", persistent, "--db", dbPath]);
+      expect(first.code).toBe(0);
+      expect(first.stdout).toContain("7");
+
+      const orders = join(ROOT, "examples", "spec", "orders.csv").replace(/\\/g, "/");
+      const sourced = join(directory, "sourced.unsequel");
+      writeFileSync(sourced, `# source orders: ${orders}\nfrom orders\nselect order_id\nsort order_id\ntake 1\n`);
+      const second = await runCli(["run", sourced, "--db", dbPath]);
+      expect(second.code).toBe(0);
+      expect(second.stdout).toContain("5001");
+
+      // The persistent table survived; the file source loaded as a temp view.
+      const verify = await DuckDBInstance.create(dbPath);
+      const verifyConnection = await verify.connect();
+      const reader = await verifyConnection.runAndReadAll(
+        "SELECT table_name FROM duckdb_tables()");
+      const names = reader.getRowObjectsJS().map((row) => String(row["table_name"]));
+      expect(names).toContain("keep");
+      expect(names).not.toContain("orders");
+      verifyConnection.closeSync();
+      verify.closeSync();
+    } finally {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch {
+        // the database lock may outlive the test on Windows
+      }
+    }
   });
 });

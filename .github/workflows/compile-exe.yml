@@ -57,17 +57,19 @@ jobs:
           "dist/${{ matrix.asset }}" check examples/reference/q09_group_count.unsequel
           "dist/${{ matrix.asset }}" compile examples/reference/q09_group_count.unsequel \
             --schema ../examples/spec/schema.json > /dev/null
-      - name: Smoke test the run bundle (query and output sink, no Node)
+      - name: Smoke test the run bundle (composition, query, sinks, no Node)
         shell: bash
         run: |
           RUN_EXE=$([ "$RUNNER_OS" = "Windows" ] && echo unsequel.exe || echo unsequel)
-          "dist/unsequel-run/$RUN_EXE" run examples/reference/q09_group_count.unsequel \
-            --schema ../examples/spec/schema.json \
-            --data orders=../examples/spec/orders.csv > /dev/null
+          "dist/unsequel-run/$RUN_EXE" --version
+          "dist/unsequel-run/$RUN_EXE" run examples/real/r06_composition.unsequel > /dev/null
           "dist/unsequel-run/$RUN_EXE" run examples/reference/q09_group_count.unsequel \
             --schema ../examples/spec/schema.json \
             --data orders=../examples/spec/orders.csv --out ../run-out.csv
           head -n 1 ../run-out.csv
+          "dist/unsequel-run/$RUN_EXE" run examples/real/r06_composition.unsequel \
+            --out ../run-out.parquet
+          head -c 4 ../run-out.parquet | grep -q PAR1
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:

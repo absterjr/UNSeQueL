@@ -18,6 +18,30 @@ export type DuckDBConnection = import("@duckdb/node-api").DuckDBConnection;
 
 let cachedApi: DuckDBApi | null = null;
 
+const openInstances: Array<{ closeSync(): void }> = [];
+const openConnections: Array<{ closeSync(): void }> = [];
+
+/**
+ * Release every DuckDB connection and instance this process opened. Closing
+ * the connections first is what actually releases the file lock.
+ */
+export function closeDuckDB(): void {
+  while (openConnections.length > 0) {
+    try {
+      openConnections.pop()?.closeSync();
+    } catch {
+      // already closed
+    }
+  }
+  while (openInstances.length > 0) {
+    try {
+      openInstances.pop()?.closeSync();
+    } catch {
+      // already closed
+    }
+  }
+}
+
 /**
  * The native addon loads lazily. Single-file run executables ship it in a
  * `modules/` directory next to the binary; inside SEA a plain import cannot
@@ -201,14 +225,25 @@ export interface SourceOptions {
   columnTypes?: ReadonlyMap<string, ReadonlyMap<string, string>>;
 }
 
-/** Load one CSV/JSON/Parquet file into the connection as table `name`. */
+export interface ConnectOptions extends SourceOptions {
+  /** Open a file-backed database instead of the throwaway in-memory one. */
+  databasePath?: string;
+  /** `ATTACH` existing `.duckdb` files under these names. */
+  attach?: ReadonlyMap<string, string>;
+}
+
+/**
+ * Load one CSV/JSON/Parquet file into the connection as a **temporary
+ * table**, so file sources never clobber or persist over tables in a
+ * file-backed database.
+ */
 export async function loadTableSource(connection: DuckDBConnection, name: string,
                                       path: string, options: SourceOptions = {}): Promise<void> {
   if (!existsSync(path)) throw new PlqError(`data file not found: ${path}`);
   try {
     const overrides = options.columnTypes?.get(name) ?? new Map<string, string>();
     await connection.run(
-      `CREATE OR REPLACE TABLE ${quotedIdent(name)} AS SELECT * FROM `
+      `CREATE OR REPLACE TEMP TABLE ${quotedIdent(name)} AS SELECT * FROM `
       + `${readerFor(path, options.delimiter, overrides)}`);
   } catch (error) {
     throw new PlqError(`could not load data file ${path}: ${(error as Error).message}`);
@@ -216,14 +251,26 @@ export async function loadTableSource(connection: DuckDBConnection, name: string
 }
 
 export async function connect(data: ReadonlyMap<string, string>,
-                              options: SourceOptions = {}): Promise<DuckDBConnection> {
+                              options: ConnectOptions = {}): Promise<DuckDBConnection> {
   const { DuckDBInstance } = await duckdbApi();
   let connection: DuckDBConnection;
   try {
-    const instance = await DuckDBInstance.create(":memory:");
+    const instance = await DuckDBInstance.create(options.databasePath ?? ":memory:");
+    openInstances.push(instance);
     connection = await instance.connect();
+    openConnections.push(connection);
   } catch (error) {
     throw new PlqError(`DuckDB error: ${(error as Error).message}`);
+  }
+  for (const [name, path] of options.attach ?? []) {
+    if (!existsSync(path)) {
+      throw new PlqError(`database to attach not found: ${path}`);
+    }
+    try {
+      await connection.run(`ATTACH ${quoted(path)} AS ${quotedIdent(name)}`);
+    } catch (error) {
+      throw new PlqError(`could not attach database ${path}: ${(error as Error).message}`);
+    }
   }
   for (const [name, path] of data) {
     await loadTableSource(connection, name, path, options);
@@ -261,4 +308,39 @@ export async function introspectSchema(connection: DuckDBConnection,
     }
   }
   return parseSchema({ tables });
+}
+
+/**
+ * Build a Schema for everything the connection can see: persistent tables,
+ * attached databases, and the temporary tables from file sources. Attached
+ * databases are addressable as `<name>.<table>`.
+ */
+export async function introspectDatabase(connection: DuckDBConnection): Promise<Schema> {
+  try {
+    const reader = await connection.runAndReadAll("SHOW ALL TABLES");
+    const rows = reader.getRowObjectsJS() as Array<{
+      database: string;
+      name: string;
+      column_names: string[];
+      column_types: string[];
+    }>;
+    const currentReader = await connection.runAndReadAll(
+      "SELECT current_database() AS name");
+    const current = String(
+      (currentReader.getRowObjectsJS()[0] as { name: unknown } | undefined)?.name ?? "");
+    const tables: Record<string, { columns: Record<string, string> }> = {};
+    for (const row of rows) {
+      const key = row.database === current || row.database === "temp"
+        ? row.name
+        : `${row.database}.${row.name}`;
+      tables[key] = {
+        columns: Object.fromEntries(
+          row.column_names.map((column, index) => [column, row.column_types[index] as string]),
+        ),
+      };
+    }
+    return parseSchema({ tables });
+  } catch (error) {
+    throw new PlqError(`could not introspect the database: ${(error as Error).message}`);
+  }
 }

@@ -87,6 +87,22 @@ class UnsequelCliTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("UK", out)
 
+    def test_unsequel_flag_routes_unrecognized_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "query.txt"
+            path.write_text(
+                "from orders\ngroup by country\naggregate n = COUNT(*)\nsort country\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(path), "--unsequel", "--schema", SCHEMA, *DATA)
+            self.assertEqual(code, 0)
+            self.assertIn("United Kingdom", out)
+
+    def test_legacy_surfaces_get_a_deprecation_notice(self):
+        legacy = str(SPEC / "q03_row_filter.pusql")
+        out, code = run_cli("run", legacy, "--data", f"orders={SPEC / 'orders.csv'}")
+        self.assertEqual(code, 0)
+        self.assertIn("legacy surfaces being retired", out)
+
     def test_out_writes_csv_and_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             csv_path = Path(tmp) / "result.csv"
