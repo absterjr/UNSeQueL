@@ -58,12 +58,12 @@ and press `F5` — a second VS Code window opens with the extension loaded.
 cd compiler/editors/vscode
 npm install
 npm run vsix        # copies the compiled server in, then packages
-code --install-extension unsequel-vscode-0.6.1.vsix
+code --install-extension unsequel-vscode-0.1.0.vsix
 ```
 
 **Manual copy:** copy `editors/vscode/` into your extensions directory
-(`%USERPROFILE%\.vscode\extensions\unsequel-vscode-0.6.1` on Windows,
-`~/.vscode/extensions/unsequel-vscode-0.6.1` elsewhere) and restart VS Code.
+(`%USERPROFILE%\.vscode\extensions\unsequel-vscode-0.1.0` on Windows,
+`~/.vscode/extensions/unsequel-vscode-0.1.0` elsewhere) and restart VS Code.
 
 ## Without the extension
 
