@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.0 — 2026-10-16
+
+- Write statements, completed: `create or replace table|view = (pipeline)`
+  overwrites; plain `create` refuses to overwrite with a hint; `into` appends
+  **by name** (column set and type families checked, `CAST` suggested); a
+  program's statements run as one transaction; write programs need
+  `--create-db` to make a missing database file; write targets cannot be
+  qualified; a `create view` over a `# source`/`--data` temporary table is
+  rejected before it can break. The analyzer adds created tables to the
+  schema for later statements and shares `with` definitions with them.
+- `import` refuses to overwrite without `--replace` and announces a newly
+  created database.
+- CSV typing: DuckDB's own whole-file sniffer (`sample_size=-1`) with a fixed
+  candidate list (`BIGINT`, `DOUBLE`, `ISO DATE`, `TIMESTAMP`, `VARCHAR`) and
+  a wide-integer correction (16+ digit integers stay text); the Python
+  sniffer follows the same rules (leading zeros by prefix, BIGINT range,
+  offset timestamps stay text).
+- One output format across tracks: temporal values print as DuckDB text,
+  integral floats print without `.0`, NaN/Infinity print as text and become
+  JSON `null`. `scripts/parity.sh` diffs both tracks over every example
+  (27/27 identical; 26/26 with the memory engine) and runs in CI.
+- CLI polish: boolean flags no longer consume the next argument
+  (`fmt --write q.unsequel` works); parse errors report real file lines when
+  directives are present; database lock conflicts name the holding PID;
+  Python gains the `schema` command and an internal-error trap
+  (`UNSEQUEL_DEBUG=1` for tracebacks).
+
 ## 0.4.0 — 2026-10-15
 
 - Grammar v1.4 — write statements: `create table|view name = (pipeline)`

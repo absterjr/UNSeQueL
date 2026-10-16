@@ -100,3 +100,17 @@ class Schema:
         except json.JSONDecodeError as exc:
             raise SchemaError(f"{path}: invalid JSON ({exc})") from exc
         return Schema.from_dict(data, origin=str(path))
+
+
+_FAMILY_TYPE = {"numeric": "double", "text": "varchar", "boolean": "boolean",
+                "temporal": "timestamp", "unknown": "unknown"}
+
+
+def with_created_table(schema: "Schema", name: str,
+                       columns: list[tuple[str, str]]) -> "Schema":
+    """A copy of `schema` with `name` added or replaced, as a later statement sees it."""
+    tables = dict(schema.tables)
+    tables[name] = Table(name, {column: _FAMILY_TYPE.get(family, "unknown")
+                                for column, family in columns})
+    return Schema(tables)
+

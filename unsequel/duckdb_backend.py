@@ -12,6 +12,7 @@ tables**, which never persist over database contents.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .codegen import _ident
@@ -77,16 +78,19 @@ def connect(data: dict[str, str], *, delimiter: str | None = None,
             column_types: dict[str, dict[str, str]] | None = None,
             database_path: str | None = None,
             attach: dict[str, str] | None = None,
-            writable: bool = False):
+            writable: bool = False, create_database: bool = False):
+    if database_path is not None and not Path(database_path).exists():
+        if not writable:
+            raise UnsequelError(f"database not found: {database_path}")
+        if not create_database:
+            raise UnsequelError(f"database not found: {database_path}; "
+                                "pass --create-db to create a new database file")
     duckdb = _import_duckdb()
-    if database_path is not None:
-        if not writable and not Path(database_path).exists():
-            raise UnsequelError(
-                f"database not found: {database_path} "
-                "(databases are read-only until `create table = (...)` ships)")
-        con = duckdb.connect(database_path, read_only=not writable)
-    else:
-        con = duckdb.connect()
+    try:
+        con = (duckdb.connect(database_path, read_only=not writable)
+               if database_path is not None else duckdb.connect())
+    except Exception as exc:
+        raise UnsequelError(_open_error(database_path, exc)) from exc
     for name, path in (attach or {}).items():
         if not Path(path).exists():
             raise UnsequelError(f"database to attach not found: {path}")
@@ -150,24 +154,58 @@ def describe_database(con) -> Schema:
     return Schema.from_dict({"tables": tables})
 
 
+def _open_error(path: str | None, exc: Exception) -> str:
+    """A readable message for a database that would not open, naming the lock holder."""
+    message = str(exc)
+    if path is not None and "Could not set lock" in message:
+        pid = re.search(r"\(PID (\d+)\)", message)
+        holder = f" (PID {pid.group(1)})" if pid else ""
+        return f"database {path} is in use by another process{holder}; try again when it finishes"
+    return f"DuckDB error: {message}"
+
+
+def _already_exists(exc: Exception) -> tuple[str, str] | None:
+    """(kind, name) from DuckDB's "Table/View with name X already exists" error."""
+    match = re.search(r'(Table|View) with name "?([^"\s!]+)"? already exists', str(exc), re.I)
+    return (match.group(1).lower(), match.group(2)) if match else None
+
+
 def import_table(con, name: str, path: str, *, delimiter: str | None = None,
-                 column_types: dict[str, str] | None = None) -> None:
+                 column_types: dict[str, str] | None = None, replace: bool = False) -> None:
     """Materialize a file as a persistent table (the `import` command)."""
     if not Path(path).exists():
         raise UnsequelError(f"data file not found: {path}")
+    verb = "CREATE OR REPLACE TABLE" if replace else "CREATE TABLE"
     try:
         con.execute(
-            f"CREATE OR REPLACE TABLE {_ident(name)} AS SELECT * FROM "
+            f"{verb} {_ident(name)} AS SELECT * FROM "
             f"{_reader(str(path), delimiter=delimiter, column_types=column_types)}")
     except Exception as exc:
+        existing = _already_exists(exc)
+        if existing:
+            raise UnsequelError(
+                f"table '{existing[1]}' already exists; pass --replace to overwrite it") from exc
         raise UnsequelError(f"could not import {path}: {exc}") from exc
 
 
 def run_script(con, sql: str) -> None:
     """Execute a (possibly multi-statement) script for create/into programs."""
     try:
+        # All statements commit together or not at all (DuckDB DDL is transactional).
+        con.execute("BEGIN TRANSACTION")
         con.execute(sql)
+        con.execute("COMMIT")
     except Exception as exc:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass  # no transaction was open
+        existing = _already_exists(exc)
+        if existing:
+            kind, name = existing
+            raise UnsequelError(
+                f"{kind} '{name}' already exists; use "
+                f"'create or replace {kind} {name} = (...)' to overwrite it") from exc
         raise UnsequelError(f"DuckDB error: {exc}") from exc
 
 

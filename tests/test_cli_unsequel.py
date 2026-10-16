@@ -203,9 +203,28 @@ class UnsequelCliTests(unittest.TestCase):
                 "create table summary = (from orders | group by country | "
                 "aggregate n = COUNT(*))\n",
                 encoding="utf-8")
-            out, code = run_cli("run", str(create), "--db", str(database))
+            # A write program never silently creates a database file...
+            refused = directory / "refused.duckdb"
+            out, code = run_cli("run", str(create), "--db", str(refused))
+            self.assertEqual(code, 1)
+            self.assertIn("--create-db", out)
+            self.assertFalse(refused.exists())
+
+            out, code = run_cli("run", str(create), "--db", str(database), "--create-db")
             self.assertEqual((code, "applied 1 statement(s)" in out), (0, True))
             self.assertTrue(database.exists())
+
+            # ...and rerunning without `or replace` refuses to overwrite.
+            out, code = run_cli("run", str(create), "--db", str(database))
+            self.assertEqual(code, 1)
+            self.assertIn("create or replace", out)
+            create.write_text(
+                f"# source orders: {orders}\n"
+                "create or replace table summary = (from orders | group by country | "
+                "aggregate n = COUNT(*))\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(create), "--db", str(database))
+            self.assertEqual((code, "applied 1 statement(s)" in out), (0, True))
 
             readback = directory / "readback.unsequel"
             readback.write_text("from summary\nsort country\n", encoding="utf-8")
@@ -242,6 +261,33 @@ class UnsequelCliTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("needs an existing table", out)
 
+            # BY NAME: column order doesn't matter, only the set.
+            append.write_text(
+                f"# source orders: {orders}\n"
+                "into summary (from summary | select n, country)\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(append), "--db", str(database))
+            self.assertEqual(code, 0)
+
+            # Type families must match the target.
+            append.write_text(
+                f"# source orders: {orders}\n"
+                "into summary (from orders | select country, n = country)\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(append), "--db", str(database))
+            self.assertEqual(code, 1)
+            self.assertIn("CAST it explicitly", out)
+
+            # A persistent view may not read a temporary source.
+            view = directory / "view.unsequel"
+            view.write_text(
+                f"# source orders: {orders}\n"
+                "create view v = (from orders | select order_id)\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(view), "--db", str(database))
+            self.assertEqual(code, 1)
+            self.assertIn("reads the temporary source 'orders'", out)
+
             create.write_text("create table x = (from orders | select order_id)\n",
                               encoding="utf-8")
             out, code = run_cli("run", str(create))
@@ -260,6 +306,18 @@ class UnsequelCliTests(unittest.TestCase):
             out, code = run_cli("import", str(orders), "--into", str(imported),
                                 "--table", "orders")
             self.assertEqual((code, "imported" in out), (0, True))
+            self.assertIn("created new database", out)
+
+            # A plain import never overwrites; --replace does.
+            out, code = run_cli("import", str(orders), "--into", str(imported),
+                                "--table", "orders")
+            self.assertEqual(code, 1)
+            self.assertIn("already exists; pass --replace", out)
+            out, code = run_cli("import", str(orders), "--into", str(imported),
+                                "--table", "orders", "--replace")
+            self.assertEqual(code, 0)
+            self.assertNotIn("created new database", out)
+
             readback.write_text("from orders\nselect order_id\nsort order_id\ntake 1\n",
                                 encoding="utf-8")
             out, code = run_cli("run", str(readback), "--db", str(imported),

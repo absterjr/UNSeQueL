@@ -55,7 +55,7 @@ const STAGE_KEYWORDS: readonly string[] = [
   "from", "join", "left join", "right join", "full join", "cross join",
   "filter", "derive", "group by", "aggregate", "having", "window", "select",
   "sort", "skip", "take", "distinct", "union", "union all", "intersect",
-  "except", "sql", "with", "create table", "create view", "into",
+  "except", "sql", "with", "create table", "create view", "create or replace table", "create or replace view", "into",
 ];
 
 const SOURCE_PREFIX = /^(?:(?:left|right|full|cross)\s+join|join|from)\s+[A-Za-z_`]*$/;

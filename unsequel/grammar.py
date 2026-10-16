@@ -585,6 +585,7 @@ class RawSqlStage(Stage):
 @dataclass(frozen=True)
 class CreateStage(Stage):
     object: str = "table"
+    replace: bool = False
     name: str = ""
     program: "Program" = field(default_factory=list)
     kind: str = field(default="create", init=False)
@@ -1073,6 +1074,14 @@ def _parse_stage_body(
         reader.expect_end()
         return DistinctStage(**_base(index, keyword, span))
     if keyword == "create":
+        replace = False
+        if reader.match_keyword("or"):
+            word = reader.peek()
+            if word is None or word.value.lower() != "replace":
+                reader.fail("expected 'replace' after 'create or': "
+                            "create or replace table name = (program)", word)
+            reader.advance()
+            replace = True
         object_token = reader.peek()
         if object_token is None or object_token.type != "keyword" \
                 or object_token.value not in {"table", "view"}:
@@ -1081,13 +1090,16 @@ def _parse_stage_body(
         reader.advance()
         name = reader.expect_identifier(
             "create needs a name: create table name = (program)")
+        _reject_qualified_target(reader)
         reader.expect_operator("=", "after the create name")
         inner = reader.read_balanced_parens("the create program")
         reader.expect_end()
         return CreateStage(**_base(index, keyword, span), object=object_token.value,
-                           name=name.value, program=program_from_tokens(inner, True))
+                           replace=replace, name=name.value,
+                           program=program_from_tokens(inner, True))
     if keyword == "into":
         name = reader.expect_identifier("into needs a table name: into name (program)")
+        _reject_qualified_target(reader)
         inner = reader.read_balanced_parens("the into program")
         reader.expect_end()
         return IntoStage(**_base(index, keyword, span), name=name.value,
@@ -1573,3 +1585,12 @@ def _contains_aggregate_call(expr: Expr) -> bool:
     if isinstance(expr, Cast):
         return _contains_aggregate_call(expr.operand)
     return False
+
+
+def _reject_qualified_target(reader) -> None:
+    """`create table lib.x` / `into lib.x`: writes only go to the --db database."""
+    following = reader.peek()
+    if following is not None and following.type == "punctuation" and following.value == ".":
+        reader.fail("writes go to the --db database; attached databases are read-only, "
+                    "so a qualified name can't be a write target", following)
+

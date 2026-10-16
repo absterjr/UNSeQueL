@@ -117,10 +117,12 @@ Queries can read local DuckDB databases, and write statements can create or
 append tables:
 
 ```bash
-unsequel run query.unsequel --db warehouse.duckdb       # file-backed, created if missing
+unsequel run query.unsequel --db warehouse.duckdb       # read-only unless the program writes
 unsequel run query.unsequel --attach legacy=old.duckdb  # from legacy.orders, legacy.people, ...
 unsequel run create.unsequel                            # '# db: warehouse.duckdb'
+unsequel run create.unsequel --create-db                # first run may create the file
 unsequel import orders.csv --into warehouse.duckdb --table orders
+unsequel import orders.csv --into warehouse.duckdb --table orders --replace
 ```
 
 ```text
@@ -129,15 +131,18 @@ unsequel import orders.csv --into warehouse.duckdb --table orders
 create table summary = (from orders | group by country | aggregate n = COUNT(*))
 ```
 
-`create table|view name = (pipeline)` writes `CREATE OR REPLACE ... AS`
-(rerunnable); `into name (pipeline)` appends rows to an existing table and
-validates the column count. Write programs need a `# db:`/`--db` target and
-open it read-write; read programs stay read-only. `# source`/`--data` files
-load as **temporary tables**, so they never overwrite database contents, and
-schemas resolve from the live catalog (persistent tables, attached databases,
-and the temporary file sources). Grammar v1.4: [create](docs/grammar.md#316-create--write-statements-v14)
-and [into](docs/grammar.md#317-into--append-rows-v14). Postgres/SQLite
-scanners and `httpfs` remain on the backlog (#14).
+`create [or replace] table|view name = (pipeline)` writes the result (plain
+`create` refuses to overwrite; the error suggests `create or replace`), and
+`into name (pipeline)` appends rows **by name**, checking the column set and
+type families. A program's statements run in one transaction. Write programs
+need a `# db:`/`--db` target and open it read-write (read programs stay
+read-only); a missing database file needs `--create-db`. `# source`/`--data`
+files load as **temporary tables**, so they never overwrite database
+contents, and schemas resolve from the live catalog (persistent tables,
+attached databases, and the temporary file sources). Grammar v1.4:
+[create](docs/grammar.md#316-create--write-statements-v14) and
+[into](docs/grammar.md#317-into--append-rows-v14). Postgres/SQLite scanners
+and `httpfs` remain on the backlog (#14).
 
 The compiler is also a library: `import { parseProgram, analyze, emitSql,
 formatProgram } from "unsequel"` — nothing there loads DuckDB either
@@ -210,4 +215,5 @@ npm run fmt:check     # formatter fixtures stay canonical
 npm run editors:check # VS Code extension JSON + regexes
 npm run smoke         # node dist/main.js run examples/real/r01_top_products.unsequel
 node scripts/build-sea.mjs   # single-file compile exe (check/compile/fmt/lsp)
+bash scripts/parity.sh "node dist/main.js" "python -m unsequel"   # both tracks must agree
 ```

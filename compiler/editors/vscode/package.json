@@ -2,7 +2,7 @@
   "name": "unsequel-vscode",
   "displayName": "UNSeQueL",
   "description": "Language support for .unsequel query files: diagnostics, completion, hover (generated SQL), formatting, syntax highlighting, and run commands, powered by the unsequel CLI.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "unsequel",
   "license": "MIT",
   "repository": {

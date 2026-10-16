@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
+import os
 import re
 import sys
 from datetime import date, datetime
@@ -16,7 +18,7 @@ from .duckdb_backend import (connect, copy_to_file, describe_database, fetch,
 from .engine import execute
 from .errors import ParseError, UnsequelError
 from .format import format_pipeline, is_formatted
-from .grammar import CreateStage, IntoStage, parse_program
+from .grammar import CreateStage, IntoStage, WithStage, parse_program
 from .io import load_sqlite_tables, load_table
 from .memory_engine import execute_program
 from .parser import parse_query
@@ -57,15 +59,53 @@ def _delimiter_arg(value: str) -> str:
 
 
 def _column_types_for(args, table_name: str) -> dict[str, str]:
-    return {column: type_name for table, column, type_name in args.column_type
+    # check/compile/preview don't define --column-type, so default to no overrides.
+    return {column: type_name for table, column, type_name in getattr(args, "column_type", [])
             if table.casefold() == table_name.casefold()}
+
+
+def _number_text(value: float) -> str:
+    """How the TypeScript track renders a number (JS `String(n)`)."""
+    if math.isfinite(value) and value.is_integer() and abs(value) < 1e21:
+        return str(int(value))
+    return repr(value)
+
+
+def _text(value) -> str:
+    """Cell text shared with the TypeScript CLI: JS number spelling, NaN/Infinity."""
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return "NaN" if math.isnan(value) else ("Infinity" if value > 0 else "-Infinity")
+        return _number_text(value)
+    return str(value)
+
+
+def _json_safe(row: dict) -> dict:
+    """Non-finite numbers become null and integral floats become ints, as JS does."""
+    result = {}
+    for key, value in row.items():
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                result[key] = None
+            elif value.is_integer() and abs(value) < 1e21:
+                result[key] = int(value)
+            else:
+                result[key] = value
+        else:
+            result[key] = value
+    return result
+
+
+def _csv_rows(rows: list[dict]) -> list[dict]:
+    return [{key: "" if value is None else _text(value) for key, value in row.items()}
+            for row in rows]
 
 
 def _table_output(rows: list[dict], columns: list[str]) -> str:
     if not columns:
         return "(0 columns)"
     def display(value):
-        return "NULL" if value is None else str(value)
+        return "NULL" if value is None else _text(value)
 
     widths = {
         column: max([len(column), *(len(display(row.get(column, ""))) for row in rows)])
@@ -81,11 +121,12 @@ def _table_output(rows: list[dict], columns: list[str]) -> str:
 
 def _print_result(result, output_format: str) -> None:
     if output_format == "json":
-        print(json.dumps(result.rows, indent=2, default=str))
+        print(json.dumps([_json_safe(row) for row in result.rows], indent=2, default=str,
+                         allow_nan=False))
     elif output_format == "csv":
         writer = csv.DictWriter(sys.stdout, fieldnames=result.columns, lineterminator="\n")
         writer.writeheader()
-        writer.writerows(result.rows)
+        writer.writerows(_csv_rows(result.rows))
     else:
         print(_table_output(result.rows, result.columns))
         print(f"\n{len(result.rows)} row(s)")
@@ -285,6 +326,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = commands.add_parser("run", help="parse and execute a query")
     add_pipeline_flags(run)
+    run.add_argument("--create-db", action="store_true",
+                     help="create/into: create the --db database file if it does not exist")
     run.add_argument("--engine", choices=("memory", "duckdb"), default=None,
                      help="memory: built-in engine (default; .unsequel runs without "
                           "DuckDB); duckdb: execute the generated SQL")
@@ -350,11 +393,23 @@ def build_parser() -> argparse.ArgumentParser:
     fmt.add_argument("--check", action="store_true",
                      help="exit 1 if the file is not already in canonical form")
 
+    schema_cmd = commands.add_parser(
+        "schema", help="write a database's schema snapshot (<db>.schema.json) for the editor")
+    schema_cmd.add_argument("--db", metavar="PATH", help="database file to describe")
+    schema_cmd.add_argument("--attach", action="append", default=[], metavar="NAME=PATH",
+                            help="ATTACH another DuckDB file; repeatable")
+    schema_cmd.add_argument("--data", action="append", default=[], type=_data_spec,
+                            metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
+    schema_cmd.add_argument("--out", metavar="PATH",
+                            help="write here instead of <db>.schema.json ('-' prints it)")
+
     imp = commands.add_parser("import", help="materialize a data file as a persistent table")
     imp.add_argument("data", help="CSV/JSON/Parquet file")
     imp.add_argument("--into", metavar="PATH", required=True,
                      help="database file (created if needed)")
     imp.add_argument("--table", metavar="NAME", help="table name (default: the file stem)")
+    imp.add_argument("--replace", action="store_true",
+                     help="overwrite the table if it already exists")
     imp.add_argument("--delimiter", type=_delimiter_arg,
                      help="one-character CSV delimiter (default: comma)")
     imp.add_argument("--column-type", action="append", default=[], type=_column_type_spec,
@@ -505,10 +560,10 @@ def _emit_result(args, result, out_path, *, sql, data, database=None, attach=Non
             writer = csv.DictWriter(handle, fieldnames=result.columns,
                                     lineterminator="\n")
             writer.writeheader()
-            writer.writerows(result.rows)
+            writer.writerows(_csv_rows(result.rows))
         else:
             for row in result.rows:
-                handle.write(json.dumps(row, default=str) + "\n")
+                handle.write(json.dumps(_json_safe(row), default=str, allow_nan=False) + "\n")
     print(f"wrote {out_path}")
     return True
 
@@ -542,9 +597,11 @@ def _cmd_run(args) -> None:
             con = connect(data, delimiter=args.delimiter,
                           column_types={name: _column_types_for(args, name)
                                         for name in data},
-                          database_path=database, attach=attach, writable=True)
+                          database_path=database, attach=attach, writable=True,
+                          create_database=args.create_db)
             schema = Schema.load(schema_path) if schema_path else describe_database(con)
             analyze_unsequel_program(program, schema)
+            _reject_views_over_temporary_sources(program, data)
             run_script(con, emit_unsequel_sql(program, schema))
             count = sum(1 for stage in program
                         if isinstance(stage, (CreateStage, IntoStage)))
@@ -621,6 +678,40 @@ def _cmd_run(args) -> None:
         _print_result(result, args.format)
 
 
+def _reject_views_over_temporary_sources(program, data: dict[str, str]) -> None:
+    """A persistent view over a `# source`/--data temp table breaks once this run ends."""
+    from .analyzer import referenced_tables
+    with_programs = [stage.program for stage in program if isinstance(stage, WithStage)]
+    for stage in program:
+        if not isinstance(stage, CreateStage) or stage.object != "view":
+            continue
+        read = set().union(*(referenced_tables(p) for p in [stage.program, *with_programs]))
+        temporary = sorted(read & set(data))
+        if temporary:
+            raise UnsequelError(
+                f"view '{stage.name}' reads the temporary source '{temporary[0]}', which is gone "
+                f"after this run; use 'create table {stage.name} = (...)' to keep the rows, or "
+                f"import the file first: unsequel import {data[temporary[0]]} --into <database>")
+
+
+def _cmd_schema(args) -> None:
+    """Same output as the TypeScript `schema` command, so the language server reads either."""
+    data = {name: path for name, path in args.data}
+    attach = _attach_specs(args)
+    if not (args.db or attach or data):
+        raise UnsequelError("schema needs --db, --attach, or --data sources")
+    con = connect(data, database_path=args.db, attach=attach)
+    schema = describe_database(con)
+    tables = {name: {"columns": dict(table.columns)} for name, table in schema.tables.items()}
+    text = json.dumps({"tables": tables}, indent=2) + "\n"
+    target = args.out if args.out else (f"{args.db}.schema.json" if args.db else "-")
+    if target == "-":
+        sys.stdout.write(text)
+        return
+    Path(target).write_text(text, encoding="utf-8")
+    print(f"wrote {target}")
+
+
 def _cmd_import(args) -> None:
     source = Path(args.data)
     if not source.exists():
@@ -629,9 +720,12 @@ def _cmd_import(args) -> None:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name or ""):
         raise UnsequelError(
             f"cannot derive a table name from {args.data!r}; pass --table name")
-    con = connect({}, database_path=args.into, writable=True)
+    created = not Path(args.into).exists()
+    con = connect({}, database_path=args.into, writable=True, create_database=True)
     import_table(con, name, str(source), delimiter=args.delimiter,
-                 column_types=_column_types_for(args, name))
+                 column_types=_column_types_for(args, name), replace=args.replace)
+    if created:  # make a mistyped --into path visible
+        print(f"created new database {args.into}")
     print(f"imported {args.data} into {args.into} as {name}")
 
 
@@ -645,8 +739,14 @@ def main(argv: list[str] | None = None) -> None:
         "preview": _cmd_preview,
         "fmt": _cmd_fmt,
         "import": _cmd_import,
+        "schema": _cmd_schema,
     }
     try:
         handlers[args.command](args)
     except (OSError, UnsequelError, ValueError) as exc:
         parser.exit(1, f"error: {exc}\n")
+    except Exception as exc:  # anything else is a bug: report it cleanly, traceback on request
+        if os.environ.get("UNSEQUEL_DEBUG"):
+            raise
+        parser.exit(1, f"error: internal error ({type(exc).__name__}: {exc}); rerun with "
+                       "UNSEQUEL_DEBUG=1 for a traceback and please report it\n")

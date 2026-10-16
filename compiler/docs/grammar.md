@@ -410,23 +410,30 @@ set_stage = ( "union" , [ "all" ] | "intersect" | "except" ) ,
 ### 3.16 `create` — write statements (v1.4)
 
 ```ebnf
-create_stage = "create" , ( "table" | "view" ) , identifier , "=" ,
-               "(" , program , ")" ;
+create_stage = "create" , [ "or" , "replace" ] , ( "table" | "view" ) ,
+               identifier , "=" , "(" , program , ")" ;
 ```
 
-- Writes the nested program's result: `CREATE OR REPLACE TABLE/VIEW <name> AS ...`
-  (rerunnable; an existing table/view of the same name is replaced).
+- Writes the nested program's result: `CREATE [OR REPLACE] TABLE/VIEW <name> AS ...`.
+- Plain `create` refuses to overwrite an existing table/view (the error
+  suggests `create or replace`); `create or replace` is rerunnable.
+- Write statements run as **one transaction**: all of a program's statements
+  commit together or not at all.
 - Top-level only: a `create` inside a nested program is a parse error, and a
   program containing `create`/`into` cannot also contain `from` (write
   statements form their own program).
 - Requires a database target: `# db: warehouse.duckdb` or `--db`. The
   database is opened read-write for write programs (read paths stay
-  read-only), and a missing database file is created by write programs.
-- Statements do not consume or alter a current relation; the program result
-  is the list of applied statements (the CLI reports `applied N statement(s)`).
-- **IR:** `CreateStage { object: "table" | "view", name, program }`
+  read-only). A missing database file is only created with `--create-db`.
+- Write targets cannot be qualified (`create table lib.x`): writes go to the
+  `--db` database; attached databases are read-only.
+- The analyzer adds the created table to the schema for **later statements**
+  in the same program (`create table a = (...)` then `into a (...)`) and
+  rejects a `create view` whose program reads a `# source`/`--data`
+  temporary table (the view would break once the run ends).
+- **IR:** `CreateStage { object: "table" | "view", replace, name, program }`
 - **SQL:** the nested chain is embedded per statement:
-  `CREATE OR REPLACE TABLE <name> AS WITH <nested ctes> SELECT * FROM <last>;`
+  `CREATE [OR REPLACE] TABLE <name> AS WITH <nested ctes> SELECT * FROM <last>;`
 
 ### 3.17 `into` — append rows (v1.4)
 
@@ -435,11 +442,11 @@ into_stage = "into" , identifier , "(" , program , ")" ;
 ```
 
 - Appends the nested program's rows to an existing table:
-  `INSERT INTO <name> WITH <nested ctes> SELECT * FROM <last>;`
-- The analyzer requires the target table to exist and (unless the program is
-  `sql`-opaque) the same column count as the program's output; names and
-  order follow the target table.
-- Same placement and database rules as `create`.
+  `INSERT INTO <name> BY NAME WITH <nested ctes> SELECT * FROM <last>;`
+- Columns match **by name**: the program's columns must be exactly the
+  target's columns (any order, case-insensitive) and their type families must
+  match; errors say which columns are extra or missing and suggest `CAST`.
+- Same placement, transaction, and database rules as `create`.
 - **IR:** `IntoStage { name, program }`
 
 ## 4. Ordering and composition rules (v1.4)
@@ -477,7 +484,9 @@ into_stage = "into" , identifier , "(" , program , ")" ;
     columns; dots separate qualified components and must be quoted separately.
 12. `create` and `into` (v1.4) are top-level-only write statements: they
     cannot appear inside nested programs, cannot combine with `from` stages in
-    the same program, and require a database target (`# db:`/`--db`).
+    the same program, and require a database target (`# db:`/`--db`; missing
+    files need `--create-db`). Write targets are unqualified, and `into`
+    matches columns by name.
 
 ## 5. Expression grammar
 

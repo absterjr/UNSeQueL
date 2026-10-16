@@ -59,7 +59,7 @@ from .grammar import (
     WithStage,
     expression_name,
 )
-from .schema import Schema, type_family
+from .schema import Schema, type_family, with_created_table
 
 __all__ = ["SemanticError", "StageLineage", "analyze"]
 
@@ -426,23 +426,24 @@ def _analyze_program(
                         f"(left {left}, right {len(inner.columns)})",
                     )
         elif isinstance(stage, CreateStage):
-            inner = _analyze_program(stage.program, schema, {})
+            inner = _analyze_program(stage.program, schema, dict(ctes))
             lineage.append(StageLineage(stage.index, stage.keyword, tuple(inner.columns)))
+            # Later statements see this table: `create table a = (...)` then `from a`.
+            if not inner.opaque:
+                schema = with_created_table(schema, stage.name, [
+                    (column, inner.families.get(column, "unknown")) for column in inner.columns])
             continue
         elif isinstance(stage, IntoStage):
-            inner = _analyze_program(stage.program, schema, {})
+            inner = _analyze_program(stage.program, schema, dict(ctes))
             table = schema.tables.get(stage.name)
             if table is None:
                 raise _semantic_error(
                     stage,
                     f"into '{stage.name}' needs an existing table; create it first "
                     "(create table ...)")
-            target = len(table.columns)
-            if not inner.opaque and target != len(inner.columns):
-                raise _semantic_error(
-                    stage,
-                    f"into '{stage.name}' expects {target} columns, "
-                    f"got {len(inner.columns)}")
+            if not inner.opaque:
+                _check_into_columns(stage, stage.name, table.columns,
+                                    inner.columns, inner.families)
             lineage.append(StageLineage(stage.index, stage.keyword, tuple(inner.columns)))
             continue
         elif isinstance(stage, RawSqlStage):
@@ -459,3 +460,48 @@ def _analyze_program(
 def analyze(stages: list[Stage], schema: Schema) -> list[StageLineage]:
     """Validate a program against a schema and return per-stage lineage."""
     return _analyze_program(stages, schema, {}).lineage
+
+
+def _check_into_columns(stage, target: str, target_columns: dict[str, str],
+                        columns: list[str], families: dict[str, str]) -> None:
+    """`into` appends BY NAME: same column set (any order, case-insensitive), same families."""
+    wanted = {name.casefold(): (name, declared) for name, declared in target_columns.items()}
+    got = {name.casefold(): name for name in columns}
+    extra = [name for key, name in got.items() if key not in wanted]
+    missing = [name for key, (name, _) in wanted.items() if key not in got]
+    if extra or missing:
+        parts = []
+        if extra:
+            parts.append(f"not in '{target}': {', '.join(extra)}")
+        if missing:
+            parts.append(f"missing: {', '.join(missing)}")
+        raise _semantic_error(
+            stage, f"into '{target}' matches columns by name; {'; '.join(parts)}")
+    for key, name in got.items():
+        target_name, declared = wanted[key]
+        expected, actual = type_family(declared), families.get(name, "unknown")
+        if "unknown" not in (expected, actual) and expected != actual:
+            raise _semantic_error(
+                stage,
+                f"into '{target}': '{name}' is {actual} but {target}.{target_name} "
+                f"is {declared}; CAST it explicitly")
+
+
+def referenced_tables(program) -> set[str]:
+    """Base tables a program reads (from/join, recursively), minus its own `with` names."""
+    tables: set[str] = set()
+
+    def visit(stages, shadow: set[str]) -> None:
+        names = shadow | {stage.name for stage in stages if isinstance(stage, WithStage)}
+        for stage in stages:
+            if isinstance(stage, (FromStage, JoinStage)):
+                if stage.source.program is not None:
+                    visit(stage.source.program, names)
+                elif stage.source.name and stage.source.name not in names:
+                    tables.add(stage.source.name)
+            elif isinstance(stage, (WithStage, SetStage, CreateStage, IntoStage)):
+                visit(stage.program, names)
+
+    visit(program, set())
+    return tables
+

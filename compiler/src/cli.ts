@@ -12,6 +12,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 import { emitSql } from "./codegen.js";
+import type { Program } from "./ast.js";
 import { splitDirectives, type Directives } from "./directives.js";
 import type { ConnectOptions, DuckDBConnection, SourceOptions } from "./duckdb.js";
 import { PlqError } from "./errors.js";
@@ -20,7 +21,7 @@ import { OUTPUT_FORMATS, formatResult } from "./output.js";
 import { parseProgram } from "./parser.js";
 import { ReplSession } from "./repl.js";
 import { loadSchema, type Schema } from "./schema.js";
-import { analyze } from "./semantics.js";
+import { analyze, referencedTables } from "./semantics.js";
 
 /**
  * The DuckDB native addon loads lazily inside duckdb.ts: `check`, `fmt`, and
@@ -37,7 +38,7 @@ export interface CliResult {
   stderr: string;
 }
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 
 const USAGE = `unsequel ${VERSION}
 UNSeQueL query language compiler
@@ -100,6 +101,9 @@ interface Args {
   flags: Map<string, string[]>;
 }
 
+/** Flags that never take a value, so `fmt --write q.unsequel` keeps the file positional. */
+const BOOLEAN_FLAGS = new Set(["write", "check", "replace", "create-db"]);
+
 function parseArgs(argv: readonly string[]): Args {
   const flags = new Map<string, string[]>();
   const positionals: string[] = [];
@@ -115,7 +119,7 @@ function parseArgs(argv: readonly string[]): Args {
       }
       const name = arg.slice(2);
       const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--")) {
+      if (!BOOLEAN_FLAGS.has(name) && next !== undefined && !next.startsWith("--")) {
         const list = flags.get(name) ?? [];
         list.push(next);
         flags.set(name, list);
@@ -315,7 +319,10 @@ function readQueryInput(args: Args): QueryInput {
   const { text, path } = readProgram(args);
   const directives = splitDirectives(text);
   const selected = applyLines(text, flag(args, "lines"));
-  const program = parseProgram(splitDirectives(selected).body);
+  const { body } = splitDirectives(selected);
+  // Parse with blank lines where the directives were, so error lines match the file.
+  const removed = selected.split("\n").length - body.split("\n").length;
+  const program = parseProgram("\n".repeat(removed) + body);
   return { text, path, program, directives };
 }
 
@@ -438,6 +445,23 @@ async function cmdPreview(args: Args): Promise<string> {
   return `${label}\n${formatResult(result, "table")}\n`;
 }
 
+/** A persistent view over a `# source`/--data temp table breaks once this run ends. */
+function rejectViewsOverTemporarySources(program: Program,
+                                         sources: ReadonlyMap<string, string>): void {
+  const withPrograms = program.flatMap((stage) => (stage.kind === "with" ? [stage.program] : []));
+  for (const stage of program) {
+    if (stage.kind !== "create" || stage.object !== "view") continue;
+    const read = [stage.program, ...withPrograms].flatMap((p) => [...referencedTables(p)]);
+    const temporary = read.find((name) => sources.has(name));
+    if (temporary !== undefined) {
+      throw new PlqError(
+        `view '${stage.name}' reads the temporary source '${temporary}', which is gone after `
+        + `this run; use 'create table ${stage.name} = (...)' to keep the rows, or import the `
+        + `file first: unsequel import ${sources.get(temporary)} --into <database>`);
+    }
+  }
+}
+
 async function cmdRun(args: Args): Promise<string> {
   const { path, program, directives } = readQueryInput(args);
   const sources = mergeSources(directives, args, path);
@@ -456,10 +480,14 @@ async function cmdRun(args: Args): Promise<string> {
       throw new UsageError("--out does not apply to create/into programs");
     }
     const { connect, introspectDatabase, runStatements } = await loadDuckDB();
-    const connection = await connect(
-      sources, { ...connectOptions(args, sources, database), writable: true });
+    const connection = await connect(sources, {
+      ...connectOptions(args, sources, database),
+      writable: true,
+      createDatabase: args.flags.has("create-db"),
+    });
     const schema = declaredSchema(args, directives, path) ?? await introspectDatabase(connection);
     analyze(program, schema);
+    rejectViewsOverTemporarySources(program, sources);
     await runStatements(connection, emitSql(program, schema));
     const count = program.filter(
       (stage) => stage.kind === "create" || stage.kind === "into").length;
@@ -551,13 +579,17 @@ async function cmdImport(args: Args): Promise<string> {
   }
   const options = sourceOptions(args, new Map([[name, file]]));
   const { connect, importTableSource } = await loadDuckDB();
+  const created = !existsSync(target);
   const connection = await connect(new Map(), {
     ...options,
     databasePath: target,
     writable: true,
+    createDatabase: true, // import's job is to build a database
   });
-  await importTableSource(connection, name, file, options);
-  return `imported ${file} into ${target} as ${name}\n`;
+  await importTableSource(connection, name, file, options, args.flags.has("replace"));
+  // Say so when the file is new, so a mistyped --into path is visible.
+  return `${created ? `created new database ${target}\n` : ""}`
+    + `imported ${file} into ${target} as ${name}\n`;
 }
 
 async function cmdRepl(args: Args): Promise<string> {
@@ -603,11 +635,11 @@ const ALLOWED_FLAGS: Record<string, readonly string[]> = {
   preview: ["schema", "stage", "limit", "data", "lines", "delimiter", "column-type",
             "db", "attach"],
   run: ["schema", "data", "format", "out", "lines", "delimiter", "column-type",
-        "db", "attach"],
+        "db", "attach", "create-db"],
   fmt: ["write", "check"],
   repl: ["schema", "data", "format", "delimiter", "column-type"],
   schema: ["db", "attach", "data", "delimiter", "column-type", "out"],
-  import: ["into", "table", "delimiter", "column-type"],
+  import: ["into", "table", "delimiter", "column-type", "replace"],
 };
 
 function commandArgs(command: string, argv: readonly string[]): Args {

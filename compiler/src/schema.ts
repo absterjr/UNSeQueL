@@ -94,3 +94,18 @@ export function loadSchema(path: string): Schema {
   }
   return parseSchema(data, path);
 }
+
+/** Representative declared type per family, for tables a program creates. */
+const FAMILY_TYPE: Record<TypeFamily, string> = {
+  numeric: "double", text: "varchar", boolean: "boolean", temporal: "timestamp", unknown: "unknown",
+};
+
+/** A copy of `schema` with `name` added or replaced, as a later statement will see it. */
+export function withCreatedTable(schema: Schema, name: string,
+                                 columns: ReadonlyArray<readonly [string, TypeFamily]>): Schema {
+  const tables = new Map(schema.tables);
+  tables.set(name, { name, columns: new Map(columns.map(([column, family]) =>
+    [column, FAMILY_TYPE[family]] as [string, string])) });
+  return { tables };
+}
+

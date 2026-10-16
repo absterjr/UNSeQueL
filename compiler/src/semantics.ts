@@ -23,7 +23,7 @@
  */
 
 import { expressionName, type Expr, type Program, type SelectItemNode, type SourceRef, type Stage, type WindowCall } from "./ast.js";import { SemanticError } from "./errors.js";
-import { type Schema, type TypeFamily, typeFamily } from "./schema.js";
+import { type Schema, type TypeFamily, typeFamily, withCreatedTable } from "./schema.js";
 
 export { SemanticError };
 
@@ -427,24 +427,27 @@ function analyzeProgram(stages: Program, schema: Schema,
         break;
       }
       case "create": {
-        const inner = analyzeProgram(
-          (stage as { kind: "create"; program: Program }).program, schema, new Map());
+        const create = stage as { kind: "create"; name: string; program: Program };
+        const inner = analyzeProgram(create.program, schema, new Map(ctes));
         lineage.push({ index: stage.index, keyword: stage.keyword, columns: inner.columns });
+        // Later statements see this table: `create table a = (...)` then `from a`.
+        if (!inner.opaque) {
+          schema = withCreatedTable(schema, create.name, inner.columns.map(
+            (column) => [column, inner.families.get(column) ?? "unknown"] as const));
+        }
         continue;
       }
       case "into": {
         const into = stage as { kind: "into"; name: string; program: Program };
-        const inner = analyzeProgram(into.program, schema, new Map());
+        const inner = analyzeProgram(into.program, schema, new Map(ctes));
         const table = schema.tables.get(into.name);
         if (table === undefined) {
           throw semanticError(stage,
             `into '${into.name}' needs an existing table; create it first `
             + "(create table ...)");
         }
-        const target = [...table.columns.keys()].length;
-        if (!inner.opaque && target !== inner.columns.length) {
-          throw semanticError(stage,
-            `into '${into.name}' expects ${target} columns, got ${inner.columns.length}`);
+        if (!inner.opaque) {
+          checkIntoColumns(stage, into.name, table.columns, inner.columns, inner.families);
         }
         lineage.push({ index: stage.index, keyword: stage.keyword, columns: inner.columns });
         continue;
@@ -471,3 +474,60 @@ function analyzeProgram(stages: Program, schema: Schema,
 export function analyze(stages: Program, schema: Schema): StageLineage[] {
   return analyzeProgram(stages, schema, new Map()).lineage;
 }
+
+/**
+ * `into` appends BY NAME: the program's columns must be exactly the target's
+ * columns (any order, case-insensitive) with matching type families.
+ */
+function checkIntoColumns(stage: Parameters<typeof semanticError>[0], target: string,
+                          targetColumns: ReadonlyMap<string, string>,
+                          columns: readonly string[],
+                          families: ReadonlyMap<string, TypeFamily>): void {
+  const wanted = new Map<string, [string, string]>();
+  for (const [name, type] of targetColumns) wanted.set(name.toLowerCase(), [name, type]);
+  const got = new Map(columns.map((name) => [name.toLowerCase(), name] as const));
+  const extra = [...got].filter(([key]) => !wanted.has(key)).map(([, name]) => name);
+  const missing = [...wanted].filter(([key]) => !got.has(key)).map(([, [name]]) => name);
+  if (extra.length > 0 || missing.length > 0) {
+    const parts: string[] = [];
+    if (extra.length > 0) parts.push(`not in '${target}': ${extra.join(", ")}`);
+    if (missing.length > 0) parts.push(`missing: ${missing.join(", ")}`);
+    throw semanticError(stage, `into '${target}' matches columns by name; ${parts.join("; ")}`);
+  }
+  for (const [key, name] of got) {
+    const [targetName, targetType] = wanted.get(key) as [string, string];
+    const expected = typeFamily(targetType);
+    const actual = families.get(name) ?? "unknown";
+    if (expected !== "unknown" && actual !== "unknown" && expected !== actual) {
+      throw semanticError(stage,
+        `into '${target}': '${name}' is ${actual} but ${target}.${targetName} is `
+        + `${targetType}; CAST it explicitly`);
+    }
+  }
+}
+
+/**
+ * Base tables a program reads: from/join sources, recursively, minus names
+ * that its own `with` stages define.
+ */
+export function referencedTables(program: Program): Set<string> {
+  const tables = new Set<string>();
+  const visit = (stages: Program, shadow: ReadonlySet<string>): void => {
+    const names = new Set(shadow);
+    for (const stage of stages) if (stage.kind === "with") names.add(stage.name);
+    for (const stage of stages) {
+      if (stage.kind === "from" || stage.kind === "join") {
+        if (stage.source.program !== undefined) visit(stage.source.program, names);
+        else if (stage.source.name !== "" && !names.has(stage.source.name)) {
+          tables.add(stage.source.name);
+        }
+      } else if (stage.kind === "with" || stage.kind === "set"
+                 || stage.kind === "create" || stage.kind === "into") {
+        visit(stage.program, names);
+      }
+    }
+  };
+  visit(program, new Set());
+  return tables;
+}
+

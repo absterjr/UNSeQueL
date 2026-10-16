@@ -253,8 +253,9 @@ function formatStage(stage: Stage): string {
       return `${set.op} (${renderInline(set.program)})`;
     }
     case "create": {
-      const create = stage as { object: string; name: string; program: Program };
-      return `create ${create.object} ${renderIdentifierPart(create.name)} `
+      const create = stage as { object: string; replace: boolean; name: string; program: Program };
+      return `create ${create.replace ? "or replace " : ""}${create.object} `
+        + `${renderIdentifierPart(create.name)} `
         + `= (${renderInline(create.program)})`;
     }
     case "into": {

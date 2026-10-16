@@ -143,29 +143,19 @@ function csvRecords(text: string, delimiter: string): string[][] {
   return rows;
 }
 
-const SAMPLE_BYTES = 1 << 20;
+const HEADER_BYTES = 1 << 16;
 
-/**
- * Type inference reads only a sample (up to 1 MiB) so arbitrarily large CSVs
- * stay loadable — Node caps strings at ~512 MiB, and DuckDB streams the file
- * itself. A record cut off by the sample boundary is dropped; ragged rows
- * past the sample surface as DuckDB's own read error.
- */
-function inferredCsvTypes(path: string, delimiter: string,
-                          overrides: ReadonlyMap<string, string>): Map<string, string> {
+/** The CSV header, validated: present, with no empty or duplicate names. */
+function csvHeader(path: string, delimiter: string): string[] {
   const descriptor = openSync(path, "r");
   let sample: Buffer;
   try {
-    sample = Buffer.alloc(SAMPLE_BYTES);
-    const bytes = readSync(descriptor, sample, 0, SAMPLE_BYTES, 0);
-    sample = sample.subarray(0, bytes);
+    sample = Buffer.alloc(HEADER_BYTES);
+    sample = sample.subarray(0, readSync(descriptor, sample, 0, HEADER_BYTES, 0));
   } finally {
     closeSync(descriptor);
   }
-  const truncated = sample.length === SAMPLE_BYTES;
-  let rows = csvRecords(sample.toString("utf8"), delimiter);
-  if (truncated && rows.length > 1) rows = rows.slice(0, -1);
-  const header = rows[0];
+  const header = csvRecords(sample.toString("utf8"), delimiter)[0];
   if (header === undefined || header.length === 0) {
     throw new PlqError(`CSV file has no header: ${path}`);
   }
@@ -176,50 +166,56 @@ function inferredCsvTypes(path: string, delimiter: string,
     if (seen.has(lowered)) throw new PlqError(`CSV file has duplicate column '${column}': ${path}`);
     seen.add(lowered);
   }
-  const types = new Map<string, string>();
-  for (const [index, column] of header.entries()) {
-    const override = overrides.get(column.toLowerCase());
-    if (override !== undefined) {
-      types.set(column, override);
-      continue;
-    }
-    const values = rows.slice(1).map((row, rowIndex) => {
-      if (row.length !== header.length) {
-        throw new PlqError(
-          `CSV row ${rowIndex + 2} has ${row.length} fields; expected ${header.length}: ${path}`);
-      }
-      return row[index] as string;
-    }).filter((value) => value.trim() !== "");
-    if (values.length === 0) {
-      types.set(column, "VARCHAR");
-      continue;
-    }
-    if (values.every((value) => /^\d{4}-\d{2}-\d{2}$/.test(value.trim()))) {
-      types.set(column, "DATE");
-      continue;
-    }
-    if (values.every((value) =>
-      /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(value.trim()))) {
-      types.set(column, "TIMESTAMP");
-      continue;
-    }
-    const numbers = values.map((value) => {
-      const trimmed = value.trim();
-      if (/^[+-]?0\d+$/.test(trimmed)) return null;
-      const number = Number(trimmed);
-      return Number.isFinite(number) && Math.abs(number) <= Number.MAX_SAFE_INTEGER
-        ? number : null;
-    });
-    if (numbers.every((value) => value !== null)) {
-      types.set(column, numbers.every((value) => Number.isSafeInteger(value)) ? "BIGINT" : "DOUBLE");
-    } else {
-      types.set(column, "VARCHAR");
-    }
-  }
+  return header;
+}
+
+/** The only types the CSV sniffer may pick; Python's inference uses the same set. */
+const CSV_TYPE_CANDIDATES = "auto_type_candidates=['BIGINT', 'DOUBLE', 'DATE', 'TIMESTAMP', 'VARCHAR']";
+
+/**
+ * Whole-file CSV typing by DuckDB's own sniffer (`sample_size=-1`), so a late
+ * zero-padded ZIP or a late 'N/A' decides the column's type. Dates must be ISO;
+ * booleans, times and timestamps with an offset stay text. One correction:
+ * DuckDB types integers too wide for BIGINT as DOUBLE, which drops digits, so
+ * those columns stay text.
+ */
+async function inferCsvTypes(connection: DuckDBConnection, path: string, delimiter: string,
+                             overrides: ReadonlyMap<string, string>): Promise<Map<string, string>> {
+  const header = csvHeader(path, delimiter);
+  const known = new Set(header.map((column) => column.toLowerCase()));
   for (const name of overrides.keys()) {
-    if (!seen.has(name.toLowerCase())) {
+    if (!known.has(name.toLowerCase())) {
       throw new PlqError(`column type override refers to unknown column '${name}' in ${path}`);
     }
+  }
+  const csv = (options: string): string =>
+    `read_csv_auto(${quoted(path)}, delim=${quoted(delimiter)}, header=true, ${options})`;
+  const types = new Map<string, string>();
+  try {
+    const sniffed = await connection.runAndReadAll(`DESCRIBE SELECT * FROM ${csv(
+      `sample_size=-1, ${CSV_TYPE_CANDIDATES}, dateformat='%Y-%m-%d'`)}`);
+    for (const row of sniffed.getRowObjectsJS()) {
+      types.set(String(row["column_name"]), String(row["column_type"]));
+    }
+    const doubles = [...types].filter(([, type]) => type === "DOUBLE").map(([column]) => column);
+    if (doubles.length > 0) {
+      const checks = doubles.map((column, i) => {
+        const u = `ltrim(trim(${quotedIdent(column)}), '+-')`;
+        return `bool_or(CASE WHEN length(${u}) >= 16 THEN regexp_full_match(${u}, '\\d+') `
+          + `ELSE false END) AS w${i}`;
+      });
+      const wide = (await connection.runAndReadAll(
+        `SELECT ${checks.join(", ")} FROM ${csv("all_varchar=true")}`)).getRowObjectsJS()[0];
+      doubles.forEach((column, i) => {
+        if (wide?.[`w${i}`] === true) types.set(column, "VARCHAR");
+      });
+    }
+  } catch (error) {
+    throw new PlqError(`could not read ${path}: ${(error as Error).message}`);
+  }
+  for (const column of types.keys()) {
+    const override = overrides.get(column.toLowerCase());
+    if (override !== undefined) types.set(column, override);
   }
   return types;
 }
@@ -228,8 +224,8 @@ function csvTypeMap(types: ReadonlyMap<string, string>): string {
   return `{${[...types].map(([column, type]) => `${quoted(column)}: ${quoted(type)}`).join(", ")}}`;
 }
 
-function readerFor(path: string, delimiter = ",",
-                   overrides: ReadonlyMap<string, string> = new Map()): string {
+async function readerFor(connection: DuckDBConnection, path: string, delimiter = ",",
+                         overrides: ReadonlyMap<string, string> = new Map()): Promise<string> {
   const lowered = path.toLowerCase();
   if (lowered.endsWith(".json")) {
     const columns = overrides.size === 0 ? "" : `, columns=${csvTypeMap(overrides)}`;
@@ -239,8 +235,9 @@ function readerFor(path: string, delimiter = ",",
     if (overrides.size > 0) throw new PlqError("--column-type cannot be used with Parquet input");
     return `read_parquet(${quoted(path)})`;
   }
-  const types = inferredCsvTypes(path, delimiter, overrides);
-  return `read_csv_auto(${quoted(path)}, delim=${quoted(delimiter)}, types=${csvTypeMap(types)})`;
+  const types = await inferCsvTypes(connection, path, delimiter, overrides);
+  return `read_csv_auto(${quoted(path)}, delim=${quoted(delimiter)}, header=true, `
+    + `types=${csvTypeMap(types)})`;
 }
 
 export interface SourceOptions {
@@ -253,6 +250,8 @@ export interface ConnectOptions extends SourceOptions {
   databasePath?: string;
   /** `ATTACH` existing `.duckdb` files under these names. */
   attach?: ReadonlyMap<string, string>;
+  /** Writes only: allow creating `databasePath` when it does not exist (`--create-db`). */
+  createDatabase?: boolean;
   /**
    * Open the database read-write (for `create`/`into`/`import` programs) and
    * allow creating a missing file. Read-only remains the default.
@@ -270,7 +269,7 @@ export async function loadTableSource(connection: DuckDBConnection, name: string
     const overrides = options.columnTypes?.get(name) ?? new Map<string, string>();
     await connection.run(
       `CREATE OR REPLACE TEMP TABLE ${quotedIdent(name)} AS SELECT * FROM `
-      + `${readerFor(path, options.delimiter, overrides)}`);
+      + `${await readerFor(connection, path, options.delimiter, overrides)}`);
   } catch (error) {
     throw new PlqError(`could not load data file ${path}: ${(error as Error).message}`);
   }
@@ -278,23 +277,60 @@ export async function loadTableSource(connection: DuckDBConnection, name: string
 
 /** Materialize a file as a **persistent** table (the `import` command). */
 export async function importTableSource(connection: DuckDBConnection, name: string,
-                                        path: string, options: SourceOptions = {}): Promise<void> {
+                                        path: string, options: SourceOptions = {},
+                                        replace = false): Promise<void> {
   if (!existsSync(path)) throw new PlqError(`data file not found: ${path}`);
   try {
     const overrides = options.columnTypes?.get(name) ?? new Map<string, string>();
     await connection.run(
-      `CREATE OR REPLACE TABLE ${quotedIdent(name)} AS SELECT * FROM `
-      + `${readerFor(path, options.delimiter, overrides)}`);
+      `CREATE ${replace ? "OR REPLACE " : ""}TABLE ${quotedIdent(name)} AS SELECT * FROM `
+      + `${await readerFor(connection, path, options.delimiter, overrides)}`);
   } catch (error) {
+    const exists = alreadyExists(error);
+    if (exists !== null) {
+      throw new PlqError(`table '${exists.name}' already exists; pass --replace to overwrite it`);
+    }
     throw new PlqError(`could not import ${path}: ${(error as Error).message}`);
   }
+}
+
+/** A readable message for a database that would not open, naming the lock holder. */
+function openError(path: string | undefined, error: unknown): string {
+  const message = (error as Error)?.message ?? String(error);
+  if (path !== undefined && message.includes("Could not set lock")) {
+    const pid = /\(PID (\d+)\)/.exec(message)?.[1];
+    return `database ${path} is in use by another process${pid ? ` (PID ${pid})` : ""}; `
+      + "try again when it finishes";
+  }
+  return `DuckDB error: ${message}`;
+}
+
+/** Kind and name from DuckDB's "Table/View with name X already exists" error, else null. */
+export function alreadyExists(error: unknown): { kind: string; name: string } | null {
+  const match = /(Table|View) with name "?([^"\s!]+)"? already exists/i
+    .exec((error as Error)?.message ?? "");
+  return match === null ? null
+    : { kind: (match[1] as string).toLowerCase(), name: match[2] as string };
 }
 
 /** Execute a (possibly multi-statement) script for create/into programs. */
 export async function runStatements(connection: DuckDBConnection, sql: string): Promise<void> {
   try {
+    // All statements commit together or not at all (DuckDB DDL is transactional).
+    await connection.run("BEGIN TRANSACTION");
     await connection.run(sql);
+    await connection.run("COMMIT");
   } catch (error) {
+    try {
+      await connection.run("ROLLBACK");
+    } catch {
+      // no transaction was open
+    }
+    const exists = alreadyExists(error);
+    if (exists !== null) {
+      throw new PlqError(`${exists.kind} '${exists.name}' already exists; use `
+        + `'create or replace ${exists.kind} ${exists.name} = (...)' to overwrite it`);
+    }
     throw new PlqError(`DuckDB error: ${(error as Error).message}`);
   }
 }
@@ -302,11 +338,12 @@ export async function runStatements(connection: DuckDBConnection, sql: string): 
 export async function connect(data: ReadonlyMap<string, string>,
                               options: ConnectOptions = {}): Promise<DuckDBConnection> {
   const { DuckDBInstance } = await duckdbApi();
-  if (options.databasePath !== undefined && !options.writable
-      && !existsSync(options.databasePath)) {
-    throw new PlqError(
-      `database not found: ${options.databasePath} `
-      + "(databases are read-only until `create table = (...)` ships)");
+  if (options.databasePath !== undefined && !existsSync(options.databasePath)) {
+    if (!options.writable) throw new PlqError(`database not found: ${options.databasePath}`);
+    if (!options.createDatabase) {
+      throw new PlqError(`database not found: ${options.databasePath}; `
+        + "pass --create-db to create a new database file");
+    }
   }
   let connection: DuckDBConnection;
   try {
@@ -319,7 +356,7 @@ export async function connect(data: ReadonlyMap<string, string>,
     connection = await instance.connect();
     openConnections.push(connection);
   } catch (error) {
-    throw new PlqError(`DuckDB error: ${(error as Error).message}`);
+    throw new PlqError(openError(options.databasePath, error));
   }
   for (const [name, path] of options.attach ?? []) {
     if (!existsSync(path)) {
@@ -341,10 +378,20 @@ export async function connect(data: ReadonlyMap<string, string>,
 export async function runSql(connection: DuckDBConnection, sql: string): Promise<SqlResult> {
   try {
     const reader = await connection.runAndReadAll(sql);
-    return {
-      columns: reader.columnNames(),
-      rows: reader.getRowObjectsJS() as Row[],
-    };
+    const columns = reader.columnNames();
+    const rows = reader.getRowObjectsJS() as Row[];
+    // Temporal values use DuckDB's own text ("2024-01-01 00:00:00.123456"), as the
+    // Python track prints them; a JS Date would add a 'Z' and drop microseconds.
+    const temporal = reader.columnTypes().map((type) => /^(DATE|TIME)/.test(String(type)));
+    if (temporal.some(Boolean)) {
+      const raw = reader.getRowObjects();
+      rows.forEach((row, r) => {
+        columns.forEach((name, i) => {
+          if (temporal[i] && row[name] !== null) row[name] = String(raw[r]?.[name]);
+        });
+      });
+    }
+    return { columns, rows };
   } catch (error) {
     throw new PlqError(`DuckDB error: ${(error as Error).message}`);
   }

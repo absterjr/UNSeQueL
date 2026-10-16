@@ -52,7 +52,7 @@ from .grammar import (
     SetStage,
     expression_name,
 )
-from .schema import Schema
+from .schema import Schema, with_created_table
 
 __all__ = ["CodegenError", "emit_sql"]
 
@@ -818,10 +818,13 @@ def _emit_statements(program: Program, schema: Schema) -> str:
         select = f"SELECT * FROM {inner.last_cte}"
         if isinstance(stage, CreateStage):
             statements.append(
-                f"CREATE OR REPLACE {stage.object.upper()} {_ident(stage.name)} AS\n"
+                f"{'CREATE OR REPLACE' if stage.replace else 'CREATE'} "
+                f"{stage.object.upper()} {_ident(stage.name)} AS\n"
                 f"WITH {body}\n{select};")
+            schema = with_created_table(schema, stage.name,
+                                        [(column, "unknown") for column in inner.live])
         else:
-            statements.append(f"INSERT INTO {_ident(stage.name)}\nWITH {body}\n{select};")
+            statements.append(f"INSERT INTO {_ident(stage.name)} BY NAME\nWITH {body}\n{select};")
     return "\n".join(statements)
 
 

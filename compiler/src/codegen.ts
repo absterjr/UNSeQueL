@@ -39,6 +39,7 @@ import {
 } from "./ast.js";
 import { PlqError } from "./errors.js";
 import type { Schema } from "./schema.js";
+import { withCreatedTable } from "./schema.js";
 
 export class CodegenError extends PlqError {
   constructor(message: string, line?: number, column?: number) {
@@ -830,10 +831,13 @@ function emitStatements(program: Program, schema: Schema): string {
     const select = `SELECT * FROM ${inner.lastCte}`;
     if (stage.kind === "create") {
       statements.push(
-        `CREATE OR REPLACE ${stage.object.toUpperCase()} ${ident(stage.name)} AS\n`
+        `${stage.replace ? "CREATE OR REPLACE" : "CREATE"} ${stage.object.toUpperCase()} `
+        + `${ident(stage.name)} AS\n`
         + `WITH ${body}\n${select};`);
+      schema = withCreatedTable(schema, stage.name,
+        inner.live.map((column) => [column, "unknown"] as const));
     } else {
-      statements.push(`INSERT INTO ${ident(stage.name)}\nWITH ${body}\n${select};`);
+      statements.push(`INSERT INTO ${ident(stage.name)} BY NAME\nWITH ${body}\n${select};`);
     }
   }
   return statements.join("\n");

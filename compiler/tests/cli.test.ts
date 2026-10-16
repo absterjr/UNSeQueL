@@ -295,10 +295,28 @@ describe("cli: create/into and import (v1.4)", () => {
       writeFileSync(create,
         `# source orders: ${ordersCsv}\n`
         + "create table summary = (from orders | group by country | aggregate n = COUNT(*))\n");
-      const created = await runCli(["run", create, "--db", dbPath]);
+      const created = await runCli(["run", create, "--db", dbPath, "--create-db"]);
       expect(created.code).toBe(0);
       expect(created.stdout).toContain("applied 1 statement(s)");
       expect(existsSync(dbPath)).toBe(true);
+
+      // A write program never silently creates a database file...
+      const secondDir = join(directory, "refused.duckdb");
+      const refused = await runCli(["run", create, "--db", secondDir]);
+      expect(refused.code).toBe(1);
+      expect(refused.stderr).toContain("--create-db");
+      expect(existsSync(secondDir)).toBe(false);
+
+      // ...and rerunning without `or replace` refuses to overwrite.
+      const again = await runCli(["run", create, "--db", dbPath]);
+      expect(again.code).toBe(1);
+      expect(again.stderr).toContain("create or replace");
+      writeFileSync(create,
+        `# source orders: ${ordersCsv}\n`
+        + "create or replace table summary = (from orders | group by country | aggregate n = COUNT(*))\n");
+      const replaced = await runCli(["run", create, "--db", dbPath]);
+      expect(replaced.code).toBe(0);
+      expect(replaced.stdout).toContain("applied 1 statement(s)");
 
       const readback = join(directory, "readback.unsequel");
       writeFileSync(readback, "from summary\nsort country\n");
@@ -330,7 +348,7 @@ describe("cli: create/into and import (v1.4)", () => {
       writeFileSync(create,
         `# source orders: ${ordersCsv}\n`
         + "create table summary = (from orders | group by country | aggregate n = COUNT(*))\n");
-      expect((await runCli(["run", create, "--db", dbPath])).code).toBe(0);
+      expect((await runCli(["run", create, "--db", dbPath, "--create-db"])).code).toBe(0);
 
       const append = join(directory, "append.unsequel");
       writeFileSync(append,
@@ -361,7 +379,23 @@ describe("cli: create/into and import (v1.4)", () => {
         + "into summary (from orders | select country)\n");
       const mismatch = await runCli(["run", append, "--db", dbPath]);
       expect(mismatch.code).toBe(1);
-      expect(mismatch.stderr).toContain("expects 2 columns, got 1");
+      expect(mismatch.stderr).toContain("matches columns by name");
+      expect(mismatch.stderr).toContain("missing: n");
+
+      // BY NAME: column order and the program's names don't matter, only the set.
+      writeFileSync(append,
+        `# source orders: ${ordersCsv}\n`
+        + "into summary (from summary | select n, country)\n");
+      const reordered = await runCli(["run", append, "--db", dbPath]);
+      expect(reordered.code).toBe(0);
+
+      // Type families must match the target.
+      writeFileSync(append,
+        `# source orders: ${ordersCsv}\n`
+        + "into summary (from orders | select country, n = country)\n");
+      const typed = await runCli(["run", append, "--db", dbPath]);
+      expect(typed.code).toBe(1);
+      expect(typed.stderr).toContain("CAST it explicitly");
     } finally {
       try {
         rmSync(directory, { recursive: true, force: true });
@@ -379,6 +413,11 @@ describe("cli: create/into and import (v1.4)", () => {
       const noDb = await runCli(["run", file]);
       expect(noDb.code).toBe(1);
       expect(noDb.stderr).toContain("create/into write to a database");
+
+      writeFileSync(file, "create table lib.x = (from orders | select order_id)\n");
+      const qualified = await runCli(["run", file]);
+      expect(qualified.code).toBe(1);
+      expect(qualified.stderr).toContain("writes go to the --db database");
 
       writeFileSync(file, "with inner = (create table y = (from orders))\nfrom inner\n");
       const nested = await runCli(["run", file]);
@@ -400,13 +439,44 @@ describe("cli: create/into and import (v1.4)", () => {
       const dbPath = join(directory, "warehouse.duckdb");
       const imported = await runCli(["import", ordersCsv, "--into", dbPath, "--table", "orders"]);
       expect(imported.code).toBe(0);
+      expect(imported.stdout).toContain(`created new database ${dbPath}`);
       expect(imported.stdout).toContain(`imported ${ordersCsv} into ${dbPath} as orders`);
+
+      // A plain import never overwrites an existing table.
+      const clobber = await runCli(["import", ordersCsv, "--into", dbPath, "--table", "orders"]);
+      expect(clobber.code).toBe(1);
+      expect(clobber.stderr).toContain("already exists; pass --replace");
+      const replaced = await runCli(
+        ["import", ordersCsv, "--into", dbPath, "--table", "orders", "--replace"]);
+      expect(replaced.code).toBe(0);
+      expect(replaced.stdout).not.toContain("created new database");
 
       const query = join(directory, "query.unsequel");
       writeFileSync(query, "from orders\nselect order_id\nsort order_id\ntake 1\n");
       const read = await runCli(["run", query, "--db", dbPath, "--format", "json"]);
       expect(read.code).toBe(0);
       expect(JSON.parse(read.stdout)).toEqual([{ order_id: 5001 }]);
+    } finally {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch {
+        // the database lock may outlive the test on Windows
+      }
+    }
+  });
+
+  it("rejects a view over a temporary source", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-view-"));
+    try {
+      const dbPath = join(directory, "warehouse.duckdb");
+      await runCli(["import", ordersCsv, "--into", dbPath, "--table", "orders"]);
+      const file = join(directory, "view.unsequel");
+      writeFileSync(file,
+        `# source orders: ${ordersCsv}\n`
+        + "create view summary = (from orders | select order_id)\n");
+      const result = await runCli(["run", file, "--db", dbPath]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("reads the temporary source 'orders'");
     } finally {
       try {
         rmSync(directory, { recursive: true, force: true });

@@ -12,10 +12,12 @@ from .errors import ExecutionError
 from .model import Table
 
 
-_LEADING_ZERO_INTEGER = re.compile(r"^[+-]?0\d+$")
+# A zero followed by a digit ("02134", "012.5") marks an identifier, as in DuckDB's sniffer.
+_LEADING_ZERO = re.compile(r"[+-]?0\d")
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-_ISO_TIMESTAMP = re.compile(
-    r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
+# No Z/offset suffix: those stay text rather than being silently converted to UTC.
+_ISO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?")
+_INT64_MIN, _INT64_MAX = -(2 ** 63), 2 ** 63 - 1
 _TYPE_ALIASES = {
     "text": "text", "string": "text", "varchar": "text", "char": "text",
     "int": "integer", "integer": "integer",
@@ -52,7 +54,7 @@ def _blank_to_null(value: str) -> str | None:
 
 def _numeric_value(value: str) -> int | float | None:
     stripped = value.strip()
-    if _LEADING_ZERO_INTEGER.fullmatch(stripped):
+    if _LEADING_ZERO.match(stripped):
         return None
     try:
         return int(stripped)
@@ -73,6 +75,13 @@ def _infer_column(values: list[str | None]) -> list[Any]:
     parsed = [_numeric_value(value) for value in non_null]
     if all(value is not None for value in parsed):
         integer_column = all(type(value) is int for value in parsed)
+        # Same rules as the DuckDB sniffer path: integers too wide for BIGINT, or
+        # 16+ digit integers in a DOUBLE column, stay text so no digit is lost.
+        if integer_column and any(not _INT64_MIN <= value <= _INT64_MAX for value in parsed):
+            return values
+        if not integer_column and any(
+                type(value) is int and abs(value) >= 10 ** 15 for value in parsed):
+            return values
         iterator = iter(parsed)
         output: list[Any] = []
         for value in values:

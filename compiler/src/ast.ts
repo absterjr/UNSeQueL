@@ -340,6 +340,8 @@ export interface RawSqlStage extends StageBase {
 export interface CreateStage extends StageBase {
   kind: "create";
   object: "table" | "view";
+  /** `create or replace` — overwrite an existing table/view of that name. */
+  replace: boolean;
   name: string;
   program: Program;
 }

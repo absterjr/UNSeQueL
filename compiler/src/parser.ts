@@ -465,6 +465,16 @@ function parseStageBody(
       } satisfies WithStage;
     }
     case "create": {
+      let replace = false;
+      if (reader.matchKeyword("or")) {
+        const word = reader.peek();
+        if (!word || word.value.toLowerCase() !== "replace") {
+          reader.fail("expected 'replace' after 'create or': "
+            + "create or replace table name = (program)", word);
+        }
+        reader.advance();
+        replace = true;
+      }
       const objectToken = reader.peek();
       if (!objectToken || objectToken.type !== "keyword"
           || (objectToken.value !== "table" && objectToken.value !== "view")) {
@@ -472,17 +482,19 @@ function parseStageBody(
       }
       reader.advance();
       const name = reader.expectIdentifier("create needs a name: create table name = (program)");
+      rejectQualifiedTarget(reader);
       reader.expectOperator("=", "after the create name");
       const inner = reader.readBalancedParens("the create program");
       reader.expectEnd();
       return {
         ...base(index, keyword, span), kind: "create",
-        object: objectToken.value as "table" | "view",
+        object: objectToken.value as "table" | "view", replace,
         name: name.value, program: programFromTokens(inner, true),
       } satisfies CreateStage;
     }
     case "into": {
       const name = reader.expectIdentifier("into needs a table name: into name (program)");
+      rejectQualifiedTarget(reader);
       const inner = reader.readBalancedParens("the into program");
       reader.expectEnd();
       return {
@@ -1154,3 +1166,13 @@ function containsAggregateCall(expr: Expr): boolean {
       return false;
   }
 }
+
+/** `create table lib.x` / `into lib.x`: writes only go to the --db database. */
+function rejectQualifiedTarget(reader: TokenReader): void {
+  const next = reader.peek();
+  if (next !== null && next.type === "punctuation" && next.value === ".") {
+    reader.fail("writes go to the --db database; attached databases are read-only, "
+      + "so a qualified name can't be a write target", next);
+  }
+}
+
