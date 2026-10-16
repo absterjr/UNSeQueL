@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.1 — 2026-10-16
+
+- Number literals keep their source text: codegen emits
+  `12345678901234567890` exactly instead of a rounded double (the parsed value
+  is only used for type inference), in both tracks. New
+  `examples/edge/e02_big_literals` pins a 20-digit ID filter with a decoy row,
+  a 27-digit HUGEINT, and a `0.1000000000000000000001` DECIMAL comparison —
+  the old behavior read 0 or the wrong rows silently.
+- Schema snapshots refreshed after a write list persistent tables only: this
+  run's temporary `# source` tables no longer leak into `<db>.schema.json`.
+- Read-query runtime errors name the stage that owns the failing SQL line
+  (`stage 2 (derive): DuckDB error: Conversion Error: ...`), like statement
+  programs already did.
+- The VS Code extension bundles the compiled language server (`server/` in the
+  VSIX): editing works with no 63 MB download, and the server runs under VS
+  Code's own Node. Run-bundle discovery checks `~/unsequel-run` and the
+  extension's storage folder (never the workspace, where binaries get
+  committed by accident).
+- A `# source` that hides a database table prints a note; a `sql` hatch that
+  tries to `CREATE TABLE` gets a hint pointing at `create table`/`unsequel
+  import` (hatches run inside the query and cannot build tables for later
+  stages).
+- JSON output types each column once: when any value needs exact text (HUGEINT
+  beyond 2^53, a wide DECIMAL), every value in that column is that text, so a
+  column never mixes numbers and strings.
+
 ## 0.6.0 — 2026-10-16
 
 - Grammar v1.5: scientific-notation literals (`1e20`, `1.5e-3`) and type

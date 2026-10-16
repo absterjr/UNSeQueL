@@ -129,17 +129,18 @@ function aliased(rendered: string, name: string): string {
 // Expression rendering
 // --------------------------------------------------------------------------- //
 
-function literal(value: string | number | boolean | null): string {
+function literal(value: string | number | boolean | null, raw?: string): string {
   if (value === null) return "NULL";
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-  if (typeof value === "number") return String(value);
+  // Number literals keep their source text: a 20-digit ID must not round.
+  if (typeof value === "number") return raw ?? String(value);
   return `'${value.replace(/'/g, "''")}'`;
 }
 
 function render(expr: Expr, cols: Cols): string {
   switch (expr.kind) {
     case "literal":
-      return literal(expr.value);
+      return literal(expr.value, expr.raw);
     case "name":
       return cols.resolve(expr.name);
     case "unary": {

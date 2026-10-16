@@ -43,6 +43,13 @@ function csvOutput(result: SqlResult): string {
   return lines.join("\n");
 }
 
+/** Whether a DECIMAL (or Decimal-like) text survives a round trip through a JS number. */
+function decimalRoundTrips(text: string): boolean {
+  const normalized = text.includes(".") ? text.replace(/\.?0+$/, "") : text;
+  const num = Number(text);
+  return Number.isFinite(num) && String(num) === normalized;
+}
+
 function jsonReplacer(_key: string, value: unknown): unknown {
   if (typeof value === "bigint") {
     const num = Number(value);
@@ -54,16 +61,60 @@ function jsonReplacer(_key: string, value: unknown): unknown {
   // DECIMAL (and friends): a JSON number at DuckDB's scale when the digits
   // survive the round trip through a JS number, otherwise the exact text.
   const text = String(value);
-  const normalized = text.includes(".") ? text.replace(/\.?0+$/, "") : text;
-  const num = Number(text);
-  if (Number.isFinite(num) && String(num) === normalized) return num;
-  return text;
+  return decimalRoundTrips(text) ? Number(text) : text;
+}
+
+/** Columns where at least one value cannot survive as a JSON number. */
+function stringifiedColumns(result: SqlResult): Set<string> {
+  const stringified = new Set<string>();
+  for (const column of result.columns) {
+    for (const row of result.rows) {
+      const value = row[column];
+      if (typeof value === "bigint") {
+        if (!Number.isSafeInteger(Number(value))) {
+          stringified.add(column);
+          break;
+        }
+        continue;
+      }
+      if (value === null || typeof value !== "object") continue;
+      if (value instanceof Date || Array.isArray(value)
+          || Object.getPrototypeOf(value) === Object.prototype) continue;
+      if (!decimalRoundTrips(String(value))) {
+        stringified.add(column);
+        break;
+      }
+    }
+  }
+  return stringified;
+}
+
+/**
+ * One JSON type per column: when any value in a column needs exact text
+ * (HUGEINT beyond 2^53, a wide DECIMAL), every value in that column becomes
+ * that exact text, so a column never mixes numbers and strings.
+ */
+function coerceJsonColumns(result: SqlResult): SqlResult {
+  const stringified = stringifiedColumns(result);
+  if (stringified.size === 0) return result;
+  const rows = result.rows.map((row) => {
+    const copy = { ...row };
+    for (const column of stringified) {
+      const value = copy[column];
+      if (value === null || value === undefined) continue;
+      copy[column] = typeof value === "bigint" ? value.toString() : String(value);
+    }
+    return copy;
+  });
+  return { columns: result.columns, rows };
 }
 
 export const OUTPUT_FORMATS = ["table", "json", "csv"] as const;
 
 export function formatResult(result: SqlResult, format: string): string {
-  if (format === "json") return JSON.stringify(result.rows, jsonReplacer, 2);
+  if (format === "json") {
+    return JSON.stringify(coerceJsonColumns(result).rows, jsonReplacer, 2);
+  }
   if (format === "csv") return csvOutput(result);
   return `${tableOutput(result)}\n\n${result.rows.length} row(s)`;
 }

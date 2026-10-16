@@ -215,14 +215,18 @@ def describe_source(path: str, *, delimiter: str | None = None,
         raise UnsequelError(f"could not inspect data file {path}: {exc}") from exc
 
 
-def describe_database(con) -> Schema:
+def describe_database(con, *, persistent_only: bool = False) -> Schema:
     """A Schema for everything the connection sees: database tables, attached
-    databases (`<name>.<table>`), and the temporary file sources."""
+    databases (`<name>.<table>`), and the temporary file sources. With
+    ``persistent_only`` the temporary sources are dropped (schema snapshots
+    must not leak this run's `# source` tables)."""
     try:
         rows = con.execute("SHOW ALL TABLES").fetchall()
         current = con.execute("SELECT current_database()").fetchone()[0]
     except Exception as exc:
         raise UnsequelError(f"DuckDB error: {exc}") from exc
+    if persistent_only:
+        rows = [row for row in rows if not row[5]]
     temporary_names = {row[2] for row in rows if row[5]}
     tables: dict[str, dict] = {}
     for database, schema, name, columns, column_types, temporary in rows:

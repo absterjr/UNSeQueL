@@ -324,6 +324,45 @@ class UnsequelCliTests(unittest.TestCase):
                                 "--format", "json")
             self.assertEqual(json.loads(out), [{"order_id": 5001}])
 
+    def test_source_hiding_a_table_gets_a_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            database = directory / "warehouse.duckdb"
+            orders = (SPEC / "orders.csv").resolve()
+            out, code = run_cli("import", str(orders), "--into", str(database),
+                                "--table", "orders")
+            self.assertEqual(code, 0)
+            query = directory / "q.unsequel"
+            query.write_text(f"# source orders: {orders}\nfrom orders\ntake 1\n",
+                             encoding="utf-8")
+            out, code = run_cli("run", str(query), "--db", str(database),
+                                "--format", "json")
+            self.assertEqual(code, 0)
+            self.assertIn("note: source 'orders' hides database table 'orders'", out)
+
+    def test_hatch_built_table_gets_a_hint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "hatch.unsequel"
+            path.write_text(
+                'with staging = (from orders | sql "CREATE TABLE helper AS SELECT 1")\n'
+                "from helper\n", encoding="utf-8")
+            out, code = run_cli("compile", str(path), "--schema", SCHEMA)
+            self.assertEqual(code, 1)
+            self.assertIn("a sql hatch cannot create tables", out)
+            self.assertIn("create table helper = (...)", out)
+
+    def test_read_query_runtime_errors_name_the_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            orders = (SPEC / "orders.csv").resolve()
+            query = Path(tmp) / "bad.unsequel"
+            query.write_text(
+                f"# source orders: {orders}\n"
+                "from orders\nderive n = CAST(country AS INTEGER)\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(query), "--engine", "duckdb")
+            self.assertEqual(code, 1)
+            self.assertIn("stage 2 (derive)", out)
+
     def test_check_reports_schema_ok(self):
         out, code = run_cli("check", QUERY, "--schema", SCHEMA)
         self.assertEqual(code, 0)
@@ -365,9 +404,9 @@ class UnsequelCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(
             out.splitlines()[0],
-            "dec,half,tiny,sci,wideint,negzero,hugebig,wide,flag")
+            "dec,half,tiny,sci,wideint,negzero,hugebig,wide,flag,mixed")
         self.assertIn("4.00,1,4e-7,4e+21,400000000000000000000,0,"
-                      "9007199254740993,1234567890123456789012,true", out)
+                      "9007199254740993,1234567890123456789012,true,10", out)
 
         out, code = run_cli("run", edge, "--format", "json", "--engine", "duckdb")
         self.assertEqual(code, 0)
@@ -382,8 +421,31 @@ class UnsequelCliTests(unittest.TestCase):
             "hugebig": "9007199254740993",
             "wide": "1234567890123456789012",
             "flag": True,
+            # One JSON type per column: 'mixed' holds 10 and a value beyond
+            # 2^53, so both values are exact text.
+            "mixed": "10",
         })
         self.assertEqual(rows[1]["sci"], 1e22)
+        self.assertEqual(rows[1]["mixed"], "9007199254740993")
+
+    def test_big_literals_keep_source_text(self):
+        edge = "compiler/examples/edge/e02_big_literals.unsequel"
+        out, code = run_cli("run", edge, "--format", "csv", "--engine", "duckdb")
+        self.assertEqual(code, 0)
+        # The decoy row (id ...790) must not match a rounded literal.
+        self.assertEqual(out.strip().splitlines(), [
+            "n,id,wide,r",
+            "4,1234567890123456789,123456789012345678901234567,"
+            "0.1000000000000000000001",
+        ])
+
+        out, code = run_cli("compile", edge)
+        self.assertEqual(code, 0)
+        self.assertIn("id = 1234567890123456789", out)
+        self.assertIn("wide = 123456789012345678901234567", out)
+        self.assertIn("r = 0.1000000000000000000001", out)
+        self.assertNotIn("e+26", out)
+        self.assertNotIn("1234567890123456800", out)
 
     def test_statement_program_names_the_failing_stage_and_rolls_back(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -416,9 +478,11 @@ class UnsequelCliTests(unittest.TestCase):
             snapshot = Path(f"{database}.schema.json")
             snapshot.write_text('{\n  "tables": {}\n}\n', encoding="utf-8")
             orders = (SPEC / "orders.csv").resolve()
+            products = (SPEC / "products.csv").resolve()
             create = directory / "create.unsequel"
             create.write_text(
                 f"# source orders: {orders}\n"
+                f"# source products: {products}\n"
                 "create table summary = (from orders | group by country | "
                 "aggregate n = COUNT(*))\n",
                 encoding="utf-8")
@@ -426,7 +490,8 @@ class UnsequelCliTests(unittest.TestCase):
                                 "--create-db")
             self.assertEqual(code, 0)
             refreshed = json.loads(snapshot.read_text(encoding="utf-8"))
-            self.assertIn("summary", refreshed["tables"])
+            # This run's temporary '# source' tables must not leak into the snapshot.
+            self.assertEqual(list(refreshed["tables"]), ["summary"])
             self.assertEqual(list(refreshed["tables"]["summary"]["columns"]),
                              ["country", "n"])
 

@@ -81,6 +81,17 @@ contain placeholder tokens.
   `unsequel-vscode-0.1.0.vsix` (VS Code extension); all package versions
   started at 0.1.0, and the four standalone executables were backfilled onto
   it.
+- GitHub release `v0.6.1` fixes the follow-ups from the 0.6.0 review: number
+  literals now reach DuckDB as source text (no rounding of large IDs; edge
+  fixtures with decoy rows), schema snapshots list persistent tables only,
+  read-query runtime errors name the failing stage, the VSIX bundles the
+  language server (no 63 MB download; run bundles are found in
+  `~/unsequel-run` or extension storage, never the workspace), `# source`
+  shadowing prints a note, `sql` hatches that try to `CREATE TABLE` get a
+  pointed hint, and JSON columns are typed once (no mixed number/string);
+  assets: `unsequel-0.6.1.tgz`, `unsequel-0.6.1-py3-none-any.whl`,
+  `unsequel-vscode-0.6.1.vsix`, plus the platform binaries from both
+  workflows.
 - GitHub release `v0.6.0` adds grammar v1.5 (scientific-notation literals,
   `CAST` type parameters), one number-output rule across tracks with
   `examples/edge/` fixtures (CSV/JSON `--out` goes through the stdout
@@ -126,9 +137,9 @@ contain placeholder tokens.
   accounts/tokens; see [CONTRIBUTING.md](../CONTRIBUTING.md) and the package
   metadata.
 - Publishing prep verified from this machine: `npm publish --dry-run` packs
-  `unsequel@0.6.0` cleanly (auth still required for the real upload), the
-  Python wheel builds as `unsequel-0.6.0-py3-none-any.whl`, and the VSIX
-  builds as `unsequel-vscode-0.6.0.vsix`. Owner commands after login:
+  `unsequel@0.6.1` cleanly (auth still required for the real upload), the
+  Python wheel builds as `unsequel-0.6.1-py3-none-any.whl`, and the VSIX
+  builds as `unsequel-vscode-0.6.1.vsix`. Owner commands after login:
   `npm login` then `npm publish` in `compiler/`; `python -m pip install build
   twine` then `python -m twine upload dist/*` for PyPI; `npx @vscode/vsce
   publish` for the Marketplace (choose the editor after feedback).

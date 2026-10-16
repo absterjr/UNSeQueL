@@ -46,6 +46,12 @@ export function spanning(first: Span, last: Span): Span {
 export interface LiteralExpr {
   kind: "literal";
   value: string | number | boolean | null;
+  /**
+   * Source text for number literals. Codegen emits this verbatim so values
+   * beyond double precision (20-digit IDs, 27-digit integers, long decimals)
+   * reach DuckDB exactly; `value` (the parsed double) is only for inference.
+   */
+  raw?: string;
   span: Span;
 }
 

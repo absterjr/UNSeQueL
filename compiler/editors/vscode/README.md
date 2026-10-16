@@ -5,7 +5,11 @@ run `.sql` files.
 
 ## Language features
 
-Backed by the language server built into the `unsequel` CLI (`unsequel lsp`):
+The extension bundles the compiled language server (`server/`), so diagnostics,
+completion, hover, formatting, the outline, quick fixes, and go-to-definition
+work with nothing else installed. Diagnostics that need data (`# source` /
+`--db` column checks) use a discovered CLI when one exists — the bundled server
+alone checks columns declared by a `# schema:` directive or `unsequel.schemaPath`.
 
 | Feature | What it does |
 | --- | --- |
@@ -28,17 +32,18 @@ flags are needed. Both run commands are also in the editor context menu.
 
 ## Requirements
 
-The `unsequel` executable (the CLI carries the language server):
+None for language features (the server ships inside the extension). `run`/`repl`
+need the `unsequel` CLI — from npm, a clone, or the GitHub releases:
 
 ```bash
 npm install -g unsequel            # from npm (once published)
 cd compiler && npm install && npm link   # from a clone
 ```
 
-or point `unsequel.executable` at the standalone compile executable from the
-GitHub releases (`unsequel-compile-windows-x64.exe` etc.), which needs no Node
-and powers every language feature. `run`/`repl` need DuckDB (the npm install)
-or the Python package's standalone executable, which bundles it.
+or unzip a run bundle into `~/unsequel-run` (the extension finds it), or point
+`unsequel.executable` at the standalone compile executable
+(`unsequel-compile-windows-x64.exe` etc.), which needs no Node and powers every
+feature including source-aware checks.
 
 ## Install
 
@@ -52,13 +57,13 @@ and press `F5` — a second VS Code window opens with the extension loaded.
 ```bash
 cd compiler/editors/vscode
 npm install
-npx @vscode/vsce package
-code --install-extension unsequel-vscode-0.6.0.vsix
+npm run vsix        # copies the compiled server in, then packages
+code --install-extension unsequel-vscode-0.6.1.vsix
 ```
 
 **Manual copy:** copy `editors/vscode/` into your extensions directory
-(`%USERPROFILE%\.vscode\extensions\unsequel-vscode-0.6.0` on Windows,
-`~/.vscode/extensions/unsequel-vscode-0.6.0` elsewhere) and restart VS Code.
+(`%USERPROFILE%\.vscode\extensions\unsequel-vscode-0.6.1` on Windows,
+`~/.vscode/extensions/unsequel-vscode-0.6.1` elsewhere) and restart VS Code.
 
 ## Without the extension
 
@@ -68,8 +73,9 @@ on a blank line.
 
 ## Settings
 
-- `unsequel.executable` — the `unsequel` command to run (also the language
-  server); set an absolute path if it is not on `PATH`.
+- `unsequel.executable` — the `unsequel` command for run/repl and (when set)
+  the language server; set an absolute path if it is not on `PATH`. Leave it at
+  `unsequel` to use the bundled server and a `~/unsequel-run` bundle if present.
 - `unsequel.schemaPath` — schema JSON used for diagnostics and completion when
   a query has no `# schema:` directive.
 

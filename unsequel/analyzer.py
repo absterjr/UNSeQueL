@@ -19,6 +19,7 @@ unchanged. ``analyze`` returns the per-stage column lineage.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from .errors import LocatedError
@@ -246,24 +247,60 @@ def _table_families(columns: dict[str, str]) -> dict[str, str]:
     return {column: type_family(declared) for column, declared in columns.items()}
 
 
+def _hatch_created_tables(program: list[Stage]) -> dict[str, int]:
+    """Table names a `sql` hatch text creates (lowercased -> stage index).
+
+    Scans nested programs too: a hatch inside `with`/`set`/`create`/`into` can
+    still tempt a later stage into referencing the table it builds.
+    """
+    hatch: dict[str, int] = {}
+
+    def visit(stages: list[Stage]) -> None:
+        for stage in stages:
+            if isinstance(stage, RawSqlStage):
+                match = re.search(
+                    r"create\s+(?:or\s+replace\s+)?table\s+[\"`]?([A-Za-z_][A-Za-z0-9_]*)",
+                    stage.text, re.I)
+                if match:
+                    hatch[match.group(1).casefold()] = stage.index
+            elif isinstance(stage, (WithStage, SetStage, CreateStage, IntoStage)):
+                visit(stage.program)
+
+    visit(program)
+    return hatch
+
+
+def _hatch_hint(hatch_tables: "dict[str, int] | None", name: str) -> str:
+    if not hatch_tables:
+        return ""
+    index = hatch_tables.get(name.casefold())
+    if index is None:
+        return ""
+    return (f"; the sql hatch at stage {index} creates a table named '{name}', "
+            "but hatches cannot feed later stages in the same program; create the "
+            "table in one run and query it in the next")
+
+
 def _resolve_source(
     source: SourceRef,
     schema: Schema,
     ctes: dict[str, _Analysis],
     stage: Stage,
     role: str,
+    hatch_tables: "dict[str, int] | None" = None,
 ) -> _ResolvedSource:
     if source.program is not None:
-        inner = _analyze_program(source.program, schema, ctes)
+        inner = _analyze_program(source.program, schema, ctes, hatch_tables)
         return _ResolvedSource(source.alias or "", inner.families)
     cte = ctes.get(source.name)
     if cte is not None:
         return _ResolvedSource(source.alias or source.name, cte.families)
     table = schema.tables.get(source.name)
     if table is None:
+        hint = _hatch_hint(hatch_tables, source.name)
         if role == "from":
-            raise _semantic_error(stage, f"unknown table '{source.name}'")
-        raise _semantic_error(stage, f"unknown joined table '{source.name}'")
+            raise _semantic_error(stage, f"unknown table '{source.name}'{hint}")
+        raise _semantic_error(stage, f"unknown joined table '{source.name}'{hint}")
     label = source.alias or source.name.split(".")[-1]
     return _ResolvedSource(label, _table_families(table.columns))
 
@@ -277,7 +314,8 @@ def _add_source_columns(scope: _Scope, source: _ResolvedSource) -> None:
 
 
 def _analyze_program(
-    stages: list[Stage], schema: Schema, ctes: dict[str, _Analysis]
+    stages: list[Stage], schema: Schema, ctes: dict[str, _Analysis],
+    hatch_tables: "dict[str, int] | None" = None,
 ) -> _Analysis:
     scope = _Scope()
     opaque = False
@@ -290,14 +328,16 @@ def _analyze_program(
             continue
 
         if isinstance(stage, WithStage):
-            inner = _analyze_program(stage.program, schema, ctes)
+            inner = _analyze_program(stage.program, schema, ctes, hatch_tables)
             ctes[stage.name] = inner
             lineage.append(StageLineage(stage.index, stage.keyword, tuple(inner.columns)))
             continue
         if isinstance(stage, FromStage):
-            _add_source_columns(scope, _resolve_source(stage.source, schema, ctes, stage, "from"))
+            _add_source_columns(scope, _resolve_source(
+                stage.source, schema, ctes, stage, "from", hatch_tables))
         elif isinstance(stage, JoinStage):
-            resolved = _resolve_source(stage.source, schema, ctes, stage, "join")
+            resolved = _resolve_source(
+                stage.source, schema, ctes, stage, "join", hatch_tables)
             label = resolved.label
             taken = set(scope.bare_names())
             for column, family in resolved.families.items():
@@ -416,7 +456,7 @@ def _analyze_program(
         elif isinstance(stage, (SkipStage, TakeStage, DistinctStage)):
             pass
         elif isinstance(stage, SetStage):
-            inner = _analyze_program(stage.program, schema, ctes)
+            inner = _analyze_program(stage.program, schema, ctes, hatch_tables)
             if not inner.opaque:
                 left = len(scope.bare_names())
                 if left != len(inner.columns):
@@ -426,7 +466,7 @@ def _analyze_program(
                         f"(left {left}, right {len(inner.columns)})",
                     )
         elif isinstance(stage, CreateStage):
-            inner = _analyze_program(stage.program, schema, dict(ctes))
+            inner = _analyze_program(stage.program, schema, dict(ctes), hatch_tables)
             lineage.append(StageLineage(stage.index, stage.keyword, tuple(inner.columns)))
             # Later statements see this table: `create table a = (...)` then `from a`.
             if not inner.opaque:
@@ -434,7 +474,7 @@ def _analyze_program(
                     (column, inner.families.get(column, "unknown")) for column in inner.columns])
             continue
         elif isinstance(stage, IntoStage):
-            inner = _analyze_program(stage.program, schema, dict(ctes))
+            inner = _analyze_program(stage.program, schema, dict(ctes), hatch_tables)
             table = schema.tables.get(stage.name)
             if table is None:
                 raise _semantic_error(
@@ -459,7 +499,7 @@ def _analyze_program(
 
 def analyze(stages: list[Stage], schema: Schema) -> list[StageLineage]:
     """Validate a program against a schema and return per-stage lineage."""
-    return _analyze_program(stages, schema, {}).lineage
+    return _analyze_program(stages, schema, {}, _hatch_created_tables(stages)).lineage
 
 
 def _check_into_columns(stage, target: str, target_columns: dict[str, str],

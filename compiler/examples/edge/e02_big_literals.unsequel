@@ -1,0 +1,10 @@
+# source edge: edge.csv
+# Bare numeric literals must reach DuckDB exactly. id/wide load as text
+# (18+ digit integers stay VARCHAR) and the filters below use source-text
+# literals: a rounded double matches nothing or, worse, the decoy row.
+from edge
+select n, id = CAST(id AS BIGINT), wide = CAST(wide AS HUGEINT), r = CAST('0.1000000000000000000001' AS DECIMAL(22,22))
+filter id = 1234567890123456789
+filter wide = 123456789012345678901234567
+filter r = 0.1000000000000000000001
+sort n

@@ -104,10 +104,10 @@ function renderString(value: string): string {
   return `'${escaped}'`;
 }
 
-function renderLiteral(value: string | number | boolean | null): string {
+function renderLiteral(value: string | number | boolean | null, raw?: string): string {
   if (value === null) return "NULL";
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-  if (typeof value === "number") return String(value);
+  if (typeof value === "number") return raw ?? String(value);
   return renderString(value);
 }
 
@@ -130,7 +130,7 @@ function render(expr: Expr, minimum = 0): string {
 function renderInner(expr: Expr): string {
   switch (expr.kind) {
     case "literal":
-      return renderLiteral(expr.value);
+      return renderLiteral(expr.value, expr.raw);
     case "name":
       return renderIdentifier(expr.name);
     case "unary": {

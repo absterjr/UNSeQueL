@@ -1,7 +1,8 @@
 // UNSeQueL for VS Code: language support for .unsequel files.
 //
-// A language server (`unsequel lsp`) provides diagnostics, completion, hover
-// (the SQL a stage compiles to), formatting, and the outline; run commands
+// The extension bundles the compiled language server (`server/`, no DuckDB
+// needed) so diagnostics, completion, hover (the SQL a stage compiles to),
+// formatting, and the outline work with no separate download; run commands
 // pipe `unsequel run <file> [--lines A:B]` into a terminal so the file's own
 // `# source` directives supply the connection.
 
@@ -13,27 +14,79 @@ const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
 
 const RELEASES_URL = "https://github.com/absterjr/UNSeQueL/releases/latest";
 
+let extensionContext = null;
+
 function binaryName() {
   return process.platform === "win32" ? "unsequel.exe" : "unsequel";
 }
 
+function configuredExecutable() {
+  const value = vscode.workspace.getConfiguration("unsequel").get("executable", "unsequel");
+  return value === "unsequel" ? null : value;
+}
+
 /**
- * Resolve the CLI: an explicit `unsequel.executable` wins; otherwise look for
- * an unzipped run bundle (an `unsequel-run/` folder next to the workspace or
- * in the home directory) before falling back to PATH.
+ * Folders to check for an unzipped run bundle, in preference order. Never the
+ * workspace: binaries there get committed by accident.
+ */
+function bundleFolders() {
+  const folders = [path.join(os.homedir(), "unsequel-run")];
+  if (extensionContext !== null) {
+    folders.push(path.join(extensionContext.globalStorageUri.fsPath, "unsequel-run"));
+  }
+  return folders;
+}
+
+/**
+ * Resolve the CLI for run/repl commands: an explicit `unsequel.executable`
+ * wins, then an unzipped run bundle in ~/unsequel-run or the extension's
+ * storage folder, then PATH.
  */
 function executable() {
-  const configured = vscode.workspace.getConfiguration("unsequel").get("executable", "unsequel");
-  if (configured !== "unsequel") return configured;
-  const candidates = [];
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    candidates.push(path.join(folder.uri.fsPath, "unsequel-run", binaryName()));
-  }
-  candidates.push(path.join(os.homedir(), "unsequel-run", binaryName()));
-  for (const candidate of candidates) {
+  const configured = configuredExecutable();
+  if (configured !== null) return configured;
+  for (const folder of bundleFolders()) {
+    const candidate = path.join(folder, binaryName());
     if (fs.existsSync(candidate)) return candidate;
   }
   return "unsequel";
+}
+
+/**
+ * The extension ships the compiled server; it runs under VS Code's own Node
+ * (ELECTRON_RUN_AS_NODE), so language features need nothing installed. Without
+ * DuckDB it still parses, formats, outlines, and completes; column checks run
+ * against a declared `# schema:`/--schema file.
+ */
+function bundledServerOptions() {
+  const server = path.join(__dirname, "server", "main.js");
+  if (!fs.existsSync(server)) return null;
+  return {
+    command: process.execPath,
+    args: [server, "lsp"],
+    transport: TransportKind.stdio,
+    options: { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
+  };
+}
+
+/** Server candidates in preference order: configured, run bundle, PATH, bundled. */
+function serverCandidates() {
+  const candidates = [];
+  const configured = configuredExecutable();
+  if (configured !== null) {
+    return [{ command: configured, args: ["lsp"], transport: TransportKind.stdio }];
+  }
+  for (const folder of bundleFolders()) {
+    const candidate = path.join(folder, binaryName());
+    if (fs.existsSync(candidate)) {
+      candidates.push({ command: candidate, args: ["lsp"], transport: TransportKind.stdio });
+      break;
+    }
+  }
+  candidates.push({ command: "unsequel", args: ["lsp"], transport: TransportKind.stdio });
+  const bundled = bundledServerOptions();
+  if (bundled !== null) candidates.push(bundled);
+  return candidates;
 }
 
 function schemaSetting() {
@@ -44,29 +97,36 @@ function schemaSetting() {
 let terminal = null;
 let client = null;
 
-function startLanguageClient() {
-  const serverOptions = {
-    command: executable(),
-    args: ["lsp"],
-    transport: TransportKind.stdio,
-  };
+async function startLanguageClient() {
   const clientOptions = {
     documentSelector: [{ language: "unsequel" }],
     initializationOptions: { schemaPath: schemaSetting() },
   };
-  client = new LanguageClient("unsequel", "UNSeQueL", serverOptions, clientOptions);
-  client.start().catch(async (error) => {
-    const pick = await vscode.window.showWarningMessage(
-      "UNSeQueL: language features need the 'unsequel' CLI (npm i -g unsequel) or "
-      + "the standalone exe (unzip the run bundle so that unsequel-run/ sits next "
-      + "to your workspace or in your home directory). Set unsequel.executable "
-      + `to its path. Details: ${error.message}`,
-      "Open Releases",
-    );
-    if (pick === "Open Releases") {
-      void vscode.env.openExternal(vscode.Uri.parse(RELEASES_URL));
+  let lastError = null;
+  for (const serverOptions of serverCandidates()) {
+    const candidate = new LanguageClient("unsequel", "UNSeQueL", serverOptions, clientOptions);
+    try {
+      await candidate.start();
+      client = candidate;
+      return;
+    } catch (error) {
+      lastError = error;
+      try {
+        await candidate.stop();
+      } catch {
+        // never started
+      }
     }
-  });
+  }
+  const pick = await vscode.window.showWarningMessage(
+    "UNSeQueL: language features could not start. Set unsequel.executable to a "
+    + "working CLI, or reinstall the extension (it bundles a server). "
+    + `Details: ${lastError === null ? "no server candidate" : lastError.message}`,
+    "Open Releases",
+  );
+  if (pick === "Open Releases") {
+    void vscode.env.openExternal(vscode.Uri.parse(RELEASES_URL));
+  }
 }
 
 function unsequelTerminal() {
@@ -127,12 +187,13 @@ function openRepl() {
 }
 
 function activate(context) {
+  extensionContext = context;
   context.subscriptions.push(
     vscode.commands.registerCommand("unsequel.runSelection", () => runCommand(true)),
     vscode.commands.registerCommand("unsequel.runFile", () => runCommand(false)),
     vscode.commands.registerCommand("unsequel.openRepl", () => openRepl()),
   );
-  startLanguageClient();
+  void startLanguageClient();
 }
 
 async function deactivate() {

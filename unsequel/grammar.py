@@ -342,6 +342,10 @@ def _spanning(first: Span, last: Span) -> Span:
 class Literal:
     value: object
     span: Span
+    # Source text for number literals: sqlgen emits it verbatim so values
+    # beyond float precision (20-digit IDs, 27-digit integers, long decimals)
+    # reach DuckDB exactly; `value` is only for type inference.
+    raw: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1135,7 +1139,16 @@ def _parse_stage_body(
             reader.fail("sql stage must be a single SELECT statement; ';' is not allowed", token)
         first_word = _first_sql_word(text)
         if first_word not in {"SELECT", "WITH"}:
-            reader.fail("sql stage must be a query; start it with SELECT or WITH", token)
+            # A hatch runs inside the query; it cannot build a table for later stages.
+            intended = re.match(
+                r"create\s+(?:or\s+replace\s+)?(?:table|view)\s+[\"`]?([A-Za-z_][A-Za-z0-9_]*)",
+                text.strip(), re.I)
+            hint = ""
+            if intended:
+                hint = (f"; a sql hatch cannot create tables: use "
+                        f"'create table {intended.group(1)} = (...)' or 'unsequel import', "
+                        "then query the table in a later run")
+            reader.fail(f"sql stage must be a query; start it with SELECT or WITH{hint}", token)
         return RawSqlStage(**_base(index, keyword, span), text=text)
     reader.fail(f"unknown stage '{keyword}'")
     raise AssertionError("unreachable")
@@ -1460,7 +1473,7 @@ def _parse_primary(reader: _TokenReader, context: _ExprContext) -> Expr:
         raw = token.value
         value: object = (float(raw) if "." in raw or "e" in raw or "E" in raw
                          else int(raw))
-        return Literal(value, _token_span(token))
+        return Literal(value, _token_span(token), raw=raw)
     if token.type == "string":
         reader.advance()
         return Literal(token.value, _token_span(token))

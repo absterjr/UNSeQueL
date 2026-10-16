@@ -161,19 +161,22 @@ def _number_text(value: float) -> str:
     return format(Decimal(repr(value)), "f")
 
 
-def _literal(value: object) -> str:
+def _literal(value: object, raw: "str | None" = None) -> str:
     if value is None:
         return "NULL"
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
     if isinstance(value, (int, float)):
+        # Number literals keep their source text: a 20-digit ID must not round.
+        if raw is not None:
+            return raw
         return _number_text(value) if isinstance(value, float) else str(value)
     return "'" + str(value).replace("'", "''") + "'"
 
 
 def _render(expr: Expr, cols: _Cols) -> str:
     if isinstance(expr, Literal):
-        return _literal(expr.value)
+        return _literal(expr.value, expr.raw)
     if isinstance(expr, Name):
         return cols.resolve(expr.name)
     if isinstance(expr, Unary):

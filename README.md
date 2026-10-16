@@ -78,7 +78,7 @@ highlighting, Run Selection/File/REPL) is in
 
 ## Status
 
-The Python 0.6.0 prototype implements an ordered SQL-like subset with a lexer,
+The Python 0.6.1 prototype implements an ordered SQL-like subset with a lexer,
 semantic checks, an in-memory relational executor, CTEs, nested sources, set
 operations, five join types, and a SQLite adapter. It also hosts a port of the
 canonical `.unsequel` grammar v1.5: `python -m unsequel run query.unsequel`

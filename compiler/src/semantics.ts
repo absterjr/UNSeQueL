@@ -215,10 +215,42 @@ function tableFamilies(columns: ReadonlyMap<string, string>): Map<string, TypeFa
   return families;
 }
 
+/**
+ * Table names a `sql` hatch text creates (lowercased -> stage index). Scans
+ * nested programs too: a hatch inside `with`/`set`/`create`/`into` can still
+ * tempt a later stage into referencing the table it builds.
+ */
+function hatchCreatedTables(program: Program): Map<string, number> {
+  const hatch = new Map<string, number>();
+  const visit = (stages: Program): void => {
+    for (const stage of stages) {
+      if (stage.kind === "sql") {
+        const match = /create\s+(?:or\s+replace\s+)?table\s+["`]?([A-Za-z_][A-Za-z0-9_]*)/i
+          .exec(stage.text);
+        if (match !== null) hatch.set((match[1] as string).toLowerCase(), stage.index);
+      } else if (stage.kind === "with" || stage.kind === "set"
+                 || stage.kind === "create" || stage.kind === "into") {
+        visit(stage.program);
+      }
+    }
+  };
+  visit(program);
+  return hatch;
+}
+
+function hatchHint(hatchTables: ReadonlyMap<string, number>, name: string): string {
+  const index = hatchTables.get(name.toLowerCase());
+  if (index === undefined) return "";
+  return `; the sql hatch at stage ${index} creates a table named '${name}', `
+    + "but hatches cannot feed later stages in the same program; create the "
+    + "table in one run and query it in the next";
+}
+
 function resolveSource(source: SourceRef, schema: Schema, ctes: Map<string, Analysis>,
-                       stage: Stage, role: "from" | "join"): ResolvedSource {
+                       stage: Stage, role: "from" | "join",
+                       hatchTables: ReadonlyMap<string, number> = new Map()): ResolvedSource {
   if (source.program !== undefined) {
-    const inner = analyzeProgram(source.program, schema, ctes);
+    const inner = analyzeProgram(source.program, schema, ctes, hatchTables);
     return { label: source.alias ?? "", families: inner.families };
   }
   const cte = ctes.get(source.name);
@@ -227,9 +259,10 @@ function resolveSource(source: SourceRef, schema: Schema, ctes: Map<string, Anal
   }
   const table = schema.tables.get(source.name);
   if (table === undefined) {
+    const hint = hatchHint(hatchTables, source.name);
     throw semanticError(stage, role === "from"
-      ? `unknown table '${source.name}'`
-      : `unknown joined table '${source.name}'`);
+      ? `unknown table '${source.name}'${hint}`
+      : `unknown joined table '${source.name}'${hint}`);
   }
   return {
     label: source.alias ?? source.name.split(".").pop() ?? source.name,
@@ -246,7 +279,8 @@ function addSourceColumns(scope: Scope, source: ResolvedSource): void {
 }
 
 function analyzeProgram(stages: Program, schema: Schema,
-                        ctes: Map<string, Analysis>): Analysis {
+                        ctes: Map<string, Analysis>,
+                        hatchTables: ReadonlyMap<string, number> = new Map()): Analysis {
   let scope = new Scope();
   let opaque = false;
   let groupRowScope: Scope | null = null;
@@ -260,17 +294,18 @@ function analyzeProgram(stages: Program, schema: Schema,
 
     switch (stage.kind) {
       case "with": {
-        const inner = analyzeProgram(stage.program, schema, ctes);
+        const inner = analyzeProgram(stage.program, schema, ctes, hatchTables);
         ctes.set(stage.name, inner);
         lineage.push({ index: stage.index, keyword: stage.keyword, columns: inner.columns });
         continue;
       }
       case "from": {
-        addSourceColumns(scope, resolveSource(stage.source, schema, ctes, stage, "from"));
+        addSourceColumns(scope, resolveSource(stage.source, schema, ctes, stage, "from",
+          hatchTables));
         break;
       }
       case "join": {
-        const resolved = resolveSource(stage.source, schema, ctes, stage, "join");
+        const resolved = resolveSource(stage.source, schema, ctes, stage, "join", hatchTables);
         const label = resolved.label;
         const taken = new Set(scope.bareNames());
         for (const [column, family] of resolved.families) {
@@ -415,7 +450,7 @@ function analyzeProgram(stages: Program, schema: Schema,
       case "distinct":
         break;
       case "set": {
-        const inner = analyzeProgram(stage.program, schema, ctes);
+        const inner = analyzeProgram(stage.program, schema, ctes, hatchTables);
         if (!inner.opaque) {
           const left = scope.bareNames().length;
           if (left !== inner.columns.length) {
@@ -428,7 +463,7 @@ function analyzeProgram(stages: Program, schema: Schema,
       }
       case "create": {
         const create = stage as { kind: "create"; name: string; program: Program };
-        const inner = analyzeProgram(create.program, schema, new Map(ctes));
+        const inner = analyzeProgram(create.program, schema, new Map(ctes), hatchTables);
         lineage.push({ index: stage.index, keyword: stage.keyword, columns: inner.columns });
         // Later statements see this table: `create table a = (...)` then `from a`.
         if (!inner.opaque) {
@@ -439,7 +474,7 @@ function analyzeProgram(stages: Program, schema: Schema,
       }
       case "into": {
         const into = stage as { kind: "into"; name: string; program: Program };
-        const inner = analyzeProgram(into.program, schema, new Map(ctes));
+        const inner = analyzeProgram(into.program, schema, new Map(ctes), hatchTables);
         const table = schema.tables.get(into.name);
         if (table === undefined) {
           throw semanticError(stage,
@@ -472,7 +507,7 @@ function analyzeProgram(stages: Program, schema: Schema,
 }
 
 export function analyze(stages: Program, schema: Schema): StageLineage[] {
-  return analyzeProgram(stages, schema, new Map()).lineage;
+  return analyzeProgram(stages, schema, new Map(), hatchCreatedTables(stages)).lineage;
 }
 
 /**

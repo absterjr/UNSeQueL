@@ -2,7 +2,7 @@
   "name": "unsequel-vscode",
   "displayName": "UNSeQueL",
   "description": "Language support for .unsequel query files: diagnostics, completion, hover (generated SQL), formatting, syntax highlighting, and run commands, powered by the unsequel CLI.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "unsequel",
   "license": "MIT",
   "repository": {
@@ -26,6 +26,9 @@
     "onCommand:unsequel.openRepl"
   ],
   "main": "./extension.js",
+  "scripts": {
+    "vsix": "node ../../scripts/copy-server.mjs && npx @vscode/vsce package"
+  },
   "contributes": {
     "languages": [
       {
@@ -84,7 +87,7 @@
         "unsequel.executable": {
           "type": "string",
           "default": "unsequel",
-          "description": "The UNSeQueL executable to run (also used for `unsequel lsp`). Use an absolute path if it is not on PATH."
+          "description": "The UNSeQueL executable for run/repl commands and (when set) the language server. The extension bundles its own server, so this is only needed for `run` commands, or to point at a CLI with DuckDB support for source-aware checks."
         },
         "unsequel.schemaPath": {
           "type": "string",

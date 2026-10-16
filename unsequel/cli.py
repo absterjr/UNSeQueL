@@ -19,7 +19,8 @@ from .duckdb_backend import (connect, copy_to_file, describe_database, fetch,
 from .engine import execute
 from .errors import ParseError, UnsequelError
 from .format import format_pipeline, is_formatted
-from .grammar import CreateStage, IntoStage, WithStage, parse_program
+from .grammar import (AggregateStage, CreateStage, GroupByStage, IntoStage,
+                      WithStage, parse_program)
 from .io import load_sqlite_tables, load_table
 from .memory_engine import execute_program
 from .parser import parse_query
@@ -101,18 +102,23 @@ def _text(value) -> str:
     return str(value)
 
 
-def _decimal_json(value: Decimal) -> str:
-    """DECIMAL is a JSON number at DuckDB's scale — unless the digits would not
-    survive the round trip through a JS number, in which case it stays exact text."""
-    text = str(value)
+def _decimal_round_trips(text: str) -> bool:
+    """Whether a DECIMAL text survives a round trip through a JS number."""
     normalized = text.rstrip("0").rstrip(".") if "." in text else text
     try:
         number = float(text)
     except (OverflowError, ValueError):
-        number = math.inf
-    if normalized and normalized != "-" and math.isfinite(number) \
-            and _number_text(number) == normalized:
-        return _number_text(number)
+        return False
+    return bool(normalized) and normalized != "-" and math.isfinite(number) \
+        and _number_text(number) == normalized
+
+
+def _decimal_json(value: Decimal) -> str:
+    """DECIMAL is a JSON number at DuckDB's scale — unless the digits would not
+    survive the round trip through a JS number, in which case it stays exact text."""
+    text = str(value)
+    if _decimal_round_trips(text):
+        return _number_text(float(text))
     return json.dumps(text, ensure_ascii=False)
 
 
@@ -151,7 +157,50 @@ def _json_text(value, indent: int) -> str:
     return json.dumps(str(value), ensure_ascii=False)
 
 
-def _render_json_rows(rows: list[dict]) -> str:
+def _json_columns_to_stringify(rows: list[dict], columns: list[str]) -> set[str]:
+    """Columns where at least one value cannot survive as a JSON number."""
+    stringified: set[str] = set()
+    for column in columns:
+        for row in rows:
+            value = row.get(column)
+            if isinstance(value, bool) or value is None:
+                continue
+            if isinstance(value, int):
+                if abs(value) > _MAX_SAFE_INTEGER:
+                    stringified.add(column)
+                    break
+            elif isinstance(value, Decimal):
+                if not _decimal_round_trips(str(value)):
+                    stringified.add(column)
+                    break
+    return stringified
+
+
+def _coerce_json_columns(rows: list[dict], columns: list[str]) -> list[dict]:
+    """One JSON type per column: when any value in a column needs exact text
+    (HUGEINT beyond 2^53, a wide DECIMAL), every value in that column becomes
+    that exact text, so a column never mixes numbers and strings."""
+    stringified = _json_columns_to_stringify(rows, columns)
+    if not stringified:
+        return rows
+    result = []
+    for row in rows:
+        copy = dict(row)
+        for column in stringified:
+            value = copy.get(column)
+            if value is None:
+                continue
+            if isinstance(value, Decimal) or (isinstance(value, int)
+                                              and not isinstance(value, bool)):
+                copy[column] = str(value)
+            else:
+                copy[column] = _text(value)
+        result.append(copy)
+    return result
+
+
+def _render_json_rows(rows: list[dict], columns: list[str]) -> str:
+    rows = _coerce_json_columns(rows, columns)
     if not rows:
         return "[]"
     items = ",\n".join(f"  {_json_text(dict(row), 2)}" for row in rows)
@@ -183,7 +232,7 @@ def _table_output(rows: list[dict], columns: list[str]) -> str:
 
 def _print_result(result, output_format: str) -> None:
     if output_format == "json":
-        print(_render_json_rows(result.rows))
+        print(_render_json_rows(result.rows, result.columns))
     elif output_format == "csv":
         writer = csv.DictWriter(sys.stdout, fieldnames=result.columns, lineterminator="\n")
         writer.writeheader()
@@ -655,9 +704,27 @@ def _emit_result(args, result, out_path, *, sql, data, database=None, attach=Non
             writer.writerows(_csv_rows(result.rows))
         else:
             # The file gets the same formatter as stdout, so they never disagree.
-            handle.write(_render_json_rows(result.rows) + "\n")
+            handle.write(_render_json_rows(result.rows, result.columns) + "\n")
     print(f"wrote {out_path}")
     return True
+
+
+def _notify_shadowed_sources(con, data) -> None:
+    """'# source' files load as temporary tables; note when one hides a database table."""
+    if not data:
+        return
+    try:
+        rows = con.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_catalog = current_database() AND table_schema = 'main' "
+            "AND table_type <> 'LOCAL TEMPORARY'").fetchall()
+    except Exception:
+        return  # the note is advisory; never fail a run over it
+    persistent = {str(row[0]).casefold() for row in rows}
+    for name in data:
+        if name.casefold() in persistent:
+            print(f"note: source '{name}' hides database table '{name}'; "
+                  "this run reads the file", file=sys.stderr)
 
 
 def _cmd_run(args) -> None:
@@ -691,6 +758,7 @@ def _cmd_run(args) -> None:
                                         for name in data},
                           database_path=database, attach=attach, writable=True,
                           create_database=args.create_db)
+            _notify_shadowed_sources(con, data)
             schema = Schema.load(schema_path) if schema_path else describe_database(con)
             analyze_unsequel_program(program, schema)
             _reject_views_over_temporary_sources(program, data)
@@ -710,6 +778,7 @@ def _cmd_run(args) -> None:
                           column_types={name: _column_types_for(args, name)
                                         for name in data},
                           database_path=database, attach=attach)
+            _notify_shadowed_sources(con, data)
             schema = Schema.load(schema_path) if schema_path else describe_database(con)
             analyze_unsequel_program(program, schema)
             sql = emit_unsequel_sql(program, schema)
@@ -720,7 +789,7 @@ def _cmd_run(args) -> None:
                              database_path=database, attach=attach)
                 print(f"wrote {args.out}")
                 return
-            result = fetch(con, sql)
+            result = _fetch_with_stage(sql, con, program)
         else:
             tables = {
                 name: load_table(name, path, delimiter=args.delimiter,
@@ -771,6 +840,69 @@ def _cmd_run(args) -> None:
         _print_result(result, args.format)
 
 
+def _grammar_stage_for_unit(program, unit: int) -> "int | None":
+    """Grammar stage number for the U-th unit (group by + aggregate share one)."""
+    seen = 0
+    previous_was_group = False
+    for index, stage in enumerate(program):
+        if isinstance(stage, WithStage):
+            previous_was_group = False
+            continue
+        if previous_was_group and isinstance(stage, AggregateStage):
+            previous_was_group = False
+            continue
+        seen += 1
+        if seen == unit:
+            return index + 1
+        previous_was_group = isinstance(stage, GroupByStage)
+    return None
+
+
+def _stage_for_cte_name(program, name: str) -> "int | None":
+    """Generated CTEs are named after the stage that produced them:
+    `stage_U` (U-th unit) or `<with|sub|set>_G_...` (grammar stage G)."""
+    nested = re.match(r"^(?:with|sub|set)_(\d+)_", name)
+    if nested:
+        return int(nested.group(1))
+    unit = re.match(r"^stage_(\d+)$", name)
+    if unit:
+        return _grammar_stage_for_unit(program, int(unit.group(1)))
+    if name == "out":
+        return len(program)
+    return None
+
+
+def _attribute_stage(sql: str, program, message: str, line_offset: int = 0) -> "str | None":
+    """DuckDB reports `LINE n` of the generated SQL; the CTE owning that line
+    names the stage, so read-query failures read like statement failures."""
+    match = re.search(r"\bLINE (\d+):", message, re.I)
+    if not match:
+        return None
+    line = int(match.group(1)) - line_offset
+    if line < 1:
+        return None
+    owner = None
+    for text in sql.split("\n")[:line]:
+        opener = re.match(r"^([A-Za-z_][A-Za-z0-9_]*) AS \($", text)
+        if opener:
+            owner = opener.group(1)
+    # Past the last CTE opener the final SELECT answers: the last stage.
+    stage = len(program) if owner is None else _stage_for_cte_name(program, owner)
+    if stage is None or not 1 <= stage <= len(program):
+        return None
+    return f"stage {stage} ({program[stage - 1].keyword})"
+
+
+def _fetch_with_stage(sql: str, con, program):
+    try:
+        return fetch(con, sql)
+    except UnsequelError as exc:
+        label = _attribute_stage(sql, program, str(exc))
+        if label:
+            raise UnsequelError(f"{label}: {exc}") from exc
+        raise
+
+
 def _reject_views_over_temporary_sources(program, data: dict[str, str]) -> None:
     """A persistent view over a `# source`/--data temp table breaks once this run ends."""
     from .analyzer import referenced_tables
@@ -787,18 +919,20 @@ def _reject_views_over_temporary_sources(program, data: dict[str, str]) -> None:
                 f"import the file first: unsequel import {data[temporary[0]]} --into <database>")
 
 
-def _schema_snapshot_text(con) -> str:
-    schema = describe_database(con)
+def _schema_snapshot_text(con, *, persistent_only: bool = False) -> str:
+    schema = describe_database(con, persistent_only=persistent_only)
     tables = {name: {"columns": dict(table.columns)} for name, table in schema.tables.items()}
     return json.dumps({"tables": tables}, indent=2) + "\n"
 
 
 def _refresh_snapshot(database: str, con) -> None:
     """After a write, refresh '<db>.schema.json' if the user keeps one; a stale
-    snapshot misleads editors and the language server."""
+    snapshot misleads editors and the language server. Persistent tables only:
+    this run's '# source' tables are temporary and not part of the database."""
     snapshot = Path(f"{database}.schema.json")
     if snapshot.exists():
-        snapshot.write_text(_schema_snapshot_text(con), encoding="utf-8")
+        snapshot.write_text(_schema_snapshot_text(con, persistent_only=True),
+                            encoding="utf-8")
 
 
 def _cmd_schema(args) -> None:

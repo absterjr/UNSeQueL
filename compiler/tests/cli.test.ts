@@ -207,7 +207,8 @@ describe("cli: options and data validation", () => {
         `--data=orders=${join(ROOT, "examples", "spec", "orders.csv")}`,
       ]);
       expect(result.code).toBe(1);
-      expect(result.stderr).toContain("error: DuckDB error:");
+      expect(result.stderr).toContain("stage 2 (sql)");
+      expect(result.stderr).toContain("DuckDB error:");
       expect(result.stderr).not.toContain("Node.js");
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -331,10 +332,10 @@ describe("cli: number spellings (edge fixture)", () => {
     const csv = await runCli(["run", EDGE, "--format", "csv"]);
     expect(csv.code).toBe(0);
     expect(csv.stdout.split("\n")[0])
-      .toBe("dec,half,tiny,sci,wideint,negzero,hugebig,wide,flag");
+      .toBe("dec,half,tiny,sci,wideint,negzero,hugebig,wide,flag,mixed");
     expect(csv.stdout)
       .toContain("4.00,1,4e-7,4e+21,400000000000000000000,0,9007199254740993,"
-        + "1234567890123456789012,true");
+        + "1234567890123456789012,true,10");
 
     const json = await runCli(["run", EDGE, "--format", "json"]);
     expect(json.code).toBe(0);
@@ -352,9 +353,90 @@ describe("cli: number spellings (edge fixture)", () => {
       hugebig: "9007199254740993",
       wide: "1234567890123456789012",
       flag: true,
+      // One JSON type per column: 'mixed' holds 10 and a value beyond 2^53,
+      // so both values are exact text.
+      mixed: "10",
     });
     expect(rows[1]?.sci).toBe(1e22);
     expect(rows[1]?.wideint).toBe("1000000000000000000000");
+    expect(rows[1]?.mixed).toBe("9007199254740993");
+  });
+});
+
+describe("cli: large literals (edge fixture)", () => {
+  const EDGE = join(ROOT, "compiler", "examples", "edge", "e02_big_literals.unsequel");
+
+  it("keeps source text so big integers and long decimals stay exact", async () => {
+    const csv = await runCli(["run", EDGE, "--format", "csv"]);
+    expect(csv.code).toBe(0);
+    // The decoy row (id ...790) must not match a rounded literal.
+    expect(csv.stdout.trimEnd().split("\n")).toEqual([
+      "n,id,wide,r",
+      "4,1234567890123456789,123456789012345678901234567,0.1000000000000000000001",
+    ]);
+
+    const compiled = await runCli(["compile", EDGE]);
+    expect(compiled.stdout).toContain("id = 1234567890123456789");
+    expect(compiled.stdout).toContain("wide = 123456789012345678901234567");
+    expect(compiled.stdout).toContain("r = 0.1000000000000000000001");
+    expect(compiled.stdout).not.toContain("e+26");
+    expect(compiled.stdout).not.toContain("1234567890123456800");
+  });
+});
+
+describe("cli: notes and hints", () => {
+  const ordersCsv = join(ROOT, "examples", "spec", "orders.csv").replace(/\\/g, "/");
+
+  it("notes when a # source hides a database table", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-shadow-"));
+    try {
+      const dbPath = join(directory, "warehouse.duckdb");
+      const imported = await runCli(["import", ordersCsv, "--into", dbPath]);
+      expect(imported.code).toBe(0);
+      const query = join(directory, "q.unsequel");
+      writeFileSync(query, `# source orders: ${ordersCsv}\nfrom orders\ntake 1\n`);
+      const result = await runCli(["run", query, "--db", dbPath, "--format", "json"]);
+      expect(result.code).toBe(0);
+      expect(result.stderr).toContain(
+        "note: source 'orders' hides database table 'orders'; this run reads the file");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("hints when a hatch tries to build a table for later stages", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-hatch-"));
+    try {
+      const query = join(directory, "hatch.unsequel");
+      writeFileSync(query,
+        'with staging = (from orders | sql "CREATE TABLE helper AS SELECT 1")\n'
+        + "from helper\n");
+      const result = await runCli(["compile", query, "--schema", SCHEMA]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("a sql hatch cannot create tables");
+      expect(result.stderr).toContain("create table helper = (...)");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("cli: read-query runtime errors", () => {
+  it("names the failing stage", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-readerr-"));
+    try {
+      const ordersCsv = join(ROOT, "examples", "spec", "orders.csv").replace(/\\/g, "/");
+      const query = join(directory, "bad.unsequel");
+      writeFileSync(query,
+        `# source orders: ${ordersCsv}\n`
+        + "from orders\nderive n = CAST(country AS INTEGER)\n");
+      const result = await runCli(["run", query]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("stage 2 (derive)");
+      expect(result.stderr).toContain("Conversion Error");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });
 
@@ -393,15 +475,18 @@ describe("cli: create/into and import (v1.4)", () => {
       const snapshot = `${dbPath}.schema.json`;
       writeFileSync(snapshot, "{\n  \"tables\": {}\n}\n");
       const create = join(directory, "create.unsequel");
+      const productsCsv = join(ROOT, "examples", "spec", "products.csv").replace(/\\/g, "/");
       writeFileSync(create,
         `# source orders: ${ordersCsv}\n`
+        + `# source products: ${productsCsv}\n`
         + "create table summary = (from orders | group by country | aggregate n = COUNT(*))\n");
       const created = await runCli(["run", create, "--db", dbPath, "--create-db"]);
       expect(created.code).toBe(0);
       const refreshed = JSON.parse(readFileSync(snapshot, "utf8")) as {
         tables: Record<string, { columns: Record<string, string> }>;
       };
-      expect(Object.keys(refreshed.tables)).toContain("summary");
+      // This run's temporary '# source' tables must not leak into the snapshot.
+      expect(Object.keys(refreshed.tables)).toEqual(["summary"]);
       expect(Object.keys(refreshed.tables.summary?.columns ?? {})).toEqual(["country", "n"]);
     } finally {
       rmSync(directory, { recursive: true, force: true });

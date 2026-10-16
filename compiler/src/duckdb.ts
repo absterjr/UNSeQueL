@@ -456,10 +456,16 @@ export async function introspectSchema(connection: DuckDBConnection,
  * attached databases, and the temporary tables from file sources. Attached
  * databases are addressable as `<name>.<table>`.
  */
-export async function introspectDatabase(connection: DuckDBConnection): Promise<Schema> {
+/**
+ * Everything the connection sees: database tables, attached databases
+ * (`<name>.<table>`), and temporary file sources. `persistentOnly` drops the
+ * temporary tables (schema snapshots must not leak this run's `# source`s).
+ */
+export async function introspectDatabase(connection: DuckDBConnection,
+                                         options: { persistentOnly?: boolean } = {}): Promise<Schema> {
   try {
     const reader = await connection.runAndReadAll("SHOW ALL TABLES");
-    const rows = reader.getRowObjectsJS() as Array<{
+    const allRows = reader.getRowObjectsJS() as Array<{
       database: string;
       schema: string;
       name: string;
@@ -467,6 +473,7 @@ export async function introspectDatabase(connection: DuckDBConnection): Promise<
       column_types: string[];
       temporary: boolean;
     }>;
+    const rows = options.persistentOnly ? allRows.filter((row) => !row.temporary) : allRows;
     const currentReader = await connection.runAndReadAll(
       "SELECT current_database() AS name");
     const current = String(

@@ -12,9 +12,9 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 import { emitSql, emitStatementList } from "./codegen.js";
-import type { Program } from "./ast.js";
+import type { Program, Stage } from "./ast.js";
 import { splitDirectives, type Directives } from "./directives.js";
-import type { ConnectOptions, DuckDBConnection, SourceOptions } from "./duckdb.js";
+import type { ConnectOptions, DuckDBConnection, SourceOptions, SqlResult } from "./duckdb.js";
 import { PlqError } from "./errors.js";
 import { formatProgram, isFormatted } from "./format.js";
 import { OUTPUT_FORMATS, formatResult } from "./output.js";
@@ -38,7 +38,7 @@ export interface CliResult {
   stderr: string;
 }
 
-export const VERSION = "0.6.0";
+export const VERSION = "0.6.1";
 
 const USAGE = `unsequel ${VERSION}
 UNSeQueL query language compiler
@@ -95,6 +95,13 @@ it never clobbers or persists over tables in a '# db:'/--db database;
 class UsageError extends Error {}
 
 class CheckFailure extends Error {}
+
+/** Advisory lines collected during a command; runCli merges them into stderr. */
+let pendingNotes: string[] = [];
+
+function note(message: string): void {
+  pendingNotes.push(`note: ${message}\n`);
+}
 
 interface Args {
   positionals: string[];
@@ -349,6 +356,63 @@ function validateFormat(value: string): string {
   return value;
 }
 
+/** Grammar stage number for the U-th lowering unit (group by + aggregate share one). */
+function grammarStageForUnit(program: Program, unit: number): number | null {
+  let seen = 0;
+  let previousWasGroup = false;
+  for (let i = 0; i < program.length; i += 1) {
+    const kind = (program[i] as Stage).kind;
+    if (kind === "with") {
+      previousWasGroup = false;
+      continue;
+    }
+    if (previousWasGroup && kind === "aggregate") {
+      previousWasGroup = false;
+      continue;
+    }
+    seen += 1;
+    if (seen === unit) return i + 1;
+    previousWasGroup = kind === "group by";
+  }
+  return null;
+}
+
+/**
+ * A generated CTE is named after the stage that produced it: `stage_U` for the
+ * U-th unit, `<with|sub|set>_G_...` prefixes carry the grammar stage G of the
+ * owning definition. `out` CTEs strip a nested sort.
+ */
+function stageForCteName(program: Program, name: string): number | null {
+  const nested = /^(?:with|sub|set)_(\d+)_/.exec(name);
+  if (nested !== null) return Number(nested[1]);
+  const unit = /^stage_(\d+)$/.exec(name);
+  if (unit !== null) return grammarStageForUnit(program, Number(unit[1]));
+  if (name === "out") return program.length;
+  return null;
+}
+
+/**
+ * DuckDB reports "LINE n" of the generated SQL; the CTE that owns that line
+ * names the stage, so read-query failures read like statement failures.
+ */
+function attributeStage(sql: string, program: Program, message: string,
+                        lineOffset = 0): string | null {
+  const match = /\bLINE (\d+):/i.exec(message);
+  if (match === null) return null;
+  const line = Number(match[1]) - lineOffset;
+  if (line < 1) return null;
+  const lines = sql.split("\n");
+  let owner: string | null = null;
+  for (let i = 0; i < line && i < lines.length; i += 1) {
+    const opener = /^([A-Za-z_][A-Za-z0-9_]*) AS \($/.exec(lines[i] as string);
+    if (opener !== null) owner = opener[1] as string;
+  }
+  // Past the last CTE opener the final SELECT answers, which is the last stage.
+  const stage = owner === null ? program.length : stageForCteName(program, owner);
+  if (stage === null || stage < 1 || stage > program.length) return null;
+  return `stage ${stage} (${(program[stage - 1] as Stage).keyword})`;
+}
+
 function sqlString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
@@ -469,6 +533,28 @@ function rejectViewsOverTemporarySources(program: Program,
   }
 }
 
+/** '# source' files load as temporary tables; note when one hides a database table. */
+async function noteShadowedSources(connection: DuckDBConnection,
+                                   sources: ReadonlyMap<string, string>): Promise<void> {
+  if (sources.size === 0) return;
+  const { runSql } = await loadDuckDB();
+  let persistent: Set<string>;
+  try {
+    const result = await runSql(connection,
+      "SELECT table_name FROM information_schema.tables "
+      + "WHERE table_catalog = current_database() AND table_schema = 'main' "
+      + "AND table_type <> 'LOCAL TEMPORARY'");
+    persistent = new Set(result.rows.map((row) => String(row.table_name).toLowerCase()));
+  } catch {
+    return; // the note is advisory; never fail a run over it
+  }
+  for (const name of sources.keys()) {
+    if (persistent.has(name.toLowerCase())) {
+      note(`source '${name}' hides database table '${name}'; this run reads the file`);
+    }
+  }
+}
+
 async function cmdRun(args: Args): Promise<string> {
   const { path, program, directives } = readQueryInput(args);
   const sources = mergeSources(directives, args, path);
@@ -492,6 +578,7 @@ async function cmdRun(args: Args): Promise<string> {
       writable: true,
       createDatabase: args.flags.has("create-db"),
     });
+    await noteShadowedSources(connection, sources);
     const schema = declaredSchema(args, directives, path) ?? await introspectDatabase(connection);
     analyze(program, schema);
     rejectViewsOverTemporarySources(program, sources);
@@ -514,12 +601,23 @@ async function cmdRun(args: Args): Promise<string> {
   const outPath = flag(args, "out");
   const { connect, runSql } = await loadDuckDB();
   const connection = await connect(sources, connectOptions(args, sources, database));
+  await noteShadowedSources(connection, sources);
   const schema = await schemaForConnection(args, directives, path, connection, sources);
   analyze(program, schema);
   const compiled = emitSql(program, schema);
+  // Attribute a DuckDB failure to the stage that owns the failing SQL line.
+  const execute = async (sql: string, lineOffset = 0): Promise<SqlResult> => {
+    try {
+      return await runSql(connection, sql);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stage = attributeStage(compiled, program, message, lineOffset);
+      throw stage === null ? error : new PlqError(`${stage}: ${message}`);
+    }
+  };
   if (outPath !== undefined) {
     if (/\.(parquet|pq)$/i.test(outPath)) {
-      await runSql(connection, copyToSql(compiled, outPath));
+      await execute(copyToSql(compiled, outPath), 1);
       return `wrote ${outPath}\n`;
     }
     // CSV/JSON files use the same formatter as stdout, so a file and the
@@ -528,11 +626,11 @@ async function cmdRun(args: Args): Promise<string> {
     if (outFormat === null) {
       throw new UsageError("--out must end in .csv, .parquet, or .json");
     }
-    const result = await runSql(connection, compiled);
+    const result = await execute(compiled);
     writeFileSync(outPath, `${formatResult(result, outFormat)}\n`, "utf8");
     return `wrote ${outPath}\n`;
   }
-  const result = await runSql(connection, compiled);
+  const result = await execute(compiled);
   return `${formatResult(result, format)}\n`;
 }
 
@@ -569,7 +667,8 @@ async function refreshSnapshot(connection: DuckDBConnection,
   const snapshot = `${database}.schema.json`;
   if (!existsSync(snapshot)) return;
   const { introspectDatabase } = await loadDuckDB();
-  const fresh = await introspectDatabase(connection);
+  // persistentOnly: this run's temporary '# source' tables are not in the database.
+  const fresh = await introspectDatabase(connection, { persistentOnly: true });
   writeFileSync(snapshot, snapshotText(fresh), "utf8");
 }
 
@@ -725,9 +824,14 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
     else if (command === "schema") stdout = await cmdSchema(args);
     else if (command === "import") stdout = await cmdImport(args);
     else stdout = await cmdRun(args);
-    return { code: 0, stdout, stderr: "" };
+    const notes = pendingNotes.join("");
+    pendingNotes = [];
+    return { code: 0, stdout, stderr: notes };
   } catch (error) {
-    return errorResult(error);
+    const failure = errorResult(error);
+    failure.stderr = pendingNotes.join("") + failure.stderr;
+    pendingNotes = [];
+    return failure;
   } finally {
     await closeDuckDBQuietly();
   }

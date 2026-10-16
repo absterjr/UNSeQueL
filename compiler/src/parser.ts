@@ -654,7 +654,13 @@ function parseStageBody(
       }
       const firstWord = firstSqlWord(text);
       if (firstWord !== "SELECT" && firstWord !== "WITH") {
-        reader.fail("sql stage must be a query; start it with SELECT or WITH", token);
+        // A hatch runs inside the query; it cannot build a table for later stages.
+        const intended = /^create\s+(?:or\s+replace\s+)?(?:table|view)\s+["`]?([A-Za-z_][A-Za-z0-9_]*)/i
+          .exec(text.trim());
+        const hint = intended === null ? ""
+          : `; a sql hatch cannot create tables: use 'create table ${intended[1]} = (...)' `
+            + "or 'unsequel import', then query the table in a later run";
+        reader.fail(`sql stage must be a query; start it with SELECT or WITH${hint}`, token);
       }
       return { ...base(index, keyword, span), kind: "sql", text } satisfies RawSqlStage;
     }
@@ -1010,7 +1016,14 @@ function parsePrimary(reader: TokenReader, context: ExprContext): Expr {
   if (!token) reader.fail("expected an expression");
   if (token.type === "number") {
     reader.advance();
-    return { kind: "literal", value: Number(token.value), span: tokenSpan(token) };
+    // Keep the source text: codegen emits it verbatim so large integers and
+    // long decimals never round; `value` is only for type inference.
+    return {
+      kind: "literal",
+      value: Number(token.value),
+      raw: token.value,
+      span: tokenSpan(token),
+    };
   }
   if (token.type === "string") {
     reader.advance();

@@ -15,7 +15,7 @@ fail=0; count=0
 check() {  # name, then the shared run arguments
   local name=$1; shift
   count=$((count + 1))
-  $TS run "$@" --format csv < /dev/null 2>&1 | tail -n +2 | sort > "$work/ts.csv"
+  $TS run "$@" --format csv < /dev/null 2>&1 | grep -v '^note:' | tail -n +2 | sort > "$work/ts.csv"
   $PY run "$@" --format csv $PYFLAGS < /dev/null 2>&1 | grep -v '^note:' | tail -n +2 | sort > "$work/py.csv"
   if ! diff -q "$work/ts.csv" "$work/py.csv" > /dev/null; then
     fail=$((fail + 1)); echo "DIFF $name"; diff "$work/ts.csv" "$work/py.csv" | head -8 | sed 's/^/    /'
