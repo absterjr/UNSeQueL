@@ -250,6 +250,17 @@ describe("lexer: lexical edge cases", () => {
       .map((token) => token.value)).toEqual(["1.2", ".", "3"]);
   });
 
+  it("tokenizes scientific notation with an optional signed exponent", () => {
+    const numbers = (source: string) => tokenize(source)
+      .filter((token) => token.type === "number").map((token) => token.value);
+    expect(numbers("filter a > 1e20")).toEqual(["1e20"]);
+    expect(numbers("filter a > 1.5e-3")).toEqual(["1.5e-3"]);
+    expect(numbers("filter a > 2E+4")).toEqual(["2E+4"]);
+    // "1e" has no exponent digits, so it is the number 1 and an identifier.
+    expect(tokenize("filter a > 1e").map((token) => token.value))
+      .toEqual(["filter", "a", ">", "1", "e", ""]);
+  });
+
   it("treats double dash as a comment even next to subtraction", () => {
     expect(tokenize("filter a--b").map((token) => token.value))
       .toEqual(["filter", "a", ""]);

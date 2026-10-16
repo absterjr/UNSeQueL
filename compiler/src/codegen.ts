@@ -804,15 +804,21 @@ export function emitSql(program: Program, schema: Schema, options: EmitOptions =
   return `WITH ${body}\n${finalOrder}`;
 }
 
+/** One write statement of a `create`/`into` program. */
+export interface StatementBlock {
+  index: number;
+  kind: "create" | "into";
+  sql: string;
+}
+
 /**
  * Statement programs (`create`/`into`) emit one complete statement per write
- * stage; each nested program becomes an inline `WITH` block, so the whole
- * program is a multi-statement script. `stopAt` does not apply — there are no
- * pipeline units to truncate.
+ * stage; each nested program becomes an inline `WITH` block. `stopAt` does not
+ * apply — there are no pipeline units to truncate.
  */
-function emitStatements(program: Program, schema: Schema): string {
+export function emitStatementList(program: Program, schema: Schema): StatementBlock[] {
   const nextOrderName = orderNameFactory(program, schema);
-  const statements: string[] = [];
+  const blocks: StatementBlock[] = [];
   for (const stage of program) {
     if (stage.kind !== "create" && stage.kind !== "into") continue;
     const context: ChainContext = { schema, ctes: [], nextOrderName };
@@ -830,15 +836,26 @@ function emitStatements(program: Program, schema: Schema): string {
       .join(",\n");
     const select = `SELECT * FROM ${inner.lastCte}`;
     if (stage.kind === "create") {
-      statements.push(
-        `${stage.replace ? "CREATE OR REPLACE" : "CREATE"} ${stage.object.toUpperCase()} `
-        + `${ident(stage.name)} AS\n`
-        + `WITH ${body}\n${select};`);
+      blocks.push({
+        index: stage.index,
+        kind: stage.kind,
+        sql: `${stage.replace ? "CREATE OR REPLACE" : "CREATE"} ${stage.object.toUpperCase()} `
+          + `${ident(stage.name)} AS\n`
+          + `WITH ${body}\n${select};`,
+      });
       schema = withCreatedTable(schema, stage.name,
         inner.live.map((column) => [column, "unknown"] as const));
     } else {
-      statements.push(`INSERT INTO ${ident(stage.name)} BY NAME\nWITH ${body}\n${select};`);
+      blocks.push({
+        index: stage.index,
+        kind: stage.kind,
+        sql: `INSERT INTO ${ident(stage.name)} BY NAME\nWITH ${body}\n${select};`,
+      });
     }
   }
-  return statements.join("\n");
+  return blocks;
+}
+
+function emitStatements(program: Program, schema: Schema): string {
+  return emitStatementList(program, schema).map((block) => block.sql).join("\n");
 }

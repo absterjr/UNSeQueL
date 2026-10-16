@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.0 — 2026-10-16
+
+- Grammar v1.5: scientific-notation literals (`1e20`, `1.5e-3`) and type
+  parameters on `CAST` (`CAST(x AS DECIMAL(10,2))`), in both tracks.
+- Number output, unified: CSV/JSON `--out` files go through the stdout
+  formatter; `DECIMAL` prints DuckDB's text in CSV and a JSON number at
+  DuckDB's scale when the digits round-trip (exact text otherwise); `HUGEINT`
+  beyond 2^53 stays exact text in JSON; `-0.0` prints `0`; booleans print
+  `true`/`false` in CSV. New `examples/edge/` fixtures pin these spellings,
+  and parity now also runs the default DuckDB engine (28/28 identical).
+- `check` parity: TypeScript checks columns whenever it can load the sources
+  (bundled DuckDB), and says `valid UNSeQueL program (syntax OK; columns not
+  checked)` otherwise; Python parses first, so parse errors surface without a
+  schema; both tracks print the same success lines.
+- Statement programs name their stage on failure (`stage 2 (into): ...`) and
+  still run as one transaction; a write refreshes `<db>.schema.json` when one
+  exists.
+- The Python DuckDB path types CSVs with DuckDB's whole-file sniffer instead
+  of the row-by-row Python sniffer (a 100 MB input no longer costs gigabytes
+  of Python memory; CI enforces a memory ceiling).
+- The VS Code extension finds an unzipped run bundle (`unsequel-run/` next to
+  the workspace or in the home directory) before falling back to PATH, and
+  its warning links to Releases.
+- CI: parity runs both engines; the PyInstaller smoke test runs `check` and
+  `compile`.
+
 ## 0.5.0 — 2026-10-16
 
 - Write statements, completed: `create or replace table|view = (pipeline)`

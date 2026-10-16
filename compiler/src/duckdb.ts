@@ -81,6 +81,16 @@ async function duckdbApi(): Promise<DuckDBApi> {
   return cachedApi;
 }
 
+/** Whether the DuckDB engine can load (check falls back to syntax-only without it). */
+export async function engineAvailable(): Promise<boolean> {
+  try {
+    await duckdbApi();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export type Row = Record<string, unknown>;
 
 export interface SqlResult {
@@ -313,12 +323,35 @@ export function alreadyExists(error: unknown): { kind: string; name: string } | 
     : { kind: (match[1] as string).toLowerCase(), name: match[2] as string };
 }
 
-/** Execute a (possibly multi-statement) script for create/into programs. */
-export async function runStatements(connection: DuckDBConnection, sql: string): Promise<void> {
+/** One labeled statement of a create/into program. */
+export interface RunStatement {
+  label: string;
+  sql: string;
+}
+
+/**
+ * Execute the statements of a create/into program as one transaction. Each
+ * statement runs on its own so a failure can name the stage that produced the
+ * SQL instead of pointing at an anonymous generated script.
+ */
+export async function runStatements(connection: DuckDBConnection,
+                                    statements: readonly RunStatement[]): Promise<void> {
   try {
     // All statements commit together or not at all (DuckDB DDL is transactional).
     await connection.run("BEGIN TRANSACTION");
-    await connection.run(sql);
+    for (const statement of statements) {
+      try {
+        await connection.run(statement.sql);
+      } catch (error) {
+        const exists = alreadyExists(error);
+        if (exists !== null) {
+          throw new PlqError(`${exists.kind} '${exists.name}' already exists; use `
+            + `'create or replace ${exists.kind} ${exists.name} = (...)' to overwrite it`);
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        throw new PlqError(`${statement.label}: ${message}`);
+      }
+    }
     await connection.run("COMMIT");
   } catch (error) {
     try {
@@ -326,12 +359,7 @@ export async function runStatements(connection: DuckDBConnection, sql: string): 
     } catch {
       // no transaction was open
     }
-    const exists = alreadyExists(error);
-    if (exists !== null) {
-      throw new PlqError(`${exists.kind} '${exists.name}' already exists; use `
-        + `'create or replace ${exists.kind} ${exists.name} = (...)' to overwrite it`);
-    }
-    throw new PlqError(`DuckDB error: ${(error as Error).message}`);
+    throw error;
   }
 }
 
@@ -380,14 +408,20 @@ export async function runSql(connection: DuckDBConnection, sql: string): Promise
     const reader = await connection.runAndReadAll(sql);
     const columns = reader.columnNames();
     const rows = reader.getRowObjectsJS() as Row[];
-    // Temporal values use DuckDB's own text ("2024-01-01 00:00:00.123456"), as the
-    // Python track prints them; a JS Date would add a 'Z' and drop microseconds.
-    const temporal = reader.columnTypes().map((type) => /^(DATE|TIME)/.test(String(type)));
-    if (temporal.some(Boolean)) {
+    // getRowObjectsJS coerces DECIMAL/BIGINT to JS numbers, which loses scale
+    // ("4.00" -> 4) and exactness; temporal values also need DuckDB's own text
+    // ("2024-01-01 00:00:00.123456" without a 'Z'/microsecond loss). Those
+    // columns keep the raw values instead; output.ts spells them out.
+    const types = reader.columnTypes().map((type) => String(type));
+    const temporal = types.map((type) => /^(DATE|TIME)/.test(type));
+    const exact = types.map((type) => /^(DECIMAL|BIGINT|UBIGINT)/.test(type));
+    if (temporal.some(Boolean) || exact.some(Boolean)) {
       const raw = reader.getRowObjects();
       rows.forEach((row, r) => {
         columns.forEach((name, i) => {
-          if (temporal[i] && row[name] !== null) row[name] = String(raw[r]?.[name]);
+          if (row[name] === null) return;
+          if (temporal[i]) row[name] = String(raw[r]?.[name]);
+          else if (exact[i]) row[name] = raw[r]?.[name];
         });
       });
     }

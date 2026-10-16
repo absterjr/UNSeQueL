@@ -5,12 +5,35 @@
 // pipe `unsequel run <file> [--lines A:B]` into a terminal so the file's own
 // `# source` directives supply the connection.
 
+const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const vscode = require("vscode");
 const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
 
+const RELEASES_URL = "https://github.com/absterjr/UNSeQueL/releases/latest";
+
+function binaryName() {
+  return process.platform === "win32" ? "unsequel.exe" : "unsequel";
+}
+
+/**
+ * Resolve the CLI: an explicit `unsequel.executable` wins; otherwise look for
+ * an unzipped run bundle (an `unsequel-run/` folder next to the workspace or
+ * in the home directory) before falling back to PATH.
+ */
 function executable() {
-  return vscode.workspace.getConfiguration("unsequel").get("executable", "unsequel");
+  const configured = vscode.workspace.getConfiguration("unsequel").get("executable", "unsequel");
+  if (configured !== "unsequel") return configured;
+  const candidates = [];
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    candidates.push(path.join(folder.uri.fsPath, "unsequel-run", binaryName()));
+  }
+  candidates.push(path.join(os.homedir(), "unsequel-run", binaryName()));
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return "unsequel";
 }
 
 function schemaSetting() {
@@ -32,12 +55,17 @@ function startLanguageClient() {
     initializationOptions: { schemaPath: schemaSetting() },
   };
   client = new LanguageClient("unsequel", "UNSeQueL", serverOptions, clientOptions);
-  client.start().catch((error) => {
-    void vscode.window.showWarningMessage(
-      "UNSeQueL: language features need the 'unsequel' CLI (npm i -g unsequel, "
-      + "or the standalone compile exe). Set unsequel.executable to its path. "
-      + `Details: ${error.message}`,
+  client.start().catch(async (error) => {
+    const pick = await vscode.window.showWarningMessage(
+      "UNSeQueL: language features need the 'unsequel' CLI (npm i -g unsequel) or "
+      + "the standalone exe (unzip the run bundle so that unsequel-run/ sits next "
+      + "to your workspace or in your home directory). Set unsequel.executable "
+      + `to its path. Details: ${error.message}`,
+      "Open Releases",
     );
+    if (pick === "Open Releases") {
+      void vscode.env.openExternal(vscode.Uri.parse(RELEASES_URL));
+    }
   });
 }
 

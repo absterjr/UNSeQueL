@@ -32,7 +32,7 @@ const TEMPORAL = new Set(["date", "time", "timestamp", "datetime"]);
 
 export function typeFamily(name: string | null | undefined): TypeFamily {
   if (name === null || name === undefined) return "unknown";
-  const key = name.trim().toLowerCase();
+  const key = name.trim().toLowerCase().split("(")[0]!.trim(); // DECIMAL(10,2) is numeric
   if (NUMERIC.has(key)) return "numeric";
   if (TEXT.has(key)) return "text";
   if (BOOLEAN.has(key)) return "boolean";

@@ -170,8 +170,8 @@ class UnsequelCliTests(unittest.TestCase):
             out, code = run_cli("run", QUERY, "--schema", SCHEMA, *DATA,
                                 "--out", str(json_path))
             self.assertEqual(code, 0)
-            first = json.loads(json_path.read_text(encoding="utf-8").splitlines()[0])
-            self.assertEqual(set(first), {"country", "orders"})
+            rows = json.loads(json_path.read_text(encoding="utf-8"))
+            self.assertEqual(set(rows[0]), {"country", "orders"})
 
     @unittest.skipUnless(HAS_DUCKDB, "duckdb is not installed")
     def test_out_parquet_via_duckdb(self):
@@ -328,6 +328,123 @@ class UnsequelCliTests(unittest.TestCase):
         out, code = run_cli("check", QUERY, "--schema", SCHEMA)
         self.assertEqual(code, 0)
         self.assertIn("valid UNSeQueL program (schema OK)", out)
+
+    def test_check_reports_syntax_only_without_schema_or_sources(self):
+        out, code = run_cli("check", QUERY)
+        self.assertEqual(code, 0)
+        self.assertIn("valid UNSeQueL program (syntax OK; columns not checked)", out)
+
+    def test_check_surfaces_parse_errors_without_a_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "broken.unsequel"
+            path.write_text("from orders\nfilter quantity >\n", encoding="utf-8")
+            out, code = run_cli("check", str(path))
+            self.assertEqual(code, 1)
+            self.assertIn("stage 2 (filter)", out)
+
+    def test_check_validates_columns_from_source_directives(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            orders = (SPEC / "orders.csv").resolve()
+            good = directory / "good.unsequel"
+            good.write_text(f"# source orders: {orders}\nfrom orders\n"
+                            "filter quantity > 1\n", encoding="utf-8")
+            out, code = run_cli("check", str(good))
+            self.assertEqual((code, "valid UNSeQueL program (schema OK)" in out), (0, True))
+
+            bad = directory / "bad.unsequel"
+            bad.write_text(f"# source orders: {orders}\nfrom orders\n"
+                           "filter missing > 1\n", encoding="utf-8")
+            out, code = run_cli("check", str(bad))
+            self.assertEqual(code, 1)
+            self.assertIn("stage 2 (filter)", out)
+
+    def test_number_spellings_edge_fixture(self):
+        edge = "compiler/examples/edge/e01_number_spellings.unsequel"
+        out, code = run_cli("run", edge, "--format", "csv", "--engine", "duckdb")
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            out.splitlines()[0],
+            "dec,half,tiny,sci,wideint,negzero,hugebig,wide,flag")
+        self.assertIn("4.00,1,4e-7,4e+21,400000000000000000000,0,"
+                      "9007199254740993,1234567890123456789012,true", out)
+
+        out, code = run_cli("run", edge, "--format", "json", "--engine", "duckdb")
+        self.assertEqual(code, 0)
+        rows = json.loads(out)
+        self.assertEqual(rows[0], {
+            "dec": 4,
+            "half": 1,
+            "tiny": 4e-7,
+            "sci": 4e21,
+            "wideint": "400000000000000000000",
+            "negzero": 0,
+            "hugebig": "9007199254740993",
+            "wide": "1234567890123456789012",
+            "flag": True,
+        })
+        self.assertEqual(rows[1]["sci"], 1e22)
+
+    def test_statement_program_names_the_failing_stage_and_rolls_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            database = directory / "warehouse.duckdb"
+            orders = (SPEC / "orders.csv").resolve()
+            program = directory / "bad.unsequel"
+            program.write_text(
+                f"# source orders: {orders}\n"
+                f"# db: {database}\n"
+                "create table plain = (from orders | select country, "
+                "n = CAST(quantity AS BIGINT))\n"
+                "into plain (from plain | select country, "
+                "n = CAST('abc' AS INTEGER))\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(program), "--create-db")
+            self.assertEqual(code, 1)
+            self.assertIn("stage 2 (into)", out)
+
+            readback = directory / "readback.unsequel"
+            readback.write_text("from plain\n", encoding="utf-8")
+            out, code = run_cli("run", str(readback), "--db", str(database))
+            self.assertEqual(code, 1)
+            self.assertIn("plain", out)
+
+    def test_write_refreshes_an_existing_schema_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            database = directory / "warehouse.duckdb"
+            snapshot = Path(f"{database}.schema.json")
+            snapshot.write_text('{\n  "tables": {}\n}\n', encoding="utf-8")
+            orders = (SPEC / "orders.csv").resolve()
+            create = directory / "create.unsequel"
+            create.write_text(
+                f"# source orders: {orders}\n"
+                "create table summary = (from orders | group by country | "
+                "aggregate n = COUNT(*))\n",
+                encoding="utf-8")
+            out, code = run_cli("run", str(create), "--db", str(database),
+                                "--create-db")
+            self.assertEqual(code, 0)
+            refreshed = json.loads(snapshot.read_text(encoding="utf-8"))
+            self.assertIn("summary", refreshed["tables"])
+            self.assertEqual(list(refreshed["tables"]["summary"]["columns"]),
+                             ["country", "n"])
+
+    def test_parser_accepts_cast_type_parameters_and_exponents(self):
+        from unsequel.errors import LocatedError
+        from unsequel.grammar import parse_program
+
+        program = parse_program(
+            "from orders\nselect money = CAST(total AS DECIMAL(10,2)), cap = 1e20\n")
+        select = program[1]
+        money = select.items[0].expr
+        cap = select.items[1].expr
+        self.assertEqual(money.type_name, "DECIMAL(10,2)")
+        self.assertEqual(cap.value, 1e20)
+
+        with self.assertRaises(LocatedError) as raised:
+            parse_program("from orders\nselect x = CAST(a AS DECIMAL(1.5))\n")
+        self.assertIn("type parameter", str(raised.exception))
 
     def test_check_reports_stage_located_semantic_errors(self):
         with tempfile.TemporaryDirectory() as tmp:

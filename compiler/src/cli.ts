@@ -11,7 +11,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
-import { emitSql } from "./codegen.js";
+import { emitSql, emitStatementList } from "./codegen.js";
 import type { Program } from "./ast.js";
 import { splitDirectives, type Directives } from "./directives.js";
 import type { ConnectOptions, DuckDBConnection, SourceOptions } from "./duckdb.js";
@@ -38,7 +38,7 @@ export interface CliResult {
   stderr: string;
 }
 
-export const VERSION = "0.5.0";
+export const VERSION = "0.6.0";
 
 const USAGE = `unsequel ${VERSION}
 UNSeQueL query language compiler
@@ -353,32 +353,39 @@ function sqlString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-/** Wrap a compiled program in a DuckDB COPY so results land in a file. */
+/** Wrap a compiled program in a DuckDB COPY so results land in a Parquet file. */
 function copyToSql(sql: string, path: string): string {
   const inner = sql.trimEnd().replace(/;$/, "");
-  const lowered = path.toLowerCase();
-  const options = lowered.endsWith(".csv") ? " (FORMAT CSV, HEADER)"
-    : lowered.endsWith(".parquet") || lowered.endsWith(".pq") ? " (FORMAT PARQUET)"
-      : lowered.endsWith(".json") ? " (FORMAT JSON)"
-        : null;
-  if (options === null) {
+  if (!/\.(parquet|pq)$/i.test(path)) {
     throw new UsageError("--out must end in .csv, .parquet, or .json");
   }
-  return `COPY (\n${inner}\n) TO ${sqlString(path)}${options}`;
+  return `COPY (\n${inner}\n) TO ${sqlString(path)} (FORMAT PARQUET)`;
 }
 
 // --------------------------------------------------------------------------- //
 // Commands
 // --------------------------------------------------------------------------- //
 
-function cmdCheck(args: Args): string {
+async function cmdCheck(args: Args): Promise<string> {
   const { path, program, directives } = readQueryInput(args);
-  const schema = declaredSchema(args, directives, path);
-  if (schema !== null) {
-    analyze(program, schema);
-    return "valid UNSeQueL query (schema OK)\n";
+  const declared = declaredSchema(args, directives, path);
+  if (declared !== null) {
+    analyze(program, declared);
+    return "valid UNSeQueL program (schema OK)\n";
   }
-  return "valid UNSeQueL query\n";
+  const sources = mergeSources(directives, args, path);
+  const database = databasePath(args, directives, path);
+  const attachCount = attachSources(args).size;
+  const syntaxOnly = "valid UNSeQueL program (syntax OK; columns not checked)\n";
+  if (sources.size === 0 && database === undefined && attachCount === 0) {
+    return syntaxOnly;
+  }
+  const { connect, engineAvailable, introspectDatabase } = await loadDuckDB();
+  if (!(await engineAvailable())) return syntaxOnly;
+  const connection = await connect(sources, connectOptions(args, sources, database));
+  const schema = await introspectDatabase(connection);
+  analyze(program, schema);
+  return "valid UNSeQueL program (schema OK)\n";
 }
 
 async function cmdCompile(args: Args): Promise<string> {
@@ -488,7 +495,12 @@ async function cmdRun(args: Args): Promise<string> {
     const schema = declaredSchema(args, directives, path) ?? await introspectDatabase(connection);
     analyze(program, schema);
     rejectViewsOverTemporarySources(program, sources);
-    await runStatements(connection, emitSql(program, schema));
+    const blocks = emitStatementList(program, schema);
+    await runStatements(connection, blocks.map((block) => ({
+      label: `stage ${block.index} (${block.kind})`,
+      sql: block.sql,
+    })));
+    await refreshSnapshot(connection, database);
     const count = program.filter(
       (stage) => stage.kind === "create" || stage.kind === "into").length;
     return `applied ${count} statement(s)\n`;
@@ -506,7 +518,18 @@ async function cmdRun(args: Args): Promise<string> {
   analyze(program, schema);
   const compiled = emitSql(program, schema);
   if (outPath !== undefined) {
-    await runSql(connection, copyToSql(compiled, outPath));
+    if (/\.(parquet|pq)$/i.test(outPath)) {
+      await runSql(connection, copyToSql(compiled, outPath));
+      return `wrote ${outPath}\n`;
+    }
+    // CSV/JSON files use the same formatter as stdout, so a file and the
+    // screen never disagree about how a value is spelled.
+    const outFormat = /\.csv$/i.test(outPath) ? "csv" : /\.json$/i.test(outPath) ? "json" : null;
+    if (outFormat === null) {
+      throw new UsageError("--out must end in .csv, .parquet, or .json");
+    }
+    const result = await runSql(connection, compiled);
+    writeFileSync(outPath, `${formatResult(result, outFormat)}\n`, "utf8");
     return `wrote ${outPath}\n`;
   }
   const result = await runSql(connection, compiled);
@@ -531,6 +554,25 @@ function cmdFmt(args: Args): string {
   return formatted;
 }
 
+function snapshotText(schema: Schema): string {
+  const tables: Record<string, { columns: Record<string, string> }> = {};
+  for (const [name, table] of schema.tables) {
+    tables[name] = { columns: Object.fromEntries(table.columns) };
+  }
+  return `${JSON.stringify({ tables }, null, 2)}\n`;
+}
+
+/** Keep '<db>.schema.json' fresh after a write; a stale snapshot misleads the LSP. */
+async function refreshSnapshot(connection: DuckDBConnection,
+                               database: string | undefined): Promise<void> {
+  if (database === undefined) return;
+  const snapshot = `${database}.schema.json`;
+  if (!existsSync(snapshot)) return;
+  const { introspectDatabase } = await loadDuckDB();
+  const fresh = await introspectDatabase(connection);
+  writeFileSync(snapshot, snapshotText(fresh), "utf8");
+}
+
 async function cmdSchema(args: Args): Promise<string> {
   const database = flag(args, "db");
   const sources = dataSources(args, true);
@@ -542,11 +584,7 @@ async function cmdSchema(args: Args): Promise<string> {
   const { connect, introspectDatabase } = await loadDuckDB();
   const connection = await connect(sources, connectOptions(args, sources, database));
   const schema = await introspectDatabase(connection);
-  const tables: Record<string, { columns: Record<string, string> }> = {};
-  for (const [name, table] of schema.tables) {
-    tables[name] = { columns: Object.fromEntries(table.columns) };
-  }
-  const text = `${JSON.stringify({ tables }, null, 2)}\n`;
+  const text = snapshotText(schema);
   if (outPath === "-") return text;
   if (outPath !== undefined) {
     writeFileSync(outPath, text, "utf8");
@@ -587,6 +625,7 @@ async function cmdImport(args: Args): Promise<string> {
     createDatabase: true, // import's job is to build a database
   });
   await importTableSource(connection, name, file, options, args.flags.has("replace"));
+  await refreshSnapshot(connection, target);
   // Say so when the file is new, so a mistyped --into path is visible.
   return `${created ? `created new database ${target}\n` : ""}`
     + `imported ${file} into ${target} as ${name}\n`;
@@ -630,7 +669,7 @@ function errorResult(error: unknown): CliResult {
 const KNOWN_COMMANDS = ["check", "compile", "preview", "run", "fmt", "repl", "schema", "import"] as const;
 
 const ALLOWED_FLAGS: Record<string, readonly string[]> = {
-  check: ["schema", "lines"],
+  check: ["schema", "lines", "data", "delimiter", "column-type", "db", "attach"],
   compile: ["schema", "stage", "lines", "data", "delimiter", "column-type", "db", "attach"],
   preview: ["schema", "stage", "limit", "data", "lines", "delimiter", "column-type",
             "db", "attach"],
@@ -678,7 +717,7 @@ export async function runCli(argv: readonly string[]): Promise<CliResult> {
   try {
     const args = commandArgs(command, argv.slice(1));
     let stdout: string;
-    if (command === "check") stdout = cmdCheck(args);
+    if (command === "check") stdout = await cmdCheck(args);
     else if (command === "compile") stdout = await cmdCompile(args);
     else if (command === "preview") stdout = await cmdPreview(args);
     else if (command === "fmt") stdout = cmdFmt(args);

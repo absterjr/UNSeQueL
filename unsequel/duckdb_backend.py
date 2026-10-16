@@ -12,12 +12,14 @@ tables**, which never persist over database contents.
 
 from __future__ import annotations
 
+import csv
+import io as _iostd
 import re
 from pathlib import Path
 
 from .codegen import _ident
 from .errors import UnsequelError
-from .io import infer_csv_types
+from .io import _normalise_column_types
 from .model import Table
 from .schema import Schema
 
@@ -41,7 +43,91 @@ def _import_duckdb():
     return duckdb
 
 
-def _reader(path: str, *, delimiter: str | None = None,
+_HEADER_BYTES = 1 << 16
+
+_DUCKDB_TYPE_ALIASES = {
+    "text": "VARCHAR", "integer": "BIGINT", "number": "DOUBLE",
+    "boolean": "BOOLEAN", "date": "DATE", "time": "TIME", "timestamp": "TIMESTAMP",
+}
+
+# The only types the CSV sniffer may pick; TypeScript's inference uses the same set.
+_CSV_TYPE_CANDIDATES = (
+    "auto_type_candidates=['BIGINT', 'DOUBLE', 'DATE', 'TIMESTAMP', 'VARCHAR']")
+
+
+def _csv_header(path: str, delimiter: str) -> list[str]:
+    """The CSV header, validated: present, with no empty or duplicate names."""
+    with open(path, "rb") as handle:
+        sample = handle.read(_HEADER_BYTES)
+    reader = csv.reader(_iostd.StringIO(sample.decode("utf-8-sig"), newline=""),
+                        delimiter=delimiter)
+    header = next(reader, None)
+    if not header:
+        raise UnsequelError(f"CSV file has no header: {path}")
+    seen: set[str] = set()
+    for column in header:
+        if column.strip() == "":
+            raise UnsequelError(f"CSV file has an empty column name: {path}")
+        lowered = column.casefold()
+        if lowered in seen:
+            raise UnsequelError(f"CSV file has duplicate column {column!r}: {path}")
+        seen.add(lowered)
+    return header
+
+
+def _infer_csv_types(con, path: str, delimiter: str,
+                     column_types: dict[str, str] | None) -> dict[str, str]:
+    """Whole-file CSV typing by DuckDB's own sniffer (`sample_size=-1`), like
+    TypeScript: a late zero-padded ZIP or a late 'N/A' decides the column's
+    type. Dates must be ISO; booleans, times and offset timestamps stay text.
+    One correction: DuckDB types integers too wide for BIGINT as DOUBLE, which
+    drops digits, so those columns stay text. Nothing is read into Python."""
+    header = _csv_header(path, delimiter)
+    known = {column.casefold() for column in header}
+    for name in column_types or {}:
+        if name.casefold() not in known:
+            raise UnsequelError(
+                f"column type override refers to unknown column {name!r} in {path}")
+
+    def read_csv(options: str) -> str:
+        return (f"read_csv_auto({_sql_string(path)}, "
+                f"delim={_sql_string(delimiter)}, header=true, {options})")
+
+    options = ("sample_size=-1, " + _CSV_TYPE_CANDIDATES
+               + ", dateformat='%Y-%m-%d'")
+    types: dict[str, str] = {}
+    try:
+        described = con.execute(
+            f"DESCRIBE SELECT * FROM {read_csv(options)}").fetchall()
+        for row in described:
+            types[str(row[0])] = str(row[1])
+        doubles = [column for column, type_name in types.items() if type_name == "DOUBLE"]
+        if doubles:
+            checks = []
+            for index, column in enumerate(doubles):
+                unpad = f"ltrim(trim({_ident(column)}), '+-')"
+                checks.append(
+                    f"bool_or(CASE WHEN length({unpad}) >= 16 "
+                    f"THEN regexp_full_match({unpad}, '\\d+') ELSE false END) AS w{index}")
+            wide = con.execute(
+                f"SELECT {', '.join(checks)} FROM {read_csv('all_varchar=true')}"
+            ).fetchone()
+            for index, column in enumerate(doubles):
+                if wide is not None and wide[index] is True:
+                    types[column] = "VARCHAR"
+    except UnsequelError:
+        raise
+    except Exception as exc:
+        raise UnsequelError(f"could not read {path}: {exc}") from exc
+    overrides = _normalise_column_types(column_types or {})
+    for column in list(types):
+        override = overrides.get(column.casefold())
+        if override is not None:
+            types[column] = _DUCKDB_TYPE_ALIASES.get(override, override.upper())
+    return types
+
+
+def _reader(con, path: str, *, delimiter: str | None = None,
             column_types: dict[str, str] | None = None) -> str:
     lowered = path.lower()
     if lowered.endswith(".json"):
@@ -66,11 +152,11 @@ def _reader(path: str, *, delimiter: str | None = None,
             raise UnsequelError("--column-type is only supported for CSV/JSON inputs")
         return f"read_parquet({_sql_string(path)})"
 
-    types = infer_csv_types(path, delimiter, column_types)
+    types = _infer_csv_types(con, path, delimiter or ",", column_types)
     types_sql = ", ".join(f"{_sql_string(column)}: {_sql_string(type_name)}"
                            for column, type_name in types.items())
     delimiter_sql = _sql_string(delimiter or ",")
-    return (f"read_csv_auto({_sql_string(path)}, delim={delimiter_sql}, "
+    return (f"read_csv_auto({_sql_string(path)}, delim={delimiter_sql}, header=true, "
             f"types={{{types_sql}}})")
 
 
@@ -106,7 +192,7 @@ def connect(data: dict[str, str], *, delimiter: str | None = None,
         try:
             con.execute(
                 f"CREATE OR REPLACE TEMP TABLE {_ident(name)} AS SELECT * FROM "
-                f"{_reader(str(path), delimiter=delimiter, column_types=table_types)}")
+                f"{_reader(con, str(path), delimiter=delimiter, column_types=table_types)}")
         except Exception as exc:
             raise UnsequelError(
                 f"could not load data file {path}: {exc}") from exc
@@ -123,7 +209,7 @@ def describe_source(path: str, *, delimiter: str | None = None,
     try:
         cursor = con.execute(
             "DESCRIBE SELECT * FROM "
-            f"{_reader(str(path), delimiter=delimiter, column_types=column_types)}")
+            f"{_reader(con, str(path), delimiter=delimiter, column_types=column_types)}")
         return [(str(row[0]), str(row[1])) for row in cursor.fetchall()]
     except Exception as exc:
         raise UnsequelError(f"could not inspect data file {path}: {exc}") from exc
@@ -179,7 +265,7 @@ def import_table(con, name: str, path: str, *, delimiter: str | None = None,
     try:
         con.execute(
             f"{verb} {_ident(name)} AS SELECT * FROM "
-            f"{_reader(str(path), delimiter=delimiter, column_types=column_types)}")
+            f"{_reader(con, str(path), delimiter=delimiter, column_types=column_types)}")
     except Exception as exc:
         existing = _already_exists(exc)
         if existing:
@@ -188,25 +274,33 @@ def import_table(con, name: str, path: str, *, delimiter: str | None = None,
         raise UnsequelError(f"could not import {path}: {exc}") from exc
 
 
-def run_script(con, sql: str) -> None:
-    """Execute a (possibly multi-statement) script for create/into programs."""
+def run_script(con, statements: "list[tuple[str, str]]") -> None:
+    """Execute the labeled statements of a create/into program as one transaction.
+
+    Statements run one at a time so a failure can name the stage that produced
+    the SQL instead of pointing at an anonymous generated script.
+    """
     try:
         # All statements commit together or not at all (DuckDB DDL is transactional).
         con.execute("BEGIN TRANSACTION")
-        con.execute(sql)
+        for label, statement in statements:
+            try:
+                con.execute(statement)
+            except Exception as exc:
+                existing = _already_exists(exc)
+                if existing:
+                    kind, name = existing
+                    raise UnsequelError(
+                        f"{kind} '{name}' already exists; use "
+                        f"'create or replace {kind} {name} = (...)' to overwrite it") from exc
+                raise UnsequelError(f"{label}: {exc}") from exc
         con.execute("COMMIT")
-    except Exception as exc:
+    except Exception:
         try:
             con.execute("ROLLBACK")
         except Exception:
             pass  # no transaction was open
-        existing = _already_exists(exc)
-        if existing:
-            kind, name = existing
-            raise UnsequelError(
-                f"{kind} '{name}' already exists; use "
-                f"'create or replace {kind} {name} = (...)' to overwrite it") from exc
-        raise UnsequelError(f"DuckDB error: {exc}") from exc
+        raise
 
 
 def fetch(con, sql: str) -> Table:

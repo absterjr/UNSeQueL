@@ -59,7 +59,32 @@ describe("cli: check", () => {
   it("parses and validates against a schema", async () => {
     const result = await runCli(["check", Q20, "--schema", SCHEMA]);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain("valid UNSeQueL query (schema OK)");
+    expect(result.stdout).toContain("valid UNSeQueL program (schema OK)");
+  });
+
+  it("validates columns when DuckDB can load the sources", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-check-"));
+    const orders = join(ROOT, "examples", "spec", "orders.csv").replace(/\\/g, "/");
+    const path = join(directory, "check.unsequel");
+    writeFileSync(path, `# source orders: ${orders}\nfrom orders\nfilter quantity > 1\n`);
+    try {
+      const result = await runCli(["check", path]);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain("valid UNSeQueL program (schema OK)");
+      const bad = join(directory, "bad.unsequel");
+      writeFileSync(bad, `# source orders: ${orders}\nfrom orders\nfilter missing > 1\n`);
+      const badResult = await runCli(["check", bad]);
+      expect(badResult.code).toBe(1);
+      expect(badResult.stderr).toContain("stage 2 (filter)");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reports syntax-only when there is no schema and no sources", async () => {
+    const result = await runCli(["check", Q20]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("valid UNSeQueL program (syntax OK; columns not checked)");
   });
 
   it("surfaces stage-located errors", async () => {
@@ -165,7 +190,7 @@ describe("cli: options and data validation", () => {
       writeFileSync(schemaPath, `\uFEFF${readFileSync(SCHEMA, "utf8")}`);
       const result = await runCli(["check", queryPath, "--schema", schemaPath]);
       expect(result.code).toBe(0);
-      expect(result.stdout).toContain("valid UNSeQueL query (schema OK)");
+      expect(result.stdout).toContain("valid UNSeQueL program (schema OK)");
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -268,8 +293,9 @@ describe("cli: output sinks", () => {
       ]);
       expect(jsonRun.code).toBe(0);
       const jsonText = readFileSync(json, "utf8").trim();
-      expect(jsonText.split("\n").length).toBeGreaterThanOrEqual(1);
-      expect(JSON.parse(jsonText.split("\n")[0] as string)).toHaveProperty("category");
+      expect(JSON.parse(jsonText)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ category: "home" }),
+      ]));
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -282,10 +308,105 @@ describe("cli: output sinks", () => {
     expect(result.code).toBe(2);
     expect(result.stderr).toContain("--out must end in");
   });
+
+  it("writes the same JSON with --out as --format json", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-outfmt-"));
+    try {
+      const json = join(directory, "result.json");
+      const outRun = await runCli(["run", Q20, "--schema", SCHEMA, "--out", json, ...DATA]);
+      expect(outRun.code).toBe(0);
+      const formatRun = await runCli(["run", Q20, "--schema", SCHEMA, "--format", "json", ...DATA]);
+      expect(formatRun.code).toBe(0);
+      expect(readFileSync(json, "utf8")).toBe(`${formatRun.stdout}`);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("cli: number spellings (edge fixture)", () => {
+  const EDGE = join(ROOT, "compiler", "examples", "edge", "e01_number_spellings.unsequel");
+
+  it("prints DuckDB's decimal text in CSV but JS-number rules in JSON", async () => {
+    const csv = await runCli(["run", EDGE, "--format", "csv"]);
+    expect(csv.code).toBe(0);
+    expect(csv.stdout.split("\n")[0])
+      .toBe("dec,half,tiny,sci,wideint,negzero,hugebig,wide,flag");
+    expect(csv.stdout)
+      .toContain("4.00,1,4e-7,4e+21,400000000000000000000,0,9007199254740993,"
+        + "1234567890123456789012,true");
+
+    const json = await runCli(["run", EDGE, "--format", "json"]);
+    expect(json.code).toBe(0);
+    const rows = JSON.parse(json.stdout) as Array<Record<string, unknown>>;
+    expect(rows[0]).toMatchObject({
+      dec: 4,
+      half: 1,
+      tiny: 4e-7,
+      // "1e21" renders with an exponent, so DuckDB types it DOUBLE...
+      sci: 4e21,
+      // ...while the plain-digit "100000000000000000000" is a HUGEINT, and
+      // the value beyond 2^53 stays exact text.
+      wideint: "400000000000000000000",
+      negzero: 0,
+      hugebig: "9007199254740993",
+      wide: "1234567890123456789012",
+      flag: true,
+    });
+    expect(rows[1]?.sci).toBe(1e22);
+    expect(rows[1]?.wideint).toBe("1000000000000000000000");
+  });
 });
 
 describe("cli: create/into and import (v1.4)", () => {
   const ordersCsv = join(ROOT, "examples", "spec", "orders.csv").replace(/\\/g, "/");
+
+  it("names the failing stage and rolls the whole program back", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-stage-"));
+    try {
+      const dbPath = join(directory, "warehouse.duckdb");
+      const file = join(directory, "bad.unsequel");
+      writeFileSync(file,
+        `# source orders: ${ordersCsv}\n`
+        + `# db: ${dbPath.replace(/\\/g, "/")}\n`
+        + "create table plain = (from orders | select country, n = CAST(quantity AS BIGINT))\n"
+        + "into plain (from plain | select country, n = CAST('abc' AS INTEGER))\n");
+      const result = await runCli(["run", file, "--create-db"]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("stage 2 (into)");
+
+      // The first statement is rolled back with the second.
+      const readback = join(directory, "readback.unsequel");
+      writeFileSync(readback, "from plain\n");
+      const read = await runCli(["run", readback, "--db", dbPath]);
+      expect(read.code).toBe(1);
+      expect(read.stderr).toContain("plain");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("refreshes an existing schema snapshot after a write", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "unsequel-snapshot-"));
+    try {
+      const dbPath = join(directory, "warehouse.duckdb");
+      const snapshot = `${dbPath}.schema.json`;
+      writeFileSync(snapshot, "{\n  \"tables\": {}\n}\n");
+      const create = join(directory, "create.unsequel");
+      writeFileSync(create,
+        `# source orders: ${ordersCsv}\n`
+        + "create table summary = (from orders | group by country | aggregate n = COUNT(*))\n");
+      const created = await runCli(["run", create, "--db", dbPath, "--create-db"]);
+      expect(created.code).toBe(0);
+      const refreshed = JSON.parse(readFileSync(snapshot, "utf8")) as {
+        tables: Record<string, { columns: Record<string, string> }>;
+      };
+      expect(Object.keys(refreshed.tables)).toContain("summary");
+      expect(Object.keys(refreshed.tables.summary?.columns ?? {})).toEqual(["country", "n"]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 
   it("creates a persistent table from a pipeline and reads it back", async () => {
     const directory = mkdtempSync(join(tmpdir(), "unsequel-create-"));

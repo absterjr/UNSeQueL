@@ -1,6 +1,6 @@
-# UNSeQueL Pipeline Language Specification v1.4
+# UNSeQueL Pipeline Language Specification v1.5
 
-Status: **frozen for v1.3**. Changes require a version bump and re-validation of the
+Status: **frozen for v1.5**. Changes require a version bump and re-validation of the
 reference queries in [`examples/reference/`](../examples/reference/).
 
 - **v1.0** — initial frozen grammar; 21 reference queries hand-validated.
@@ -30,6 +30,11 @@ reference queries in [`examples/reference/`](../examples/reference/).
   only in the top-level program, never combine with `from`, and require a
   database target (`# db:`/`--db`); they compile to
   `CREATE OR REPLACE TABLE/VIEW ... AS` and `INSERT INTO ...` statements.
+
+- **v1.5** — expression polish: scientific-notation number literals
+  (`1e20`, `1.5e-3`) and type parameters on `CAST` targets
+  (`CAST(x AS DECIMAL(10,2))`; parameters must be integers). No reference
+  query changes.
 
 Stack decisions are locked: TypeScript/Node compiler, DuckDB first target,
 hand-written recursive descent parser, one CTE per pipeline stage.
@@ -84,7 +89,7 @@ Worked map for the program above (7 grammar stages, 6 units):
 | identifier | `[A-Za-z_][A-Za-z0-9_]*`; qualified names are `identifier.identifier` |
 | quoted identifier | backtick-quoted single-line name; double backticks escape a backtick; quote each qualified part separately, e.g. `` `Order Date` `` or `` `order`.`Order Date` `` |
 | integer | `digit , { digit }`; leading zeros allowed (`007`) |
-| number | `integer` or `integer "." digit { digit }`; no leading sign, no leading/trailing dot (`12.` is not a number; the parser reports it) |
+| number | `integer` or `integer "." digit { digit }`, each optionally followed by an exponent `("e" \| "E") [ "+" \| "-" ] digit { digit }` (`1e20`, `1.5e-3`); no leading sign, no leading/trailing dot (`12.` is not a number; the parser reports it) |
 | string | single- or double-quoted, **single line**; escapes `\\` `\'` `\"` `\n`; doubled quotes (`''`, `""`) also escape; canonical output uses single quotes |
 | comment | `#` or `--` to end of line; not preserved by the formatter |
 | separator | a newline or `|` at parenthesis depth zero terminates a stage; inside parentheses both `|` and newlines separate the stages of a nested program |
@@ -512,7 +517,7 @@ case_expr       = "case" , "when" , expr , "then" , expr ,
                   { "when" , expr , "then" , expr } ,
                   [ "else" , expr ] , "end" ;
 cast_expr       = "cast" , "(" , expr , "as" , type_name , ")" ;
-type_name       = identifier ;
+type_name       = identifier , [ "(" , integer , [ "," , integer ] , ")" ] ;
 expr_list       = expr , { "," , expr } ;
 ```
 

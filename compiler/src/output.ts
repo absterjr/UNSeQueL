@@ -51,7 +51,13 @@ function jsonReplacer(_key: string, value: unknown): unknown {
   if (value === null || typeof value !== "object") return value;
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype) return value;
-  return String(value); // DuckDBDecimal and friends
+  // DECIMAL (and friends): a JSON number at DuckDB's scale when the digits
+  // survive the round trip through a JS number, otherwise the exact text.
+  const text = String(value);
+  const normalized = text.includes(".") ? text.replace(/\.?0+$/, "") : text;
+  const num = Number(text);
+  if (Number.isFinite(num) && String(num) === normalized) return num;
+  return text;
 }
 
 export const OUTPUT_FORMATS = ["table", "json", "csv"] as const;

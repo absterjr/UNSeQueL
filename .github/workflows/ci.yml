@@ -62,3 +62,7 @@ jobs:
         if: runner.os == 'Linux' && matrix.node-version == '22'
         working-directory: .
         run: bash scripts/parity.sh "node compiler/dist/main.js" "python -m unsequel" "--engine memory"
+      - name: Cross-track parity (TypeScript vs the default DuckDB engine)
+        if: runner.os == 'Linux' && matrix.node-version == '22'
+        working-directory: .
+        run: bash scripts/parity.sh "node compiler/dist/main.js" "python -m unsequel" "--engine duckdb"

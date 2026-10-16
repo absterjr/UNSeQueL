@@ -38,7 +38,7 @@ _TEMPORAL = {"date", "time", "timestamp", "datetime"}
 def type_family(name: str | None) -> str:
     if name is None:
         return "unknown"
-    key = name.strip().lower()
+    key = name.strip().lower().split("(")[0].strip()  # DECIMAL(10,2) is numeric
     if key in _NUMERIC:
         return "numeric"
     if key in _TEXT:

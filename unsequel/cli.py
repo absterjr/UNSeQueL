@@ -8,6 +8,7 @@ import os
 import re
 import sys
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from . import __version__
@@ -25,7 +26,7 @@ from .parser import parse_query
 from .pipeline import execute_pipeline_stages, parse_pipeline_stages
 from .schema import Schema
 from .semantics import analyze
-from .sqlgen import emit_sql as emit_unsequel_sql
+from .sqlgen import emit_sql as emit_unsequel_sql, emit_statement_list
 
 
 def _data_spec(value: str) -> tuple[str, str]:
@@ -59,20 +60,40 @@ def _delimiter_arg(value: str) -> str:
 
 
 def _column_types_for(args, table_name: str) -> dict[str, str]:
-    # check/compile/preview don't define --column-type, so default to no overrides.
+    # compile doesn't define --column-type, so default to no overrides.
     return {column: type_name for table, column, type_name in getattr(args, "column_type", [])
             if table.casefold() == table_name.casefold()}
 
 
+_MAX_SAFE_INTEGER = 2 ** 53 - 1
+
+
 def _number_text(value: float) -> str:
-    """How the TypeScript track renders a number (JS `String(n)`)."""
-    if math.isfinite(value) and value.is_integer() and abs(value) < 1e21:
+    """How the TypeScript track renders a number (JS `String(n)`).
+
+    JS prints plain decimal digits for 1e-6 <= |n| < 1e21 and exponent form
+    outside that window; Python's `repr` switches much earlier, so both ends
+    are normalized here.
+    """
+    magnitude = abs(value)
+    if magnitude != 0 and (magnitude < 1e-6 or magnitude >= 1e21):
+        text = repr(value)
+        head, _, tail = text.partition("e")
+        sign = ""
+        if tail[:1] in {"+", "-"}:
+            sign, tail = tail[0], tail[1:]
+        return f"{head}e{sign}{tail.lstrip('0') or '0'}"
+    if value.is_integer():
         return str(int(value))
-    return repr(value)
+    return format(Decimal(repr(value)), "f")
 
 
 def _text(value) -> str:
     """Cell text shared with the TypeScript CLI: JS number spelling, NaN/Infinity."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
     if isinstance(value, float):
         if not math.isfinite(value):
             return "NaN" if math.isnan(value) else ("Infinity" if value > 0 else "-Infinity")
@@ -80,20 +101,61 @@ def _text(value) -> str:
     return str(value)
 
 
-def _json_safe(row: dict) -> dict:
-    """Non-finite numbers become null and integral floats become ints, as JS does."""
-    result = {}
-    for key, value in row.items():
-        if isinstance(value, float):
-            if not math.isfinite(value):
-                result[key] = None
-            elif value.is_integer() and abs(value) < 1e21:
-                result[key] = int(value)
-            else:
-                result[key] = value
-        else:
-            result[key] = value
-    return result
+def _decimal_json(value: Decimal) -> str:
+    """DECIMAL is a JSON number at DuckDB's scale — unless the digits would not
+    survive the round trip through a JS number, in which case it stays exact text."""
+    text = str(value)
+    normalized = text.rstrip("0").rstrip(".") if "." in text else text
+    try:
+        number = float(text)
+    except (OverflowError, ValueError):
+        number = math.inf
+    if normalized and normalized != "-" and math.isfinite(number) \
+            and _number_text(number) == normalized:
+        return _number_text(number)
+    return json.dumps(text, ensure_ascii=False)
+
+
+def _json_text(value, indent: int) -> str:
+    """One JSON value; numbers use JS spellings so both tracks byte-match."""
+    pad = " " * indent
+    inner = " " * (indent + 2)
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, int):
+        if abs(value) <= _MAX_SAFE_INTEGER:
+            return str(value)
+        return json.dumps(str(value), ensure_ascii=False)
+    if isinstance(value, float):
+        return "null" if not math.isfinite(value) else _number_text(value)
+    if isinstance(value, Decimal):
+        return _decimal_json(value)
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        entries = ",\n".join(
+            f"{inner}{json.dumps(str(key), ensure_ascii=False)}: {_json_text(item, indent + 2)}"
+            for key, item in value.items())
+        return f"{{\n{entries}\n{pad}}}"
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return "[]"
+        items = ",\n".join(f"{inner}{_json_text(item, indent + 2)}" for item in value)
+        return f"[\n{items}\n{pad}]"
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _render_json_rows(rows: list[dict]) -> str:
+    if not rows:
+        return "[]"
+    items = ",\n".join(f"  {_json_text(dict(row), 2)}" for row in rows)
+    return f"[\n{items}\n]"
 
 
 def _csv_rows(rows: list[dict]) -> list[dict]:
@@ -121,8 +183,7 @@ def _table_output(rows: list[dict], columns: list[str]) -> str:
 
 def _print_result(result, output_format: str) -> None:
     if output_format == "json":
-        print(json.dumps([_json_safe(row) for row in result.rows], indent=2, default=str,
-                         allow_nan=False))
+        print(_render_json_rows(result.rows))
     elif output_format == "csv":
         writer = csv.DictWriter(sys.stdout, fieldnames=result.columns, lineterminator="\n")
         writer.writeheader()
@@ -347,6 +408,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     check = commands.add_parser("check", help="parse (and optionally schema-check) a query")
     add_pipeline_flags(check)
+    check.add_argument("--data", action="append", default=[], type=_data_spec,
+                       metavar="NAME=PATH", help="CSV/JSON table input; repeatable")
+    check.add_argument("--delimiter", type=_delimiter_arg,
+                       help="one-character CSV delimiter (default: comma)")
+    check.add_argument("--column-type", action="append", default=[], type=_column_type_spec,
+                       metavar="TABLE.COLUMN=TYPE",
+                       help="override inferred type: text, integer, number, or boolean; repeatable")
 
     compile_ = commands.add_parser("compile", help="print the SQL a query compiles to")
     compile_.add_argument("query", help="query file, or '-' for stdin")
@@ -455,8 +523,32 @@ def _parse_ordered_with_hint(text: str):
 def _cmd_check(args) -> None:
     text = _read_query(args.query)
     if _wants_unsequel(args):
-        _, data, database, attach, schema = _unsequel_inputs(args)
-        program = parse_program(text)
+        program = parse_program(text)  # parse errors surface even without a schema
+        data, directive_schema, directive_db = _unsequel_directives(text, args.query)
+        for name, path in getattr(args, "data", []):
+            data[name] = path
+        database = getattr(args, "db", None) or directive_db
+        attach = _attach_specs(args)
+        schema_path = args.schema or directive_schema
+        if schema_path:
+            schema = Schema.load(schema_path)
+        elif database or attach:
+            con = connect(data, delimiter=getattr(args, "delimiter", None),
+                          column_types={name: _column_types_for(args, name)
+                                        for name in data},
+                          database_path=database, attach=attach)
+            schema = describe_database(con)
+        elif data:
+            tables = {
+                name: load_table(name, path,
+                                 delimiter=getattr(args, "delimiter", None),
+                                 column_types=_column_types_for(args, name))
+                for name, path in data.items()
+            }
+            schema = _schema_from_tables(tables)
+        else:
+            print("valid UNSeQueL program (syntax OK; columns not checked)")
+            return
         analyze_unsequel_program(program, schema)
         print("valid UNSeQueL program (schema OK)")
     elif _wants_pipeline(args):
@@ -562,8 +654,8 @@ def _emit_result(args, result, out_path, *, sql, data, database=None, attach=Non
             writer.writeheader()
             writer.writerows(_csv_rows(result.rows))
         else:
-            for row in result.rows:
-                handle.write(json.dumps(_json_safe(row), default=str, allow_nan=False) + "\n")
+            # The file gets the same formatter as stdout, so they never disagree.
+            handle.write(_render_json_rows(result.rows) + "\n")
     print(f"wrote {out_path}")
     return True
 
@@ -602,10 +694,11 @@ def _cmd_run(args) -> None:
             schema = Schema.load(schema_path) if schema_path else describe_database(con)
             analyze_unsequel_program(program, schema)
             _reject_views_over_temporary_sources(program, data)
-            run_script(con, emit_unsequel_sql(program, schema))
-            count = sum(1 for stage in program
-                        if isinstance(stage, (CreateStage, IntoStage)))
-            print(f"applied {count} statement(s)")
+            blocks = emit_statement_list(program, schema)
+            run_script(con, [(f"stage {index} ({kind})", statement)
+                             for index, kind, statement in blocks])
+            _refresh_snapshot(database, con)
+            print(f"applied {len(blocks)} statement(s)")
             return
         if engine == "duckdb":
             if not (schema_path or database or attach or data):
@@ -694,6 +787,20 @@ def _reject_views_over_temporary_sources(program, data: dict[str, str]) -> None:
                 f"import the file first: unsequel import {data[temporary[0]]} --into <database>")
 
 
+def _schema_snapshot_text(con) -> str:
+    schema = describe_database(con)
+    tables = {name: {"columns": dict(table.columns)} for name, table in schema.tables.items()}
+    return json.dumps({"tables": tables}, indent=2) + "\n"
+
+
+def _refresh_snapshot(database: str, con) -> None:
+    """After a write, refresh '<db>.schema.json' if the user keeps one; a stale
+    snapshot misleads editors and the language server."""
+    snapshot = Path(f"{database}.schema.json")
+    if snapshot.exists():
+        snapshot.write_text(_schema_snapshot_text(con), encoding="utf-8")
+
+
 def _cmd_schema(args) -> None:
     """Same output as the TypeScript `schema` command, so the language server reads either."""
     data = {name: path for name, path in args.data}
@@ -701,9 +808,7 @@ def _cmd_schema(args) -> None:
     if not (args.db or attach or data):
         raise UnsequelError("schema needs --db, --attach, or --data sources")
     con = connect(data, database_path=args.db, attach=attach)
-    schema = describe_database(con)
-    tables = {name: {"columns": dict(table.columns)} for name, table in schema.tables.items()}
-    text = json.dumps({"tables": tables}, indent=2) + "\n"
+    text = _schema_snapshot_text(con)
     target = args.out if args.out else (f"{args.db}.schema.json" if args.db else "-")
     if target == "-":
         sys.stdout.write(text)
@@ -724,6 +829,7 @@ def _cmd_import(args) -> None:
     con = connect({}, database_path=args.into, writable=True, create_database=True)
     import_table(con, name, str(source), delimiter=args.delimiter,
                  column_types=_column_types_for(args, name), replace=args.replace)
+    _refresh_snapshot(args.into, con)
     if created:  # make a mistyped --into path visible
         print(f"created new database {args.into}")
     print(f"imported {args.data} into {args.into} as {name}")

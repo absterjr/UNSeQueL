@@ -59,7 +59,7 @@ prototypes retained for comparison and are being retired.
 
 | Surface | Extension | Tool | Dialect |
 | --- | --- | --- | --- |
-| UNSeQueL | `.unsequel` | `unsequel` CLI, [VS Code extension](compiler/editors/vscode/README.md), or `python -m unsequel` | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows, nested programs (`with`/set/subqueries), backtick identifiers — [grammar v1.3](compiler/docs/grammar.md) |
+| UNSeQueL | `.unsequel` | `unsequel` CLI, [VS Code extension](compiler/editors/vscode/README.md), or `python -m unsequel` | composable stages, `filter`/`having`, split `group by` + `aggregate`, windows, nested programs (`with`/set/subqueries), backtick identifiers — [grammar v1.5](compiler/docs/grammar.md) |
 | Ordered (legacy) | `.usql` | `python -m unsequel` | `FROM ... WHERE ... GROUP BY ... HAVING ... SELECT ... ORDER BY ...` |
 | Pipeline (legacy) | `.pusql` | `python -m unsequel ... --pipeline` (inferred for `.pusql`) | one stage per line; `where` is position-sensitive (row vs group); `group keys (aggregates)` |
 
@@ -78,10 +78,10 @@ highlighting, Run Selection/File/REPL) is in
 
 ## Status
 
-The Python 0.5.0 prototype implements an ordered SQL-like subset with a lexer,
+The Python 0.6.0 prototype implements an ordered SQL-like subset with a lexer,
 semantic checks, an in-memory relational executor, CTEs, nested sources, set
 operations, five join types, and a SQLite adapter. It also hosts a port of the
-canonical `.unsequel` grammar v1.3: `python -m unsequel run query.unsequel`
+canonical `.unsequel` grammar v1.5: `python -m unsequel run query.unsequel`
 parses, checks, compiles, and executes the same programs as the TypeScript
 compiler — on a built-in in-memory engine by default, or on DuckDB with
 `--engine duckdb` (analyzer, codegen, `check`/`compile`/`preview` included).
@@ -271,7 +271,7 @@ The production compiler in [compiler/](compiler/README.md) is a growing DuckDB-t
 implementation in TypeScript/Node. It uses a hand-written recursive-descent
 parser, one CTE per lowering unit, schema-aware validation, and golden plus
 DuckDB execution tests. Its current frozen specification is
-[UNSeQueL grammar v1.3](compiler/docs/grammar.md); window frames (`rows between ...`)
+[UNSeQueL grammar v1.5](compiler/docs/grammar.md); window frames (`rows between ...`)
 and non-DuckDB targets remain outside its implemented subset.
 
 `.unsequel` files run like SQL — they declare their own sources, and a query can be

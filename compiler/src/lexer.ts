@@ -148,6 +148,22 @@ export function tokenize(source: string): Token[] {
           advance();
         }
       }
+      // Scientific notation: 1e20, 1.5e-3 (the exponent needs at least one digit).
+      if (ch() === "e" || ch() === "E") {
+        const offset = ch(1) === "+" || ch(1) === "-" ? 2 : 1;
+        if (isDigit(ch(offset))) {
+          raw += ch();
+          advance();
+          if (offset === 2) {
+            raw += ch();
+            advance();
+          }
+          while (isDigit(ch())) {
+            raw += ch();
+            advance();
+          }
+        }
+      }
       emit("number", raw, startLine, startColumn);
       continue;
     }

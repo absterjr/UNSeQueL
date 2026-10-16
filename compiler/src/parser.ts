@@ -1119,15 +1119,35 @@ function parseCase(reader: TokenReader, context: ExprContext): Expr {
   return { kind: "case", branches, elseExpr, span: spanFrom(reader, start) } satisfies CaseExpr;
 }
 
+function parseTypeParameter(reader: TokenReader, typeName: string): string {
+  const token = reader.peek();
+  if (!token || token.type !== "number" || /[.eE]/.test(token.value)) {
+    reader.fail(`expected an integer type parameter like ${typeName}(10,2)`, token);
+  }
+  reader.advance();
+  return token.value;
+}
+
 function parseCast(reader: TokenReader, context: ExprContext): Expr {
   const start = reader.peek() as Token;
   reader.advance();
   reader.expectPunct("(", "after CAST");
   const operand = parseExpression(reader, context);
   reader.expectKeyword("as", "in the CAST expression");
-  const typeName = reader.expectIdentifier("expected a type name after 'as'");
+  const typeToken = reader.expectIdentifier("expected a type name after 'as'");
+  let typeName = typeToken.value;
+  if (reader.matchPunct("(")) {
+    const first = parseTypeParameter(reader, typeName);
+    if (reader.matchPunct(",")) {
+      const second = parseTypeParameter(reader, typeName);
+      typeName = `${typeName}(${first},${second})`;
+    } else {
+      typeName = `${typeName}(${first})`;
+    }
+    reader.expectPunct(")", "to close the type parameters");
+  }
   reader.expectPunct(")", "to close the CAST expression");
-  return { kind: "cast", operand, typeName: typeName.value, span: spanFrom(reader, start) } satisfies CastExpr;
+  return { kind: "cast", operand, typeName, span: spanFrom(reader, start) } satisfies CastExpr;
 }
 
 function parseExprList(reader: TokenReader, context: ExprContext): Expr[] {

@@ -81,6 +81,17 @@ contain placeholder tokens.
   `unsequel-vscode-0.1.0.vsix` (VS Code extension); all package versions
   started at 0.1.0, and the four standalone executables were backfilled onto
   it.
+- GitHub release `v0.6.0` adds grammar v1.5 (scientific-notation literals,
+  `CAST` type parameters), one number-output rule across tracks with
+  `examples/edge/` fixtures (CSV/JSON `--out` goes through the stdout
+  formatter; parity 28/28 with DuckDB, 26/26 with the memory engine, both in
+  CI), `check` parity (TypeScript checks columns when it can load sources;
+  Python surfaces parse errors first), stage-labeled statement errors with a
+  snapshot refresh after writes, the DuckDB-backed whole-file CSV sniffer on
+  the Python side (CI memory ceiling), and VS Code run-bundle discovery;
+  assets: `unsequel-0.6.0.tgz`, `unsequel-0.6.0-py3-none-any.whl`,
+  `unsequel-vscode-0.6.0.vsix`, plus the platform binaries from both
+  workflows.
 - GitHub release `v0.5.0` adds `create or replace`, `into` BY NAME with type
   checks, transactional programs, `--create-db`, `import --replace`, the
   whole-file CSV sniffer (both tracks) with wide-integer correction, one
@@ -115,9 +126,9 @@ contain placeholder tokens.
   accounts/tokens; see [CONTRIBUTING.md](../CONTRIBUTING.md) and the package
   metadata.
 - Publishing prep verified from this machine: `npm publish --dry-run` packs
-  `unsequel@0.5.0` cleanly (auth still required for the real upload), the
-  Python wheel builds as `unsequel-0.5.0-py3-none-any.whl`, and the VSIX
-  builds as `unsequel-vscode-0.5.0.vsix`. Owner commands after login:
+  `unsequel@0.6.0` cleanly (auth still required for the real upload), the
+  Python wheel builds as `unsequel-0.6.0-py3-none-any.whl`, and the VSIX
+  builds as `unsequel-vscode-0.6.0.vsix`. Owner commands after login:
   `npm login` then `npm publish` in `compiler/`; `python -m pip install build
   twine` then `python -m twine upload dist/*` for PyPI; `npx @vscode/vsce
   publish` for the Marketplace (choose the editor after feedback).

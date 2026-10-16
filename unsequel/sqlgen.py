@@ -9,8 +9,10 @@ the whole unit that contains it.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Callable
 
 from .errors import LocatedError
@@ -144,9 +146,19 @@ def _aliased(rendered: str, name: str) -> str:
 
 
 def _number_text(value: float) -> str:
-    if value.is_integer() and abs(value) < 1e21:
+    """JS `String(n)` (see cli.py): plain digits for 1e-6 <= |n| < 1e21, the
+    exponent form otherwise, so literal SQL matches the TypeScript track."""
+    magnitude = abs(value)
+    if magnitude != 0 and (magnitude < 1e-6 or magnitude >= 1e21):
+        text = repr(value)
+        head, _, tail = text.partition("e")
+        sign = ""
+        if tail[:1] in {"+", "-"}:
+            sign, tail = tail[0], tail[1:]
+        return f"{head}e{sign}{tail.lstrip('0') or '0'}"
+    if value.is_integer():
         return str(int(value))
-    return repr(value)
+    return format(Decimal(repr(value)), "f")
 
 
 def _literal(value: object) -> str:
@@ -795,11 +807,15 @@ def _order_name_factory(program: Program, schema: Schema):
     return next_order_name
 
 
-def _emit_statements(program: Program, schema: Schema) -> str:
-    """Statement programs (`create`/`into`): one complete statement per write
-    stage, each nested program embedded as an inline `WITH` block."""
+def emit_statement_list(program: Program, schema: Schema) -> "list[tuple[int, str, str]]":
+    """Statement blocks for `create`/`into` programs: (stage index, keyword, SQL).
+
+    One complete statement per write stage; each nested program is embedded as
+    an inline `WITH` block. The CLI runs the blocks one at a time so a failure
+    can name the stage that produced the SQL.
+    """
     next_order_name = _order_name_factory(program, schema)
-    statements: list[str] = []
+    blocks: list[tuple[int, str, str]] = []
     for stage in program:
         if not isinstance(stage, (CreateStage, IntoStage)):
             continue
@@ -817,15 +833,21 @@ def _emit_statements(program: Program, schema: Schema) -> str:
         body = ",\n".join(f"{name} AS (\n  {sql}\n)" for name, sql in context.ctes)
         select = f"SELECT * FROM {inner.last_cte}"
         if isinstance(stage, CreateStage):
-            statements.append(
-                f"{'CREATE OR REPLACE' if stage.replace else 'CREATE'} "
-                f"{stage.object.upper()} {_ident(stage.name)} AS\n"
-                f"WITH {body}\n{select};")
+            blocks.append((stage.index, kind,
+                           f"{'CREATE OR REPLACE' if stage.replace else 'CREATE'} "
+                           f"{stage.object.upper()} {_ident(stage.name)} AS\n"
+                           f"WITH {body}\n{select};"))
             schema = with_created_table(schema, stage.name,
                                         [(column, "unknown") for column in inner.live])
         else:
-            statements.append(f"INSERT INTO {_ident(stage.name)} BY NAME\nWITH {body}\n{select};")
-    return "\n".join(statements)
+            blocks.append((stage.index, kind,
+                           f"INSERT INTO {_ident(stage.name)} BY NAME\nWITH {body}\n{select};"))
+    return blocks
+
+
+def _emit_statements(program: Program, schema: Schema) -> str:
+    return "\n".join(statement for _index, _kind, statement
+                     in emit_statement_list(program, schema))
 
 
 def emit_sql(program: Program, schema: Schema, stop_at: "int | None" = None) -> str:

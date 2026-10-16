@@ -210,6 +210,18 @@ describe("parser: expressions", () => {
     expect(filterCondition("a == b")).toMatchObject({ kind: "binary", op: "==" });
   });
 
+  it("accepts type parameters on CAST and scientific-notation literals", () => {
+    const program = parse(
+      "from orders\nselect money = CAST(total AS DECIMAL(10,2)), cap = 1e20, wide = CAST(s AS VARCHAR(20))");
+    const select = program[1] as SelectStage;
+    expect(select.items[0]?.expr).toMatchObject({ kind: "cast", typeName: "DECIMAL(10,2)" });
+    expect(select.items[1]?.expr).toMatchObject({ kind: "literal", value: 1e20 });
+    expect(select.items[2]?.expr).toMatchObject({ kind: "cast", typeName: "VARCHAR(20)" });
+
+    const error = expectPipelineError("from orders\nselect x = CAST(a AS DECIMAL(1.5))");
+    expect(error.message).toContain("type parameter");
+  });
+
   it("parses quoted table and column names that are reserved or not bare identifiers", () => {
     const program = parse("from `order`\nselect `Order Date`, `2024_sales`, `group`");
     expect(program[0]).toMatchObject({

@@ -1,0 +1,6 @@
+# source edge: edge.csv
+# Number spellings both tracks must agree on: DECIMAL scale, HUGEINT beyond
+# 2^53 (plain-digit literal) vs DOUBLE (exponent literal), -0.0, and a boolean.
+from edge
+sort n
+select dec = CAST(n AS DECIMAL(10,2)), half = n / 4, tiny = n * 1e-7, sci = n * 1e21, wideint = n * 1e20, negzero = -0.0, hugebig = CAST('9007199254740993' AS HUGEINT), wide = CAST('1234567890123456789012' AS DECIMAL(25,0)), flag = TRUE

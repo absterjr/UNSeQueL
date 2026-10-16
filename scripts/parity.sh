@@ -24,6 +24,12 @@ check() {  # name, then the shared run arguments
 for q in "$ROOT"/compiler/examples/real/*.unsequel; do
   check "real/$(basename "$q")" "$q"
 done
+for q in "$ROOT"/compiler/examples/edge/*.unsequel; do
+  # The memory engine has no DECIMAL/HUGEINT semantics; those files are
+  # DuckDB-only fixtures (they pin number spellings, not engine agreement).
+  case "$PYFLAGS" in *memory*) grep -qE 'CAST|DECIMAL|1e' "$q" && continue ;; esac
+  check "edge/$(basename "$q")" "$q"
+done
 for q in "$ROOT"/compiler/examples/reference/*.unsequel; do
   # The memory engine refuses the sql hatch by design; compare it only against DuckDB.
   case "$PYFLAGS" in *memory*) grep -q '^sql\b\|| sql ' "$q" && continue ;; esac

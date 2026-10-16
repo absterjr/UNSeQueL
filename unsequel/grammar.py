@@ -248,6 +248,21 @@ def tokenize(source: str) -> list[Token]:
                     raw += source[index]
                     index += 1
                     column += 1
+            # Scientific notation: 1e20, 1.5e-3 (the exponent needs a digit).
+            if ch() in {"e", "E"}:
+                offset = 2 if ch(1) in {"+", "-"} else 1
+                if _is_digit(ch(offset)):
+                    raw += source[index]
+                    index += 1
+                    column += 1
+                    if offset == 2:
+                        raw += source[index]
+                        index += 1
+                        column += 1
+                    while _is_digit(ch()):
+                        raw += source[index]
+                        index += 1
+                        column += 1
             emit("number", raw, start_line, start_column)
             continue
         if _is_identifier_start(current):
@@ -1284,10 +1299,10 @@ def _parse_count(reader: _TokenReader, keyword: str) -> int:
         reader.fail(f"{keyword} requires a non-negative integer", token)
     reader.advance()
     reader.expect_end()
-    value = int(token.value)
-    if value > _MAX_SAFE_INTEGER:
+    value = float(token.value)  # "1e2" is an integer too (the TS track allows it)
+    if not value.is_integer() or value > _MAX_SAFE_INTEGER:
         reader.fail(f"{keyword} exceeds the supported integer range", token)
-    return value
+    return int(value)
 
 
 # --------------------------------------------------------------------------- #
@@ -1442,7 +1457,9 @@ def _parse_primary(reader: _TokenReader, context: _ExprContext) -> Expr:
         reader.fail("expected an expression")
     if token.type == "number":
         reader.advance()
-        value: object = float(token.value) if "." in token.value else int(token.value)
+        raw = token.value
+        value: object = (float(raw) if "." in raw or "e" in raw or "E" in raw
+                         else int(raw))
         return Literal(value, _token_span(token))
     if token.type == "string":
         reader.advance()
@@ -1536,6 +1553,14 @@ def _parse_case(reader: _TokenReader, context: _ExprContext) -> Expr:
     return Case(tuple(branches), else_expr, _span_from(reader, start))
 
 
+def _parse_type_parameter(reader: _TokenReader, type_name: str) -> str:
+    token = reader.peek()
+    if token is None or token.type != "number" or re.search(r"[.eE]", token.value):
+        reader.fail(f"expected an integer type parameter like {type_name}(10,2)", token)
+    reader.advance()
+    return token.value
+
+
 def _parse_cast(reader: _TokenReader, context: _ExprContext) -> Expr:
     start = reader.peek()
     reader.advance()
@@ -1543,8 +1568,17 @@ def _parse_cast(reader: _TokenReader, context: _ExprContext) -> Expr:
     operand = _parse_expression(reader, context)
     reader.expect_keyword("as", "in the CAST expression")
     type_name = reader.expect_identifier("expected a type name after 'as'")
+    rendered = type_name.value
+    if reader.match_punct("("):
+        first = _parse_type_parameter(reader, rendered)
+        if reader.match_punct(","):
+            second = _parse_type_parameter(reader, rendered)
+            rendered = f"{rendered}({first},{second})"
+        else:
+            rendered = f"{rendered}({first})"
+        reader.expect_punct(")", "to close the type parameters")
     reader.expect_punct(")", "to close the CAST expression")
-    return Cast(operand, type_name.value, _span_from(reader, start))
+    return Cast(operand, rendered, _span_from(reader, start))
 
 
 def _parse_expr_list(reader: _TokenReader, context: _ExprContext) -> list[Expr]:

@@ -46,6 +46,10 @@ jobs:
         run: |
           BIN="dist/${{ matrix.asset }}"
           "$BIN" --version
+          # check/compile must work from the packaged binary too, including
+          # column checking through a '# source' directive (bundled DuckDB).
+          "$BIN" check compiler/examples/real/r06_composition.unsequel
+          "$BIN" compile compiler/examples/real/r06_composition.unsequel > /dev/null
           # DuckDB is bundled, so it is the default engine; the memory engine
           # must agree with it on the composing query and on date functions.
           "$BIN" run compiler/examples/real/r06_composition.unsequel > "$RUNNER_TEMP/r06-duckdb.txt"
